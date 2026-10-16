@@ -1,0 +1,66 @@
+%% Q5 · promedio histórico y artículos recientes
+%% Fuente semántica; SVG y PNG usan una distribución fija para conservar legibilidad.
+%% Cierres: notificación a todos los participantes después de procesar sus datos.
+flowchart LR
+    subgraph PARTIAL["Q5 Partial · por réplica"]
+    Q5A(("Q5 Avg<br/>Partial · ×N"))
+    SUM(("Suma y cantidad<br/>por client_id<br/>memoria"))
+    end
+    subgraph FILTER["Q5 Filter · por worker"]
+    Q5F(("Q5 Filter<br/>×N"))
+    F5["candidatos_q5/*.jsonl<br/>url, n_words"]
+    E5(("Promedio y fin<br/>por client_id<br/>memoria"))
+    end
+    subgraph RETURN["Retorno al cliente"]
+    RQ@{ shape: h-cyl, label: "results[g]<br/>Q5: url, n_words<br/>datos / fin por worker" }
+    GW(("Gateway<br/>Collector · ×G"))
+    RESPQ@{ shape: h-cyl, label: "responses[h]<br/>connection_id, client_id<br/>query_id, payload / fin" }
+    RX(("TCP Handler<br/>×H<br/>client_id → socket"))
+    API(("Socket<br/>TCP/IP"))
+    end
+    P(("Parser /<br/>Projector<br/>×N"))
+    TQ@{ shape: h-cyl, label: "abstracts<br/>url, lang, year, abstract<br/>1 cola · N consumidores" }
+    T(("Tokenizer<br/>×N"))
+    OLDQ@{ shape: h-cyl, label: "historical_counts<br/>n_words · year ≤ 2020<br/>1 cola · N consumidores" }
+    PARTQ@{ shape: h-cyl, label: "avg_partials<br/>worker_id, suma, cantidad<br/>1 cola · 1 consumidor" }
+    Q5G(("Q5 Avg<br/>Aggregator · ×1"))
+    EX["Exchange<br/>del promedio"]
+    AQ@{ shape: h-cyl, label: "promedio<br/>client_id, valor<br/>1 cola por Q5 Filter" }
+    CQ@{ shape: h-cyl, label: "recent_articles<br/>url, n_words · year ≥ 2021<br/>1 cola · N consumidores" }
+    C(("Client<br/>destinatario"))
+    P --> TQ
+    TQ --> T
+    T --> OLDQ
+    OLDQ --> Q5A
+    Q5A --- SUM
+    Q5A --> PARTQ
+    PARTQ --> Q5G
+    Q5G --> EX
+    EX --> AQ
+    AQ --> Q5F
+    T --> CQ
+    CQ --> Q5F
+    Q5F <--> F5
+    Q5F --- E5
+    RQ --> GW
+    GW --> RESPQ
+    RESPQ --> RX
+    RX --> API
+    API --> C
+    Q5F --> RQ
+    classDef control fill:#edf7f3,stroke:#377964;
+    class P,T,Q5A,Q5G,Q5F,GW,RX,C control;
+    classDef boundary fill:#eaf3fd,stroke:#397bac;
+    class API boundary;
+    classDef entity fill:#fff5db,stroke:#b6903e;
+    class SUM,E5 entity;
+    classDef queue fill:#f0f1f9,stroke:#737d9e;
+    class TQ,OLDQ,PARTQ,AQ,CQ,RQ,RESPQ queue;
+    classDef exchange fill:#f0f1f9,stroke:#737d9e;
+    class EX exchange;
+    classDef file fill:#fff7e9,stroke:#ad8242;
+    class F5 file;
+    classDef actor fill:white,stroke:#526579;
+%% Cantidad de palabras: n_words es la cantidad de words distintas del abstract, sin stopwords. Se usa para calcular el promedio histórico y para comparar los artículos recientes.
+%% Exchange del promedio: Aggregator publica el promedio en el exchange. El exchange manda una copia a la cola de cada filtro. Los candidatos se reparten; el promedio llega a todos.
+%% Cuándo termina: Cada filtro espera el promedio y el fin de sus dos entradas. Revisa todos sus candidatos, envía los resultados y avisa que terminó. Gateway espera a todos los filtros.

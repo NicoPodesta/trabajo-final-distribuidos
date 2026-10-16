@@ -1,0 +1,25 @@
+@startuml image-fetcher
+title Actividad · Image Fetcher · Una réplica
+
+start
+
+while (¿SIGTERM?) is (no)
+  :Tomar una imagen de cualquier cliente\nsi hay cupo libre;
+  fork
+    :Descargar la imagen completa\na un archivo local;
+  fork again
+    :Publicar sus trozos en la cola Q2\n(espera solo esta publicación si está llena);
+  end fork
+  :Borrar el archivo y liberar el cupo;
+endwhile (sí)
+
+:Cerrar descargas, borrar temporales\ny cerrar el middleware;
+stop
+
+note right
+  Hasta N imágenes en paralelo,
+  de clientes distintos.
+  Fallo HTTP y disco lleno: decisión abierta.
+end note
+
+@enduml

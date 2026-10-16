@@ -1,0 +1,46 @@
+%% Q3 · Palabras compartidas en inglés y francés
+%% Fuente semántica; SVG y PNG usan una distribución fija para conservar legibilidad.
+%% Cierres: notificación a todos los participantes después de procesar sus datos.
+flowchart LR
+    subgraph JOIN["Q3 · estado de cada partición"]
+    Q3(("Q3 Vocabulary<br/>Join · ×K"))
+    E3(("Presencias<br/>word → en / fr<br/>enviado: bool<br/>memoria<br/>por client_id"))
+    end
+    subgraph RETURN["Retorno al cliente"]
+    RQ@{ shape: h-cyl, label: "results[g]<br/>Q3: word<br/>datos / fin por worker" }
+    GW(("Gateway<br/>Collector · ×G"))
+    RESPQ@{ shape: h-cyl, label: "responses[h]<br/>connection_id, client_id<br/>query_id, payload / fin" }
+    RX(("TCP Handler<br/>×H<br/>client_id → socket"))
+    API(("Socket<br/>TCP/IP"))
+    end
+    P(("Parser /<br/>Projector<br/>×N"))
+    TQ@{ shape: h-cyl, label: "abstracts<br/>url, lang, year, abstract<br/>1 cola · N consumidores" }
+    T(("Tokenizer<br/>preagrega por lote<br/>×N"))
+    VQ@{ shape: h-cyl, label: "vocabulary[i]<br/>(word, lang) únicos por lote<br/>K colas · hash(word) % K" }
+    C(("Client<br/>destinatario"))
+    P --> TQ
+    TQ --> T
+    T --> VQ
+    VQ --> Q3
+    Q3 --- E3
+    RQ --> GW
+    GW --> RESPQ
+    RESPQ --> RX
+    RX --> API
+    API --> C
+    Q3 --> RQ
+    classDef control fill:#edf7f3,stroke:#377964;
+    class P,T,Q3,GW,RX,C control;
+    classDef boundary fill:#eaf3fd,stroke:#397bac;
+    class API boundary;
+    classDef entity fill:#fff5db,stroke:#b6903e;
+    class E3 entity;
+    classDef queue fill:#f0f1f9,stroke:#737d9e;
+    class TQ,VQ,RQ,RESPQ queue;
+    classDef exchange fill:#f0f1f9,stroke:#737d9e;
+    classDef file fill:#fff7e9,stroke:#ad8242;
+    classDef actor fill:white,stroke:#526579;
+%% Preagregación y reparto: Tokenizer deduplica (word, lang) por lote de un mismo cliente. hash(word) % K reúne ambos idiomas en la misma partición; lang no forma parte de la clave de reparto.
+%% Estado por cliente y word: word → {en, fr, enviado}: tres booleanos en memoria, inicialmente false. enviado registra la publicación en results[g].
+%% Envío y fin: Si en y fr son true y enviado es false, publica la word y luego marca enviado = true. Las siguientes apariciones no vuelven a emitirla. El cierre espera completar la entrada y las publicaciones.
+%% Tokenizer: normaliza y quita stopwords; deduplica (word, lang) por lote de un mismo cliente antes del reparto por word.

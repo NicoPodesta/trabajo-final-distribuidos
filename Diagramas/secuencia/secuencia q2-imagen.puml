@@ -1,0 +1,35 @@
+@startuml
+title Secuencia · Q2 · Descarga a archivo y chunk desacoplados
+
+participant "Q2 Filter" as Q2
+participant "Image Fetcher\n(réplica)" as IMG
+participant "API de Wikimedia" as WM
+database "Archivo temporal\n local en Image \n Fetcher x client_id" as F
+participant "Cola Q2\n(longitud máxima)" as Q
+participant "Gateway\n(réplica del cliente)" as GW
+actor "Client" as C
+
+Q2 -> IMG : (name, url, image_ref)\n[asíncrono, middleware]
+
+par descarga completa sin esperar la cola
+    loop hasta terminar la imagen
+        IMG -> WM : lee chunk [HTTPS]
+        WM --> IMG : bytes
+        IMG -> F : escribe en archivo temporal
+    end
+else publicación de chunks
+    loop por cada chunk del archivo
+        IMG -> F : lee chunk
+        IMG -> Q : send (image_id, seq, last, bytes)\nruteo por gateway_id\n(bloquea si la cola está llena)
+        Q -> GW : entrega el chunk
+        GW -> C : bloque Q2\n[TCP, un escritor por conexión]
+        GW -> Q : ack del chunk
+    end
+    IMG -> F : borra archivo\n(último chunk aceptado)
+end
+
+note over IMG, F
+  Decisión abierta: fallo HTTP y política ante SIGTERM
+  con archivos temporales pendientes.
+end note
+@enduml

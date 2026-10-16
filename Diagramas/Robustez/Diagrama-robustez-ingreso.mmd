@@ -1,0 +1,49 @@
+%% Ingreso · archivos, clientes y Parser
+%% Fuente semántica; SVG y PNG usan una distribución fija para conservar legibilidad.
+%% Cierres: notificación a todos los participantes después de procesar sus datos.
+flowchart LR
+    subgraph TCP["Recepción TCP · estado propio por handler"]
+    API(("Socket<br/>TCP/IP"))
+    RX(("TCP Handler<br/>×H"))
+    CONN(("Conexiones<br/>client_id ↔ socket<br/>connection_id"))
+    end
+    subgraph GATEWAY["Gateway · por réplica"]
+    GW(("Gateway<br/>Collector · ×G"))
+    SESSION(("Sesiones<br/>resultados y fin<br/>client_id → destino"))
+    end
+    F1["Archivo de entrada<br/>artículos"]
+    C1(("Client 1<br/>lee y envía"))
+    FC["Archivo de entrada<br/>artículos"]
+    CC(("Client N<br/>lee y envía"))
+    REQQ@{ shape: h-cyl, label: "requests<br/>open / batches / EOF<br/>1 cola · G consumidores" }
+    RESPQ@{ shape: h-cyl, label: "responses[h]<br/>session(client_id, gateway_id)<br/>luego: resultados / fin" }
+    PQ@{ shape: h-cyl, label: "articles<br/>batches de artículos<br/>client_id, gateway_id" }
+    P(("Parser /<br/>Projector<br/>×N"))
+    F1 --> C1
+    FC --> CC
+    C1 <--> API
+    CC <--> API
+    API <--> RX
+    RX --> REQQ
+    REQQ --> GW
+    GW --> PQ
+    PQ --> P
+    RX --- CONN
+    GW --- SESSION
+    GW --> RESPQ
+    RESPQ --> RX
+    classDef control fill:#edf7f3,stroke:#377964;
+    class C1,CC,RX,GW,P control;
+    classDef boundary fill:#eaf3fd,stroke:#397bac;
+    class API boundary;
+    classDef entity fill:#fff5db,stroke:#b6903e;
+    class CONN,SESSION entity;
+    classDef queue fill:#f0f1f9,stroke:#737d9e;
+    class REQQ,RESPQ,PQ queue;
+    classDef exchange fill:#f0f1f9,stroke:#737d9e;
+    classDef file fill:#fff7e9,stroke:#ad8242;
+    class F1,FC file;
+    classDef actor fill:white,stroke:#526579;
+%% Cola compartida: Todos los Gateways consumen requests. Cada batch lo toma un Gateway. Se pueden agregar Gateways a esa misma cola para atender más trabajo.
+%% Identidad y resultados: El Gateway que consume open asigna client_id y queda como recolector. Avisa al handler el client_id y el Gateway que reunirá los resultados. Los batches conservan esos datos aunque los atienda otro Gateway.
+%% Hasta Parser y cierre: Gateway publica los batches en articles. Parser proyecta campos para cada rama. El cierre espera a que se completen todos los batches. Recibir EOF no indica que ese trabajo ya terminó.

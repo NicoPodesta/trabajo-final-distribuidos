@@ -1,0 +1,132 @@
+%% N >= 1 clients; H >= 1 TCP Handlers; G >= 1 Gateways. Requests es compartida; sólo el recolector de resultados queda fijo por sesión.
+%% Robustez 1. Distribución visual fija en render-robustness.cjs.
+%% Q1 arriba; Q5 abajo. Los recuadros agrupan controles y recursos propios.
+%% TCP Handler conserva sockets; Gateway consume requests y ejecuta Result Collector.
+%% N = workers por etapa; K = particiones de cada consulta; estado por client_id.
+flowchart LR
+    FILE1["Archivo de entrada<br/>artículos"]
+    C(("Client 1<br/>lee y envía"))
+    FILEC["Archivo de entrada<br/>artículos"]
+    CN(("Client N<br/>lee y envía"))
+    WM["Wikimedia"]
+    subgraph SYS["Sistema de análisis"]
+        subgraph TCP_SCOPE["Recepción TCP"]
+            API(("Socket TCP/IP"))
+            RX(("TCP Handler<br/>×H"))
+            CONN(("Conexiones<br/>client_id ↔ socket<br/>connection_id<br/>memoria"))
+        end
+        REQQ@{ shape: h-cyl, label: "requests<br/>open, batches y EOF<br/>1 cola · G consumidores" }
+        RESPQ@{ shape: h-cyl, label: "responses<br/>resultados y fin<br/>1 por TCP Handler" }
+        subgraph GATEWAY_SCOPE["Gateway"]
+            GW(("Gateway<br/>Result Collector<br/>×G"))
+            SESSION(("Sesiones<br/>resultados y fin<br/>destino · memoria"))
+        end
+        PQ@{ shape: h-cyl, label: "articles<br/>batches de artículos<br/>1 cola · N workers" }
+        P(("Parser / Projector<br/>×N"))
+        Q1Q@{ shape: h-cyl, label: "article_dates<br/>lang, year, url, date<br/>1 cola · N workers" }
+        Q1(("Q1 Filter<br/>×N"))
+        Q2Q@{ shape: h-cyl, label: "article_sections<br/>datos de artículo y sections<br/>1 cola · N workers" }
+        Q2(("Q2 Filter<br/>×N"))
+        IQ@{ shape: h-cyl, label: "image_downloads<br/>name, url, image_ref<br/>1 cola · N workers" }
+        subgraph IMAGE_SCOPE["Image Fetcher · por worker"]
+            IMG(("Image Fetcher<br/>×N"))
+            IF["Resultados Q2<br/>listos para enviar"]
+            SEND(("Envío<br/>hilo del worker"))
+            HTTP(("HTTP<br/>Wikimedia"))
+        end
+        TQ@{ shape: h-cyl, label: "abstracts<br/>url, lang, year, abstract<br/>1 cola · N workers" }
+        T(("Tokenizer<br/>×N"))
+        VQ@{ shape: h-cyl, label: "vocabulary[i]<br/>word, lang<br/>K colas · hash(word)" }
+        subgraph Q3_SCOPE["Q3 · por partición"]
+            Q3(("Q3 Vocabulary Join<br/>×K"))
+            VSTATE(("Presencias<br/>word → en / fr<br/>enviado: bool<br/>memoria<br/>por client_id"))
+        end
+        WQ@{ shape: h-cyl, label: "word_counts[i]<br/>word<br/>K colas · hash(word)" }
+        subgraph Q4_SCOPE["Q4 Counter · por partición"]
+            Q4C(("Q4 Word Counter<br/>×K"))
+            CF["estado_q4/segmentos<br/>word y cantidad"]
+        end
+        TOPQ@{ shape: h-cyl, label: "partial_top20<br/>tops por partición<br/>1 cola · 1 worker" }
+        Q4M(("Q4 Top 20 Merger<br/>×1"))
+        OLDQ@{ shape: h-cyl, label: "historical_counts<br/>n_words; year ≤ 2020<br/>1 cola · N workers" }
+        subgraph PARTIAL_SCOPE["Q5 Partial · por worker"]
+            Q5A(("Q5 Avg Partial<br/>×N"))
+            SUM(("Suma y cantidad<br/>por client_id<br/>memoria"))
+        end
+        PARTQ@{ shape: h-cyl, label: "avg_partials<br/>suma, cantidad<br/>1 cola · 1 worker" }
+        Q5G(("Q5 Avg Aggregator<br/>×1"))
+        EX["Exchange<br/>fanout"]
+        AQ@{ shape: h-cyl, label: "promedio<br/>client_id, valor<br/>1 por Q5 Filter" }
+        CQ@{ shape: h-cyl, label: "recent_articles<br/>url, n_words; year ≥ 2021<br/>1 cola · N workers" }
+        subgraph FILTER_SCOPE["Q5 Filter · por worker"]
+            Q5F(("Q5 Filter<br/>×N"))
+            F5["candidatos_q5/*.jsonl<br/>url y n_words"]
+            U(("Promedio y fin<br/>por client_id<br/>memoria"))
+        end
+        RQ@{ shape: h-cyl, label: "results<br/>client_id, query_id<br/>1 por Gateway" }
+        API <--> RX
+        RX --- CONN
+        RX --> REQQ
+        REQQ --> GW
+        GW --> RESPQ
+        RESPQ --> RX
+        GW --- SESSION
+        GW --> PQ
+        PQ --> P
+        P --> Q1Q
+        Q1Q --> Q1
+        P --> Q2Q
+        Q2Q --> Q2
+        P --> TQ
+        TQ --> T
+        Q2 --> IQ
+        IQ --> IMG
+        IMG --> IF
+        IF --> SEND
+        IMG <--> HTTP
+        T --> VQ
+        VQ --> Q3
+        Q3 --- VSTATE
+        T --> WQ
+        WQ --> Q4C
+        Q4C <--> CF
+        Q4C --> TOPQ
+        TOPQ --> Q4M
+        T --> OLDQ
+        OLDQ --> Q5A
+        Q5A --- SUM
+        Q5A --> PARTQ
+        PARTQ --> Q5G
+        Q5G --> EX
+        EX --> AQ
+        AQ --> Q5F
+        T --> CQ
+        CQ --> Q5F
+        Q5F <--> F5
+        Q5F --- U
+        Q1 --> RQ
+        SEND --> RQ
+        Q3 --> RQ
+        Q4M --> RQ
+        Q5F --> RQ
+        RQ --> GW
+    end
+    FILE1 --> C
+    FILEC --> CN
+    C <--> API
+    CN <--> API
+    HTTP <--> WM
+    classDef actor fill:#fff,stroke:#526477,color:#24384a;
+    classDef boundary fill:#e8f1fc,stroke:#3774aa,color:#214966;
+    classDef control fill:#edf7f3,stroke:#3b7f68,color:#244f42;
+    classDef entity fill:#fff5dc,stroke:#b18a39,color:#6b5122;
+    classDef file fill:#fff8ed,stroke:#a27635,color:#60451d;
+    classDef queue fill:#eef0f8,stroke:#707796,color:#3c4365;
+    classDef exchange fill:#eef0f8,stroke:#707796,color:#3c4365;
+    class WM actor;
+    class API,HTTP boundary;
+    class C,CN,RX,GW,P,T,Q1,Q2,IMG,SEND,Q3,Q4C,Q4M,Q5A,Q5G,Q5F control;
+    class CONN,SESSION,VSTATE,SUM,U entity;
+    class IF,CF,F5,FILE1,FILEC file;
+    class REQQ,RESPQ,PQ,Q1Q,Q2Q,TQ,IQ,VQ,WQ,TOPQ,OLDQ,PARTQ,AQ,CQ,RQ queue;
+    class EX exchange;

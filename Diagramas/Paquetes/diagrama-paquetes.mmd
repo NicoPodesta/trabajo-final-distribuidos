@@ -1,0 +1,52 @@
+---
+config:
+  flowchart:
+    subGraphTitleMargin:
+      top: 12
+      bottom: 30
+---
+%% P2: variante de P1 con protocolos de aplicación separados.
+%% protocolo.interno adapta mensajes del TP a la API genérica de middleware.
+%% Middleware no importa los paquetes del TP ni sus reglas de negocio.
+%% A -.-> B indica uso de código; los recuadros son agrupaciones lógicas.
+%% SERVICE -> COMM resume el uso de los paquetes compartidos.
+%% Cada control usa los subpaquetes que necesita; no importa todos.
+flowchart LR
+    CLIENT["«package» cliente<br/>Client: lee archivos,<br/>envía batches y recibe resultados"]
+    subgraph SERVICE["Controles del TP"]
+        direction TB
+        BOOT["«package» arranque<br/>configuración, inicio y SIGTERM"]
+        ING["«package» ingreso<br/>TCP Handler y Gateway<br/>conexiones de clientes y sesiones"]
+        PRE["«package» preparacion<br/>Parser / Projector y Tokenizer<br/>lectura de artículos y texto"]
+        Q["«package» consultas<br/>workers Q1..Q5<br/>estado y cierre de cada etapa"]
+        COL["«package» resultados<br/>Result Collector<br/>usado dentro del Gateway"]
+        BOOT -.-> ING
+        BOOT -.-> PRE
+        BOOT -.-> Q
+        ING -.-> COL
+    end
+    subgraph COMM["Comunicación compartida"]
+        EXT["«package» protocolo.externo<br/>sesión, batches y EOF<br/>resultados, errores y fin"]
+        INT["«package» protocolo.interno<br/>mensajes entre componentes<br/>client_id, destino, datos y cierre"]
+        MW["«package» middleware<br/>grupos de workers y reparto<br/>regula envíos y avisa el fin"]
+        SER["«package» serializacion<br/>codificar / decodificar datos"]
+        CONN["«package» conexiones<br/>TCP y transporte interno<br/>abrir, leer, escribir y cerrar"]
+        DATA["«package» contratos.datos<br/>Article, word, Partial y Result<br/>tipos compartidos del TP"]
+        FILES["«package» archivos_temporales<br/>crear, leer, escribir y borrar<br/>archivos de Q2 y Q5"]
+    end
+    SERVICE -.->|usa| COMM
+    CLIENT -.-> EXT
+    EXT -.-> SER
+    INT -.-> SER
+    EXT -.->|sesión TCP externa| CONN
+    INT -.-> MW
+    MW -.->|transporte interno| CONN
+    MW -.->|envoltorio de transporte| SER
+    EXT -.-> DATA
+    INT -.-> DATA
+    classDef pkg fill:#f3f7fc,stroke:#5b7395,color:#233b5a;
+    classDef communication fill:#eef0f8,stroke:#707796,color:#3c4365;
+    classDef data fill:#fff5dc,stroke:#b18a39,color:#6b5122;
+    class BOOT,CLIENT,ING,PRE,Q,COL pkg;
+    class EXT,INT,MW,SER,CONN,FILES communication;
+    class DATA data;

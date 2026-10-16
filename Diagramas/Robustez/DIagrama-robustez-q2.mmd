@@ -1,0 +1,56 @@
+%% Q2 · biografías y descarga de imágenes
+%% Fuente semántica; SVG y PNG usan una distribución fija para conservar legibilidad.
+%% Cierres: notificación a todos los participantes después de procesar sus datos.
+flowchart LR
+    subgraph FETCHER["Image Fetcher · descarga y envío concurrentes"]
+    IMG(("Image Fetcher<br/>×N"))
+    IF["Temporal por imagen<br/>client_id, image_id<br/>bytes disponibles"]
+    HTTP(("HTTP<br/>Wikimedia"))
+    SEND(("Envío de chunks<br/>hilo del worker"))
+    READY(("Disponibilidad<br/>bytes disponibles<br/>fin HTTP / error<br/>por image_id"))
+    end
+    subgraph RETURN["Retorno al cliente"]
+    RQ@{ shape: h-cyl, label: "results[g]<br/>Q2: image_id, seq, last<br/>bytes + metadatos<br/>datos / fin por worker" }
+    GW(("Gateway<br/>Collector · ×G"))
+    RESPQ@{ shape: h-cyl, label: "responses[h]<br/>connection_id, client_id<br/>query_id, payload / fin" }
+    RX(("TCP Handler<br/>×H<br/>client_id → socket"))
+    API(("Socket<br/>TCP/IP"))
+    end
+    P(("Parser /<br/>Projector<br/>×N"))
+    Q2Q@{ shape: h-cyl, label: "article_sections<br/>year, name, url,<br/>sections, image_ref" }
+    Q2(("Q2 Filter<br/>×N"))
+    IQ@{ shape: h-cyl, label: "image_downloads<br/>name, url, image_ref<br/>1 cola · N consumidores" }
+    WM["Wikimedia<br/>servicio externo"]
+    C(("Client<br/>destinatario"))
+    P --> Q2Q
+    Q2Q --> Q2
+    Q2 --> IQ
+    IQ --> IMG
+    IMG --> IF
+    IF --> SEND
+    IMG <--> HTTP
+    HTTP <--> WM
+    RQ --> GW
+    GW --> RESPQ
+    RESPQ --> RX
+    RX --> API
+    API --> C
+    SEND --> RQ
+    IMG --- READY
+    SEND --- READY
+    classDef control fill:#edf7f3,stroke:#377964;
+    class P,Q2,IMG,SEND,GW,RX,C control;
+    classDef boundary fill:#eaf3fd,stroke:#397bac;
+    class HTTP,API boundary;
+    classDef entity fill:#fff5db,stroke:#b6903e;
+    class READY entity;
+    classDef queue fill:#f0f1f9,stroke:#737d9e;
+    class Q2Q,IQ,RQ,RESPQ queue;
+    classDef exchange fill:#f0f1f9,stroke:#737d9e;
+    classDef file fill:#fff7e9,stroke:#ad8242;
+    class IF file;
+    classDef actor fill:white,stroke:#526579;
+    class WM actor;
+%% Descarga y lectura concurrentes: Un temporal por (client_id, image_id). Descarga escribe y avisa bytes disponibles; Envío espera esa señal si alcanza el final momentáneo. EOF del archivo no significa fin HTTP. El estado se sincroniza entre ambos hilos.
+%% Chunks y metadatos: Publica (image_id, seq, last, bytes) en results[g]. Conserva client_id y gateway_id; asocia name y url a image_id. last requiere fin HTTP exitoso y todos los bytes leídos. Si la cola está llena, espera el emisor; las descargas siguen mientras haya cupo y disco.
+%% Borrado y cierre: Borra el temporal y libera el cupo cuando terminó la descarga y se aceptaron todos sus chunks, sin lectores activos. El fin Q2 espera entrada cerrada y todas las tareas terminadas. Un fallo HTTP no se publica como imagen completa; su política sigue pendiente.

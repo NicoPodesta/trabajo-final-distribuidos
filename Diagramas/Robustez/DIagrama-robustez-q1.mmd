@@ -1,0 +1,36 @@
+%% Q1 · artículos en inglés hasta 2020
+%% Fuente semántica; SVG y PNG usan una distribución fija para conservar legibilidad.
+%% Cierres: notificación a todos los participantes después de procesar sus datos.
+flowchart LR
+    subgraph RETURN["Retorno al cliente"]
+    RQ@{ shape: h-cyl, label: "results[g]<br/>Q1: url, date<br/>datos / fin por worker" }
+    GW(("Gateway<br/>Collector · ×G"))
+    RESPQ@{ shape: h-cyl, label: "responses[h]<br/>connection_id, client_id<br/>query_id, payload / fin" }
+    RX(("TCP Handler<br/>×H<br/>client_id → socket"))
+    API(("Socket<br/>TCP/IP"))
+    end
+    P(("Parser /<br/>Projector<br/>×N"))
+    Q1Q@{ shape: h-cyl, label: "article_dates<br/>lang, year, url, date<br/>1 cola · N consumidores" }
+    Q1(("Q1 Filter<br/>×N"))
+    C(("Client<br/>destinatario"))
+    P --> Q1Q
+    Q1Q --> Q1
+    RQ --> GW
+    GW --> RESPQ
+    RESPQ --> RX
+    RX --> API
+    API --> C
+    Q1 --> RQ
+    classDef control fill:#edf7f3,stroke:#377964;
+    class P,Q1,GW,RX,C control;
+    classDef boundary fill:#eaf3fd,stroke:#397bac;
+    class API boundary;
+    classDef entity fill:#fff5db,stroke:#b6903e;
+    classDef queue fill:#f0f1f9,stroke:#737d9e;
+    class Q1Q,RQ,RESPQ queue;
+    classDef exchange fill:#f0f1f9,stroke:#737d9e;
+    classDef file fill:#fff7e9,stroke:#ad8242;
+    classDef actor fill:white,stroke:#526579;
+%% Recibe: Parser publica lang, year, url, date. La cola reparte los artículos entre N filtros.
+%% Emite: Cada coincidencia produce url y date en results[g], con client_id y query_id = Q1.
+%% Cuándo termina: Cada filtro cerró su entrada y publicó sus resultados. Gateway espera el fin de todos los filtros participantes de Q1.

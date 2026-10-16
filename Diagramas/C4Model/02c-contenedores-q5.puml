@@ -1,0 +1,23 @@
+@startuml 02c-contenedores-q5
+!include <C4/C4_Container>
+
+AddElementTag("ref", $bgColor="#e0e0e0", $fontColor="#5a5a5a", $borderColor="#9e9e9e", $legendText="detallado en otro diagrama")
+
+title C4 · Contenedores · Consulta sobre promedio de palabras (Q5)
+
+System_Boundary(sistema, "Wikipedia Article Analysis") {
+    Container(tokenizer, "Tokenizer", "", "Ver 02b · Consultas sobre texto (Q3, Q4)", $tags="ref")
+    Container(gateway, "Gateway", "", "Ver 02a · Cliente, ingesta y consultas sobre metadatos (Q1, Q2)", $tags="ref")
+    Container(q5a, "Q5 Avg Partial", "", "Acumula suma y cantidad de palabras de los abstracts con año ≤ 2020")
+    Container(q5g, "Q5 Avg Aggregator", "", "Combina los parciales y calcula el promedio de cada cliente")
+    Container(q5f, "Q5 Filter", "", "Retiene los artículos con año ≥ 2021 hasta conocer el promedio y deja pasar los que lo superan")
+}
+
+Rel(tokenizer, q5a, "Publica cantidad de palabras de artículos con año ≤ 2020", "Asíncrono, middleware")
+Rel(tokenizer, q5f, "Publica artículos con año ≥ 2021 y su cantidad de palabras", "Asíncrono, middleware")
+Rel(q5a, q5g, "Publica suma y cantidad parciales", "Asíncrono, middleware")
+Rel(q5g, q5f, "Difunde el promedio", "Asíncrono, middleware")
+Rel(q5f, gateway, "Publica resultados de Q5", "Asíncrono, middleware")
+
+SHOW_LEGEND()
+@enduml

@@ -1,0 +1,49 @@
+@startuml q5-promedio
+title Secuencia · Q5 · Promedio y recorrido concurrente
+
+participant "Tokenizer\n(réplica)" as T
+participant "Q5 Avg Partial\n(réplica)" as A
+participant "Q5 Avg Aggregator" as G
+participant "Q5 Filter\n(réplica)" as F
+database "Archivo local Filter \npor client_id" as D
+participant "Gateway\n(réplica del cliente)" as GW
+
+par mientras llegan artículos del cliente
+    T -> A : n_words\naño ≤ 2020
+else
+    T -> F : (url, n_words)\naño ≥ 2021
+    F -> D : append (url, n)\nconsume y ack de inmediato
+end
+
+T -> A : DONE(client)
+A -> A : al tener DONE de todas\nlas réplicas de Tokenizer
+A -> G : (suma, cantidad) de esta réplica\nruteo por client_id
+G -> G : al tener todos los parciales,\ncalcula el promedio final
+G ->> F : promedio final [broadcast]
+
+F -> F : vacía lo ya encolado\ny lo agrega al archivo
+
+par a partir del promedio final
+    T -> F : artículos que llegan después
+    F -> F : filtra esa línea\nsi n > promedio
+    F -> GW : Q5 (url, n_words)\nruteo por gateway_id
+else
+    F -> D : recorre lo ya guardado
+    loop cada línea con n > promedio
+        F -> GW : Q5 (url, n_words)\nruteo por gateway_id
+    end
+end
+
+T -> F : DONE(client)\nde cada réplica de Tokenizer
+F -> D : borra el archivo
+F -> GW : DONE(Q5)
+
+note over F
+  El promedio final habilita el filtro.
+  DONE solo indica que no llegan más artículos:
+  ahí se borra el archivo y se cierra Q5.
+  El recorrido no frena el consumo
+  de otros clientes.
+end note
+
+@enduml
