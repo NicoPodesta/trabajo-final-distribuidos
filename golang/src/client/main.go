@@ -8,13 +8,25 @@ import (
 )
 
 func loadConfig() (client.ClientConfig, error) {
+	serverHost := os.Getenv("SERVER_HOST")
+	if serverHost == "" {
+		return client.ClientConfig{}, errors.New("SERVER_HOST environment variable is required")
+	}
+
+	serverPort := os.Getenv("SERVER_PORT")
+	if serverPort == "" {
+		return client.ClientConfig{}, errors.New("SERVER_PORT environment variable is required")
+	}
+
 	inputDir := os.Getenv("INPUT_DIR")
 	if inputDir == "" {
 		return client.ClientConfig{}, errors.New("INPUT_DIR environment variable is required")
 	}
 
 	return client.ClientConfig{
-		InputDir: inputDir,
+		ServerHost: serverHost,
+		ServerPort: serverPort,
+		InputDir:   inputDir,
 	}, nil
 }
 
@@ -25,8 +37,13 @@ func run() int {
 		return 1
 	}
 
-	articlesClient := client.NewClient(config)
-	if err := articlesClient.Run(); err != nil {
+	server, err := client.NewClient(config)
+	if err != nil {
+		slog.Error("While connecting to server", "err", err)
+		return 1
+	}
+
+	if err := server.Run(); err != nil {
 		slog.Error("Client stopped with error", "err", err)
 		return 1
 	}
