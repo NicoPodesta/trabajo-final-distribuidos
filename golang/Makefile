@@ -1,7 +1,8 @@
 SHELL := /bin/bash
 
 up:
-	docker compose -f docker-compose.yaml up --build --remove-orphans --detach --wait
+	COMPOSE_HTTP_TIMEOUT=300 docker compose -f docker-compose.yaml up --build --remove-orphans --detach
+	docker compose -f docker-compose.yaml logs --follow
 .PHONY: up
 
 down:

@@ -1,4 +1,13 @@
 services:
+  client_0:
+    build:
+      context: ./src/
+      dockerfile: client/Dockerfile
+    container_name: client_0
+    environment:
+    - INPUT_DIR=/datasets
+    volumes:
+    - ../Articulos_ejemplo/Ejemplo_pequenio:/datasets
   rabbitmq:
     build:
       context: ./src/rabbitmq
