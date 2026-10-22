@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"os"
 
-	"payment-prometeo-distributed/filters/filters"
+	"trabajo-final-distribuidos/filters/filters"
 )
 
 func loadConfig() (filters.DateFilterConfig, error) {

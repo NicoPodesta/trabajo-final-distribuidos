@@ -4,7 +4,7 @@ import (
 	"errors"
 	"log/slog"
 	"os"
-	"payment-prometeo-distributed/client/client"
+	"trabajo-final-distribuidos/client/client"
 )
 
 func loadConfig() (client.ClientConfig, error) {

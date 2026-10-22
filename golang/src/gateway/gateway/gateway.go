@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"time"
 
-	"payment-prometeo-distributed/common/messageprotocol/external"
+	"trabajo-final-distribuidos/common/messageprotocol/external"
 )
 
 type GatewayConfig struct {

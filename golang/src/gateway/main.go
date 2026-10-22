@@ -4,7 +4,7 @@ import (
 	"errors"
 	"log/slog"
 	"os"
-	"payment-prometeo-distributed/gateway/gateway"
+	"trabajo-final-distribuidos/gateway/gateway"
 )
 
 func loadConfig() (gateway.GatewayConfig, error) {

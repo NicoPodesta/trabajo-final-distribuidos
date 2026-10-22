@@ -3,9 +3,9 @@ package external
 import (
 	"io"
 
-	"payment-prometeo-distributed/common/article"
-	"payment-prometeo-distributed/common/messageprotocol/external/safeio"
-	"payment-prometeo-distributed/common/messageprotocol/external/serializer"
+	"trabajo-final-distribuidos/common/article"
+	"trabajo-final-distribuidos/common/messageprotocol/external/safeio"
+	"trabajo-final-distribuidos/common/messageprotocol/external/serializer"
 )
 
 type MsgType uint32

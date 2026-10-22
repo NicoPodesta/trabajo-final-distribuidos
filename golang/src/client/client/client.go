@@ -15,8 +15,8 @@ import (
 
 	"github.com/parquet-go/parquet-go"
 
-	"payment-prometeo-distributed/common/article"
-	"payment-prometeo-distributed/common/messageprotocol/external"
+	"trabajo-final-distribuidos/common/article"
+	"trabajo-final-distribuidos/common/messageprotocol/external"
 )
 
 const connectionAttempts = 3

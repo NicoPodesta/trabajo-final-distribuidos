@@ -1,4 +1,4 @@
-module payment-prometeo-distributed
+module trabajo-final-distribuidos
 
 go 1.24.9
 

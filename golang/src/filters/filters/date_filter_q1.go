@@ -8,8 +8,10 @@ import (
 	"sync/atomic"
 	"syscall"
 
-	"payment-prometeo-distributed/common/messageprotocol/external"
+	"trabajo-final-distribuidos/common/messageprotocol/external"
 )
+
+const progressLogInterval = 100
 
 type DateFilterConfig struct {
 	ServerHost string
@@ -78,7 +80,7 @@ func (filter *DateFilter) handleGatewayRequest(conn net.Conn) {
 				return
 			}
 			received++
-			if received%100 == 0 { //logeo cada 100 articulos
+			if received%progressLogInterval == 0 {
 				slog.Info("Received articles", "articles", received)
 			}
 		case external.EndOfRecords:
