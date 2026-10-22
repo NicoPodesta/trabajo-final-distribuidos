@@ -17,9 +17,21 @@ services:
       context: ./src/
       dockerfile: gateway/Dockerfile
     container_name: gateway
+    depends_on:
+    - date_filter_0
     environment:
     - SERVER_HOST=gateway
     - SERVER_PORT=5678
+    - FILTER_HOST=date_filter_0
+    - FILTER_PORT=5679
+  date_filter_0:
+    build:
+      context: ./src/
+      dockerfile: filters/Dockerfile
+    container_name: date_filter_0
+    environment:
+    - SERVER_HOST=date_filter_0
+    - SERVER_PORT=5679
   rabbitmq:
     build:
       context: ./src/rabbitmq
@@ -34,5 +46,5 @@ services:
       test: rabbitmq-diagnostics check_port_connectivity
       timeout: 3s
     ports:
-    - 5672:5672
+    #- 5672:5672
     - 15672:15672

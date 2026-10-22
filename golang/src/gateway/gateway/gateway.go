@@ -1,12 +1,14 @@
 package gateway
 
 import (
+	"fmt"
 	"log/slog"
 	"net"
 	"os"
 	"os/signal"
 	"sync/atomic"
 	"syscall"
+	"time"
 
 	"payment-prometeo-distributed/common/messageprotocol/external"
 )
@@ -14,9 +16,12 @@ import (
 type GatewayConfig struct {
 	ServerHost string
 	ServerPort string
+	FilterHost string
+	FilterPort string
 }
 
 type Gateway struct {
+	config   GatewayConfig
 	listener net.Listener
 	running  atomic.Bool
 }
@@ -27,7 +32,7 @@ func NewGateway(config GatewayConfig) (*Gateway, error) {
 		return nil, err
 	}
 
-	gateway := &Gateway{listener: listener}
+	gateway := &Gateway{config: config, listener: listener}
 	gateway.running.Store(true)
 	return gateway, nil
 }
@@ -66,6 +71,15 @@ func (gateway *Gateway) handleSignals() {
 }
 
 func (gateway *Gateway) handleClientRequest(conn net.Conn) {
+	defer conn.Close()
+
+	filterConn, err := net.DialTimeout("tcp", net.JoinHostPort(gateway.config.FilterHost, gateway.config.FilterPort), 5*time.Second)
+	if err != nil {
+		slog.Error("While connecting to date filter", "err", err)
+		return
+	}
+	defer filterConn.Close()
+
 	received := 0
 loop:
 	for {
@@ -77,14 +91,14 @@ loop:
 
 		switch msgType {
 		case external.ArticleRecord:
-			if err := gateway.handleArticleRecordMessage(conn); err != nil {
+			if err := gateway.handleArticleRecordMessage(conn, filterConn); err != nil {
 				slog.Debug("While handling record message", "err", err)
 				return
 			}
 			received++
 
 		case external.EndOfRecords:
-			if err := gateway.handleEndOfRecordsMessage(conn, received); err != nil {
+			if err := gateway.handleEndOfRecordsMessage(conn, filterConn, received); err != nil {
 				slog.Debug("While handling end of records message", "err", err)
 				return
 			}
@@ -97,13 +111,19 @@ loop:
 	}
 }
 
-func (gateway *Gateway) handleArticleRecordMessage(conn net.Conn) error {
+func (gateway *Gateway) handleArticleRecordMessage(conn, filterConn net.Conn) error {
 	articleRecord, err := external.ReadArticleRecord(conn)
 	if err != nil {
 		slog.Debug("While reading ARTICLE_RECORD", "err", err)
 		return err
 	}
 	slog.Debug("Received ARTICLE_RECORD", "url", articleRecord.Url)
+	if err := external.WriteArticleRecord(filterConn, articleRecord); err != nil {
+		return err
+	}
+	if err := gateway.readFilterAck(filterConn); err != nil {
+		return err
+	}
 	if err := external.WriteAck(conn); err != nil {
 		slog.Debug("While writing ACK message", "err", err)
 		return err
@@ -111,11 +131,28 @@ func (gateway *Gateway) handleArticleRecordMessage(conn net.Conn) error {
 	return nil
 }
 
-func (gateway *Gateway) handleEndOfRecordsMessage(conn net.Conn, received int) error {
+func (gateway *Gateway) handleEndOfRecordsMessage(conn, filterConn net.Conn, received int) error {
 	slog.Info("Received END_OF_RECORDS message", "articles", received)
+	if err := external.WriteEndOfRecords(filterConn); err != nil {
+		return err
+	}
+	if err := gateway.readFilterAck(filterConn); err != nil {
+		return err
+	}
 	if err := external.WriteAck(conn); err != nil {
 		slog.Debug("While writing ACK message", "err", err)
 		return err
+	}
+	return nil
+}
+
+func (gateway *Gateway) readFilterAck(conn net.Conn) error {
+	msgType, err := external.ReadMsgType(conn)
+	if err != nil {
+		return err
+	}
+	if msgType != external.Ack {
+		return fmt.Errorf("expected ACK from date filter, got %d", msgType)
 	}
 	return nil
 }

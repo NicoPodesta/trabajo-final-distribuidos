@@ -12,13 +12,15 @@ func ReadAll(reader io.Reader, size uint32) ([]byte, error) {
 }
 
 func WriteAll(writer io.Writer, msg []byte) error {
-	nwritten_acum := len(msg)
-	for nwritten_acum > 0 {
+	for len(msg) > 0 {
 		nwritten, err := writer.Write(msg)
 		if err != nil {
 			return err
 		}
-		nwritten_acum -= nwritten
+		if nwritten == 0 {
+			return io.ErrShortWrite
+		}
+		msg = msg[nwritten:]
 	}
 	return nil
 }

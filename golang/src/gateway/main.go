@@ -18,9 +18,21 @@ func loadConfig() (gateway.GatewayConfig, error) {
 		return gateway.GatewayConfig{}, errors.New("SERVER_PORT environment variable is required")
 	}
 
+	filterHost := os.Getenv("FILTER_HOST")
+	if filterHost == "" {
+		return gateway.GatewayConfig{}, errors.New("FILTER_HOST environment variable is required")
+	}
+
+	filterPort := os.Getenv("FILTER_PORT")
+	if filterPort == "" {
+		return gateway.GatewayConfig{}, errors.New("FILTER_PORT environment variable is required")
+	}
+
 	return gateway.GatewayConfig{
 		ServerHost: serverHost,
 		ServerPort: serverPort,
+		FilterHost: filterHost,
+		FilterPort: filterPort,
 	}, nil
 }
 
