@@ -6,6 +6,7 @@ import (
 	"trabajo-final-distribuidos/common/article"
 	"trabajo-final-distribuidos/common/messageprotocol/external/safeio"
 	"trabajo-final-distribuidos/common/messageprotocol/external/serializer"
+	"trabajo-final-distribuidos/common/result"
 )
 
 type MsgType uint32
@@ -14,6 +15,7 @@ const (
 	ArticleRecord MsgType = iota + 1
 	Ack
 	EndOfRecords
+	Q1Result
 )
 
 func serializeArticleRecord(articleRecord *article.Article) []byte {
@@ -86,4 +88,27 @@ func WriteAck(writer io.Writer) error {
 
 func WriteEndOfRecords(writer io.Writer) error {
 	return writeMsgType(writer, EndOfRecords)
+}
+
+func WriteQ1Result(writer io.Writer, record *result.Q1Result) error {
+	msg := serializer.SerializeUint32(uint32(Q1Result))
+	msg = append(msg, serializer.SerializeString(record.Url)...)
+	msg = append(msg, serializer.SerializeUint32(record.DateModified)...)
+
+	return safeio.WriteAll(writer, msg)
+}
+
+func ReadQ1Result(reader io.Reader) (*result.Q1Result, error) {
+	url, err := readString(reader)
+	if err != nil {
+		return nil, err
+	}
+
+	serializedDateModified, err := safeio.ReadAll(reader, serializer.UINT32_SIZE)
+	if err != nil {
+		return nil, err
+	}
+	dateModified := serializer.DeserializeUint32(serializedDateModified)
+
+	return &result.Q1Result{Url: url, DateModified: dateModified}, nil
 }
