@@ -2,6 +2,7 @@ package client
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -27,6 +28,7 @@ type ClientConfig struct {
 	ServerHost string
 	ServerPort string
 	InputDir   string
+	OutputDir  string
 }
 
 type Client struct {
@@ -76,6 +78,13 @@ func (client *Client) Run() error {
 	go client.handleSignals()
 
 	if err := client.sendArticleRecords(); err != nil {
+		if client.running.Load() {
+			return err
+		}
+		return nil
+	}
+
+	if err := client.receiveResults(); err != nil {
 		if client.running.Load() {
 			return err
 		}
@@ -137,6 +146,53 @@ func (client *Client) sendArticleRecords() error {
 
 	slog.Info("Finished sending input", "articles", total)
 	return nil
+}
+
+func (client *Client) receiveResults() error {
+	if err := os.MkdirAll(client.config.OutputDir, 0755); err != nil {
+		return err
+	}
+	outputPath := filepath.Join(client.config.OutputDir, "q1_results.csv")
+	file, err := os.Create(outputPath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	slog.Info("Receiving Q1 results from gateway...")
+	receivedResults := 0
+
+	for {
+		msgType, err := external.ReadMsgType(client.conn)
+		if err != nil {
+			return err
+		}
+
+		switch msgType {
+		case external.Q1Result:
+			result, err := external.ReadQ1Result(client.conn)
+			if err != nil {
+				return err
+			}
+			if _, err := fmt.Fprintf(file, "%s,%d\n", result.Url, result.DateModified); err != nil {
+				return err
+			}
+			if err := external.WriteAck(client.conn); err != nil {
+				return err
+			}
+			receivedResults++
+
+		case external.EndOfRecords:
+			if err := external.WriteAck(client.conn); err != nil {
+				return err
+			}
+			slog.Info("Finished receiving results", "total_q1_results", receivedResults)
+			return nil
+
+		default:
+			return fmt.Errorf("unexpected message type while receiving results: %d", msgType)
+		}
+	}
 }
 
 func (client *Client) sendArticleFile(path string) (int, error) {

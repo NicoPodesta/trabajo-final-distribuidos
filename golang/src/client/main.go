@@ -23,10 +23,16 @@ func loadConfig() (client.ClientConfig, error) {
 		return client.ClientConfig{}, errors.New("INPUT_DIR environment variable is required")
 	}
 
+	outputDir := os.Getenv("OUTPUT_DIR")
+	if outputDir == "" {
+		outputDir = "."
+	}
+
 	return client.ClientConfig{
 		ServerHost: serverHost,
 		ServerPort: serverPort,
 		InputDir:   inputDir,
+		OutputDir:  outputDir,
 	}, nil
 }
 

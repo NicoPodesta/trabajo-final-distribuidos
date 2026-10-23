@@ -8,22 +8,27 @@ services:
     - gateway
     environment:
     - INPUT_DIR=/datasets
+    - OUTPUT_DIR=/output
     - SERVER_HOST=gateway
     - SERVER_PORT=5678
     volumes:
     - ../Articulos_ejemplo/Ejemplo_pequenio:/datasets
+    - ./output:/output
+
   gateway:
     build:
       context: ./src/
       dockerfile: gateway/Dockerfile
     container_name: gateway
     depends_on:
-    - date_filter_0
+      rabbitmq:
+        condition: service_healthy
     environment:
     - SERVER_HOST=gateway
     - SERVER_PORT=5678
-    - FILTER_HOST=date_filter_0
-    - FILTER_PORT=5679
+    - RABBITMQ_HOST=rabbitmq
+    - RABBITMQ_PORT=5672
+
   date_filter_0:
     build:
       context: ./src/
@@ -32,6 +37,7 @@ services:
     environment:
     - SERVER_HOST=date_filter_0
     - SERVER_PORT=5679
+
   rabbitmq:
     build:
       context: ./src/rabbitmq
