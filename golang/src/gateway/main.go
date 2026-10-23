@@ -2,8 +2,11 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
+
 	"trabajo-final-distribuidos/gateway/gateway"
 )
 
@@ -18,21 +21,26 @@ func loadConfig() (gateway.GatewayConfig, error) {
 		return gateway.GatewayConfig{}, errors.New("SERVER_PORT environment variable is required")
 	}
 
-	filterHost := os.Getenv("FILTER_HOST")
-	if filterHost == "" {
-		return gateway.GatewayConfig{}, errors.New("FILTER_HOST environment variable is required")
+	rabbitMQHost := os.Getenv("RABBITMQ_HOST")
+	if rabbitMQHost == "" {
+		return gateway.GatewayConfig{}, errors.New("RABBITMQ_HOST environment variable is required")
 	}
 
-	filterPort := os.Getenv("FILTER_PORT")
-	if filterPort == "" {
-		return gateway.GatewayConfig{}, errors.New("FILTER_PORT environment variable is required")
+	rabbitMQPortStr := os.Getenv("RABBITMQ_PORT")
+	if rabbitMQPortStr == "" {
+		return gateway.GatewayConfig{}, errors.New("RABBITMQ_PORT environment variable is required")
+	}
+
+	rabbitMQPort, err := strconv.Atoi(rabbitMQPortStr)
+	if err != nil {
+		return gateway.GatewayConfig{}, fmt.Errorf("invalid RABBITMQ_PORT: %w", err)
 	}
 
 	return gateway.GatewayConfig{
-		ServerHost: serverHost,
-		ServerPort: serverPort,
-		FilterHost: filterHost,
-		FilterPort: filterPort,
+		ServerHost:   serverHost,
+		ServerPort:   serverPort,
+		RabbitMQHost: rabbitMQHost,
+		RabbitMQPort: rabbitMQPort,
 	}, nil
 }
 

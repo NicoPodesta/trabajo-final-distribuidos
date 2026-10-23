@@ -11,19 +11,46 @@ import (
 	"time"
 
 	"trabajo-final-distribuidos/common/messageprotocol/external"
+	"trabajo-final-distribuidos/common/messageprotocol/inner"
+	"trabajo-final-distribuidos/common/middleware"
+)
+
+const (
+	articlesQueueName          = "article_dates"
+	resultsQueueName           = "results"
+	connectionAttempts         = 15
+	connectionAttemptsDelaySec = 2
 )
 
 type GatewayConfig struct {
-	ServerHost string
-	ServerPort string
-	FilterHost string
-	FilterPort string
+	ServerHost   string
+	ServerPort   string
+	RabbitMQHost string
+	RabbitMQPort int
 }
 
 type Gateway struct {
-	config   GatewayConfig
-	listener net.Listener
-	running  atomic.Bool
+	config        GatewayConfig
+	listener      net.Listener
+	articlesQueue middleware.Middleware
+	resultsQueue  middleware.Middleware
+	running       atomic.Bool
+}
+
+func createQueueWithRetry(queueName string, settings middleware.ConnSettings) (middleware.Middleware, error) {
+	var q middleware.Middleware
+	var err error
+
+	for i := 0; i < connectionAttempts; i++ {
+		q, err = middleware.CreateQueueMiddleware(queueName, settings)
+		if err == nil {
+			return q, nil
+		}
+		slog.Warn("Retrying connection to RabbitMQ...", "queue", queueName, "attempt", i+1, "err", err)
+		time.Sleep(connectionAttemptsDelaySec * time.Second)
+	}
+
+	return nil, err
 }
 
 func NewGateway(config GatewayConfig) (*Gateway, error) {
@@ -32,13 +59,40 @@ func NewGateway(config GatewayConfig) (*Gateway, error) {
 		return nil, err
 	}
 
-	gateway := &Gateway{config: config, listener: listener}
-	gateway.running.Store(true)
-	return gateway, nil
+	settings := middleware.ConnSettings{
+		Hostname: config.RabbitMQHost,
+		Port:     config.RabbitMQPort,
+	}
+
+	articlesQ, err := createQueueWithRetry(articlesQueueName, settings)
+	if err != nil {
+		_ = listener.Close()
+		return nil, err
+	}
+
+	resultsQ, err := createQueueWithRetry(resultsQueueName, settings)
+	if err != nil {
+		_ = listener.Close()
+		_ = articlesQ.Close()
+		return nil, err
+	}
+
+	gw := &Gateway{
+		config:        config,
+		listener:      listener,
+		articlesQueue: articlesQ,
+		resultsQueue:  resultsQ,
+	}
+	gw.running.Store(true)
+	return gw, nil
 }
 
 func (gateway *Gateway) Run() error {
-	defer gateway.listener.Close()
+	defer func() {
+		_ = gateway.listener.Close()
+		_ = gateway.articlesQueue.Close()
+		_ = gateway.resultsQueue.Close()
+	}()
 
 	go gateway.handleSignals()
 
@@ -54,7 +108,6 @@ func (gateway *Gateway) Run() error {
 		}
 
 		slog.Info("Client connected...")
-
 		go gateway.handleClientRequest(conn)
 	}
 
@@ -64,95 +117,142 @@ func (gateway *Gateway) Run() error {
 func (gateway *Gateway) handleSignals() {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(signals)
 	<-signals
 	slog.Info("SIGTERM signal received")
 	gateway.running.Store(false)
 	gateway.listener.Close()
+	_ = gateway.articlesQueue.Close()
+	_ = gateway.resultsQueue.Close()
 }
 
 func (gateway *Gateway) handleClientRequest(conn net.Conn) {
 	defer conn.Close()
 
-	filterConn, err := net.DialTimeout("tcp", net.JoinHostPort(gateway.config.FilterHost, gateway.config.FilterPort), 5*time.Second)
-	if err != nil {
-		slog.Error("While connecting to date filter", "err", err)
-		return
-	}
-	defer filterConn.Close()
-
 	received := 0
-loop:
 	for {
 		msgType, err := external.ReadMsgType(conn)
 		if err != nil {
-			slog.Debug("While reading message type", "err", err)
+			slog.Debug("While reading message type from client", "err", err)
 			return
 		}
 
 		switch msgType {
 		case external.ArticleRecord:
-			if err := gateway.handleArticleRecordMessage(conn, filterConn); err != nil {
-				slog.Debug("While handling record message", "err", err)
+			if err := gateway.handleArticleRecordMessage(conn); err != nil {
+				slog.Error("While handling article record message", "err", err)
 				return
 			}
 			received++
 
 		case external.EndOfRecords:
-			if err := gateway.handleEndOfRecordsMessage(conn, filterConn, received); err != nil {
-				slog.Debug("While handling end of records message", "err", err)
+			if err := gateway.handleEndOfRecordsMessage(conn, received); err != nil {
+				slog.Error("While handling end of records message", "err", err)
 				return
 			}
-			break loop
+			gateway.streamResultsToClient(conn)
+			return
 
 		default:
-			slog.Debug("Read unexpected message type")
+			slog.Error("Read unexpected message type from client", "type", msgType)
 			return
 		}
 	}
 }
 
-func (gateway *Gateway) handleArticleRecordMessage(conn, filterConn net.Conn) error {
+func (gateway *Gateway) handleArticleRecordMessage(conn net.Conn) error {
 	articleRecord, err := external.ReadArticleRecord(conn)
 	if err != nil {
-		slog.Debug("While reading ARTICLE_RECORD", "err", err)
 		return err
 	}
-	slog.Debug("Received ARTICLE_RECORD", "url", articleRecord.Url)
-	if err := external.WriteArticleRecord(filterConn, articleRecord); err != nil {
+
+	item := inner.Q1ArticleItem{
+		Language:     articleRecord.Language,
+		Url:          articleRecord.Url,
+		DateModified: articleRecord.DateModified,
+	}
+	msg, err := inner.SerializeQ1Articles([]inner.Q1ArticleItem{item})
+	if err != nil {
 		return err
 	}
-	if err := gateway.readFilterAck(filterConn); err != nil {
+
+	if err := gateway.articlesQueue.Send(*msg); err != nil {
 		return err
 	}
-	if err := external.WriteAck(conn); err != nil {
-		slog.Debug("While writing ACK message", "err", err)
-		return err
-	}
-	return nil
+
+	return external.WriteAck(conn)
 }
 
-func (gateway *Gateway) handleEndOfRecordsMessage(conn, filterConn net.Conn, received int) error {
-	slog.Info("Received END_OF_RECORDS message", "articles", received)
-	if err := external.WriteEndOfRecords(filterConn); err != nil {
+func (gateway *Gateway) handleEndOfRecordsMessage(conn net.Conn, received int) error {
+	slog.Info("Received END_OF_RECORDS message from client", "articles", received)
+
+	eofMsg, err := inner.SerializeQ1Articles([]inner.Q1ArticleItem{})
+	if err != nil {
 		return err
 	}
-	if err := gateway.readFilterAck(filterConn); err != nil {
+
+	if err := gateway.articlesQueue.Send(*eofMsg); err != nil {
 		return err
 	}
-	if err := external.WriteAck(conn); err != nil {
-		slog.Debug("While writing ACK message", "err", err)
-		return err
-	}
-	return nil
+
+	return external.WriteAck(conn)
 }
 
-func (gateway *Gateway) readFilterAck(conn net.Conn) error {
+func (gateway *Gateway) streamResultsToClient(conn net.Conn) {
+	slog.Info("Waiting for Q1 results from RabbitMQ...")
+
+	err := gateway.resultsQueue.StartConsuming(func(msg middleware.Message, ack func(), nack func()) {
+		results, isEOF, err := inner.DeserializeQ1Results(&msg)
+		if err != nil {
+			slog.Error("While deserializing Q1 results", "err", err)
+			ack()
+			return
+		}
+
+		if isEOF {
+			slog.Info("All Q1 results received from workers. Notifying client...")
+			if err := external.WriteEndOfRecords(conn); err != nil {
+				slog.Error("While writing END_OF_RECORDS to client", "err", err)
+				nack()
+				return
+			}
+			if err := gateway.expectClientAck(conn); err != nil {
+				slog.Error("While waiting for client ACK to END_OF_RECORDS", "err", err)
+				nack()
+				return
+			}
+			ack()
+			_ = gateway.resultsQueue.StopConsuming()
+			return
+		}
+
+		for _, res := range results {
+			if err := external.WriteQ1Result(conn, &res); err != nil {
+				slog.Error("While writing Q1 result to client", "err", err)
+				nack()
+				return
+			}
+			if err := gateway.expectClientAck(conn); err != nil {
+				slog.Error("While waiting for client ACK to Q1 result", "err", err)
+				nack()
+				return
+			}
+		}
+		ack()
+	})
+
+	if err != nil && gateway.running.Load() {
+		slog.Error("While consuming results from RabbitMQ", "err", err)
+	}
+}
+
+func (gateway *Gateway) expectClientAck(conn net.Conn) error {
 	msgType, err := external.ReadMsgType(conn)
 	if err != nil {
 		return err
 	}
 	if msgType != external.Ack {
-		return fmt.Errorf("expected ACK from date filter, got %d", msgType)
+		return fmt.Errorf("expected ACK from client, got %d", msgType)
 	}
 	return nil
 }
