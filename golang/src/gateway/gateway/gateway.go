@@ -30,28 +30,16 @@ type GatewayConfig struct {
 	MOMPort    int
 }
 
-type clientSession struct {
-	conn      net.Conn
-	done      chan struct{}
-	closeOnce sync.Once
-}
-
-func (s *clientSession) finish() {
-	s.closeOnce.Do(func() {
-		close(s.done)
-	})
-}
-
 type Gateway struct {
-	config        GatewayConfig
-	listener      net.Listener
-	articlesQueue middleware.Middleware
-	resultsQueue  middleware.Middleware
-	running       atomic.Bool
-	clientSeq     atomic.Uint64
-	sessionsLock  sync.RWMutex
-	sessions      map[string]*clientSession
-	shutdownChan  chan struct{}
+	config          GatewayConfig
+	listener        net.Listener
+	articlesQueue   middleware.Middleware
+	resultsQueue    middleware.Middleware
+	running         atomic.Bool
+	clientSeq       atomic.Uint64
+	sessionsLock    sync.RWMutex
+	sessions        map[string]*clientSession
+	shutdownChannel chan struct{}
 }
 
 func createQueueWithRetry(queueName string, settings middleware.ConnSettings) (middleware.Middleware, error) {
@@ -96,12 +84,12 @@ func NewGateway(config GatewayConfig) (*Gateway, error) {
 	}
 
 	gw := &Gateway{
-		config:        config,
-		listener:      listener,
-		articlesQueue: articlesQ,
-		resultsQueue:  resultsQ,
-		sessions:      make(map[string]*clientSession),
-		shutdownChan:  make(chan struct{}),
+		config:          config,
+		listener:        listener,
+		articlesQueue:   articlesQ,
+		resultsQueue:    resultsQ,
+		sessions:        make(map[string]*clientSession),
+		shutdownChannel: make(chan struct{}),
 	}
 	gw.running.Store(true)
 	return gw, nil
@@ -135,7 +123,7 @@ func (gateway *Gateway) Close() {
 	if !gateway.running.Swap(false) {
 		return
 	}
-	close(gateway.shutdownChan)
+	close(gateway.shutdownChannel)
 	if gateway.listener != nil {
 		_ = gateway.listener.Close()
 	}
@@ -179,10 +167,7 @@ func (gateway *Gateway) handleClientRequest(conn net.Conn) {
 
 	seq := gateway.clientSeq.Add(1)
 	clientID := fmt.Sprintf("%s_%d", gateway.config.ID, seq)
-	session := &clientSession{
-		conn: conn,
-		done: make(chan struct{}),
-	}
+	session := newClientSession(conn)
 	gateway.registerSession(clientID, session)
 	defer func() {
 		session.finish()
@@ -201,14 +186,14 @@ func (gateway *Gateway) handleClientRequest(conn net.Conn) {
 
 		switch msgType {
 		case external.ArticleRecord:
-			if err := gateway.handleArticleRecordMessage(conn, clientID); err != nil {
+			if err := gateway.handleArticleRecordMessage(session, clientID); err != nil {
 				slog.Error("While handling article record message", "clientID", clientID, "err", err)
 				return
 			}
 			received++
 
 		case external.EndOfRecords:
-			if err := gateway.handleEndOfRecordsMessage(conn, clientID, received); err != nil {
+			if err := gateway.handleEndOfRecordsMessage(session, clientID, received); err != nil {
 				slog.Error("While handling end of records message", "clientID", clientID, "err", err)
 				return
 			}
@@ -216,7 +201,7 @@ func (gateway *Gateway) handleClientRequest(conn net.Conn) {
 			select {
 			case <-session.done:
 				slog.Info("Client session completed successfully", "clientID", clientID)
-			case <-gateway.shutdownChan:
+			case <-gateway.shutdownChannel:
 				slog.Warn("Gateway shutting down while waiting for client results", "clientID", clientID)
 			}
 			return
@@ -228,8 +213,8 @@ func (gateway *Gateway) handleClientRequest(conn net.Conn) {
 	}
 }
 
-func (gateway *Gateway) handleArticleRecordMessage(conn net.Conn, clientID string) error {
-	articleRecord, err := external.ReadArticleRecord(conn)
+func (gateway *Gateway) handleArticleRecordMessage(session *clientSession, clientID string) error {
+	articleRecord, err := external.ReadArticleRecord(session.conn)
 	if err != nil {
 		return err
 	}
@@ -248,10 +233,10 @@ func (gateway *Gateway) handleArticleRecordMessage(conn net.Conn, clientID strin
 		return err
 	}
 
-	return external.WriteAck(conn)
+	return session.sendAck()
 }
 
-func (gateway *Gateway) handleEndOfRecordsMessage(conn net.Conn, clientID string, received int) error {
+func (gateway *Gateway) handleEndOfRecordsMessage(session *clientSession, clientID string, received int) error {
 	slog.Info("Received END_OF_RECORDS message from client", "clientID", clientID, "articles", received)
 
 	eofMsg, err := inner.SerializeQ1Articles(clientID, []inner.Q1ArticleItem{})
@@ -263,7 +248,7 @@ func (gateway *Gateway) handleEndOfRecordsMessage(conn net.Conn, clientID string
 		return err
 	}
 
-	return external.WriteAck(conn)
+	return session.sendAck()
 }
 
 func (gateway *Gateway) consumeResults() {
@@ -287,17 +272,8 @@ func (gateway *Gateway) consumeResults() {
 
 		if isEOF {
 			slog.Info("All Q1 results received from workers for client", "clientID", clientID)
-			if err := external.WriteEndOfRecords(session.conn); err != nil {
+			if err := session.sendEndOfRecords(); err != nil {
 				slog.Error("While writing END_OF_RECORDS to client", "clientID", clientID, "err", err)
-				session.finish()
-				ack()
-				return
-			}
-			if err := gateway.expectClientAck(session.conn); err != nil {
-				slog.Error("While waiting for client ACK to END_OF_RECORDS", "clientID", clientID, "err", err)
-				session.finish()
-				ack()
-				return
 			}
 			ack()
 			session.finish()
@@ -305,14 +281,8 @@ func (gateway *Gateway) consumeResults() {
 		}
 
 		for _, res := range results {
-			if err := external.WriteQ1Result(session.conn, &res); err != nil {
+			if err := session.sendResult(&res); err != nil {
 				slog.Error("While writing Q1 result to client", "clientID", clientID, "err", err)
-				session.finish()
-				ack()
-				return
-			}
-			if err := gateway.expectClientAck(session.conn); err != nil {
-				slog.Error("While waiting for client ACK to Q1 result", "clientID", clientID, "err", err)
 				session.finish()
 				ack()
 				return
@@ -324,15 +294,4 @@ func (gateway *Gateway) consumeResults() {
 	if err != nil && gateway.running.Load() {
 		slog.Error("While consuming results from RabbitMQ", "err", err)
 	}
-}
-
-func (gateway *Gateway) expectClientAck(conn net.Conn) error {
-	msgType, err := external.ReadMsgType(conn)
-	if err != nil {
-		return err
-	}
-	if msgType != external.Ack {
-		return fmt.Errorf("expected ACK from client, got %d", msgType)
-	}
-	return nil
 }

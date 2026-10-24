@@ -1,7 +1,7 @@
 package client
 
 import (
-	"errors"
+	"context"
 	"fmt"
 	"io"
 	"io/fs"
@@ -20,9 +20,11 @@ import (
 	"trabajo-final-distribuidos/common/messageprotocol/external"
 )
 
-const connectionAttempts = 3
-const connectionAttemptsDelayMs = 300
-const readBatchSize = 100
+const (
+	connectionAttempts        = 3
+	connectionAttemptsDelayMs = 300
+	readBatchSize             = 100
+)
 
 type ClientConfig struct {
 	ServerHost string
@@ -75,47 +77,49 @@ func connectToServer(host, port string) (net.Conn, error) {
 
 func (client *Client) Run() error {
 	defer client.conn.Close()
-	go client.handleSignals()
 
-	if err := client.sendArticleRecords(); err != nil {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go client.handleSignals(cancel)
+
+	ackChannel := make(chan struct{}, 1)
+	receiverErrorChannel := make(chan error, 1)
+
+	go func() {
+		receiverErrorChannel <- client.receiveLoop(ctx, ackChannel)
+	}()
+
+	sendErr := client.sendArticleRecords(ctx, ackChannel)
+	if sendErr != nil {
+		cancel()
+		client.conn.Close()
 		if client.running.Load() {
-			return err
+			return sendErr
 		}
 		return nil
 	}
 
-	if err := client.receiveResults(); err != nil {
-		if client.running.Load() {
-			return err
-		}
-		return nil
+	recvErr := <-receiverErrorChannel
+	if recvErr != nil && client.running.Load() {
+		return recvErr
 	}
 
 	return nil
 }
 
-func (client *Client) handleSignals() {
+func (client *Client) handleSignals(cancel context.CancelFunc) {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(signals)
 	<-signals
 	slog.Info("SIGTERM signal received")
 	client.running.Store(false)
+	cancel()
 	client.conn.Close()
 }
 
-func (client *Client) expectMsgType(expectedMsgType external.MsgType) error {
-	msgType, err := external.ReadMsgType(client.conn)
-	if err != nil {
-		slog.Debug("Error while reading message type", "err", err)
-		return err
-	}
-	if msgType != expectedMsgType {
-		return errors.New("Unexpected message type")
-	}
-	return nil
-}
-
-func (client *Client) sendArticleRecords() error {
+func (client *Client) sendArticleRecords(ctx context.Context, ackChannel <-chan struct{}) error {
 	total := 0
 	err := filepath.WalkDir(client.config.InputDir, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
@@ -125,7 +129,7 @@ func (client *Client) sendArticleRecords() error {
 			return nil
 		}
 
-		sent, err := client.sendArticleFile(path)
+		sent, err := client.sendArticleFile(ctx, path, ackChannel)
 		if err != nil {
 			return err
 		}
@@ -140,62 +144,18 @@ func (client *Client) sendArticleRecords() error {
 	if err := external.WriteEndOfRecords(client.conn); err != nil {
 		return err
 	}
-	if err := client.expectMsgType(external.Ack); err != nil {
-		return err
+
+	select {
+	case <-ackChannel:
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 
 	slog.Info("Finished sending input", "articles", total)
 	return nil
 }
 
-func (client *Client) receiveResults() error {
-	if err := os.MkdirAll(client.config.OutputDir, 0755); err != nil {
-		return err
-	}
-	outputPath := filepath.Join(client.config.OutputDir, "q1_results.csv")
-	file, err := os.Create(outputPath)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	slog.Info("Receiving Q1 results from gateway...")
-	receivedResults := 0
-
-	for {
-		msgType, err := external.ReadMsgType(client.conn)
-		if err != nil {
-			return err
-		}
-
-		switch msgType {
-		case external.Q1Result:
-			result, err := external.ReadQ1Result(client.conn)
-			if err != nil {
-				return err
-			}
-			if _, err := fmt.Fprintf(file, "%s,%d\n", result.Url, result.DateModified); err != nil {
-				return err
-			}
-			if err := external.WriteAck(client.conn); err != nil {
-				return err
-			}
-			receivedResults++
-
-		case external.EndOfRecords:
-			if err := external.WriteAck(client.conn); err != nil {
-				return err
-			}
-			slog.Info("Finished receiving results", "total_q1_results", receivedResults)
-			return nil
-
-		default:
-			return fmt.Errorf("unexpected message type while receiving results: %d", msgType)
-		}
-	}
-}
-
-func (client *Client) sendArticleFile(path string) (int, error) {
+func (client *Client) sendArticleFile(ctx context.Context, path string, ackChannel <-chan struct{}) (int, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		slog.Debug("Error while opening input file", "err", err)
@@ -220,8 +180,10 @@ func (client *Client) sendArticleFile(path string) (int, error) {
 				return sent, err
 			}
 
-			if err := client.expectMsgType(external.Ack); err != nil {
-				return sent, err
+			select {
+			case <-ackChannel:
+			case <-ctx.Done():
+				return sent, ctx.Err()
 			}
 			sent++
 		}
@@ -236,4 +198,52 @@ func (client *Client) sendArticleFile(path string) (int, error) {
 	}
 
 	return sent, nil
+}
+
+func (client *Client) receiveLoop(ctx context.Context, ackChannel chan<- struct{}) error {
+	if err := os.MkdirAll(client.config.OutputDir, 0755); err != nil {
+		return err
+	}
+	outputPath := filepath.Join(client.config.OutputDir, "q1_results.csv")
+	file, err := os.Create(outputPath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	slog.Info("Receiver listening for results and ACKs from gateway...")
+	receivedResults := 0
+
+	for {
+		msgType, err := external.ReadMsgType(client.conn)
+		if err != nil {
+			return err
+		}
+
+		switch msgType {
+		case external.Ack:
+			select {
+			case ackChannel <- struct{}{}:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+
+		case external.Q1Result:
+			result, err := external.ReadQ1Result(client.conn)
+			if err != nil {
+				return err
+			}
+			if _, err := fmt.Fprintf(file, "%s,%d\n", result.Url, result.DateModified); err != nil {
+				return err
+			}
+			receivedResults++
+
+		case external.EndOfRecords:
+			slog.Info("Finished receiving results", "total_q1_results", receivedResults)
+			return nil
+
+		default:
+			return fmt.Errorf("unexpected message type while receiving: %d", msgType)
+		}
+	}
 }
