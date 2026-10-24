@@ -24,6 +24,7 @@ services:
       rabbitmq:
         condition: service_healthy
     environment:
+    - ID=0
     - SERVER_HOST=gateway
     - SERVER_PORT=5678
     - MOM_HOST=rabbitmq

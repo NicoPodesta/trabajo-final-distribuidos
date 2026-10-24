@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -17,16 +18,28 @@ import (
 
 const (
 	articlesQueueName          = "article_dates"
-	resultsQueueName           = "results"
 	connectionAttempts         = 15
 	connectionAttemptsDelaySec = 2
 )
 
 type GatewayConfig struct {
+	ID         string
 	ServerHost string
 	ServerPort string
 	MOMHost    string
 	MOMPort    int
+}
+
+type clientSession struct {
+	conn      net.Conn
+	done      chan struct{}
+	closeOnce sync.Once
+}
+
+func (s *clientSession) finish() {
+	s.closeOnce.Do(func() {
+		close(s.done)
+	})
 }
 
 type Gateway struct {
@@ -35,6 +48,10 @@ type Gateway struct {
 	articlesQueue middleware.Middleware
 	resultsQueue  middleware.Middleware
 	running       atomic.Bool
+	clientSeq     atomic.Uint64
+	sessionsLock  sync.RWMutex
+	sessions      map[string]*clientSession
+	shutdownChan  chan struct{}
 }
 
 func createQueueWithRetry(queueName string, settings middleware.ConnSettings) (middleware.Middleware, error) {
@@ -70,6 +87,7 @@ func NewGateway(config GatewayConfig) (*Gateway, error) {
 		return nil, err
 	}
 
+	resultsQueueName := fmt.Sprintf("results_%s", config.ID)
 	resultsQ, err := createQueueWithRetry(resultsQueueName, settings)
 	if err != nil {
 		_ = listener.Close()
@@ -82,21 +100,20 @@ func NewGateway(config GatewayConfig) (*Gateway, error) {
 		listener:      listener,
 		articlesQueue: articlesQ,
 		resultsQueue:  resultsQ,
+		sessions:      make(map[string]*clientSession),
+		shutdownChan:  make(chan struct{}),
 	}
 	gw.running.Store(true)
 	return gw, nil
 }
 
 func (gateway *Gateway) Run() error {
-	defer func() {
-		_ = gateway.listener.Close()
-		_ = gateway.articlesQueue.Close()
-		_ = gateway.resultsQueue.Close()
-	}()
+	defer gateway.Close()
 
 	go gateway.handleSignals()
+	go gateway.consumeResults()
 
-	slog.Info("Accepting connections...")
+	slog.Info("Accepting connections...", "gatewayID", gateway.config.ID)
 
 	for {
 		conn, err := gateway.listener.Accept()
@@ -114,53 +131,104 @@ func (gateway *Gateway) Run() error {
 	return nil
 }
 
+func (gateway *Gateway) Close() {
+	if !gateway.running.Swap(false) {
+		return
+	}
+	close(gateway.shutdownChan)
+	if gateway.listener != nil {
+		_ = gateway.listener.Close()
+	}
+	if gateway.articlesQueue != nil {
+		_ = gateway.articlesQueue.Close()
+	}
+	if gateway.resultsQueue != nil {
+		_ = gateway.resultsQueue.Close()
+	}
+}
+
 func (gateway *Gateway) handleSignals() {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(signals)
 	<-signals
 	slog.Info("SIGTERM signal received")
-	gateway.running.Store(false)
-	gateway.listener.Close()
-	_ = gateway.articlesQueue.Close()
-	_ = gateway.resultsQueue.Close()
+	gateway.Close()
+}
+
+func (gateway *Gateway) registerSession(clientID string, session *clientSession) {
+	gateway.sessionsLock.Lock()
+	defer gateway.sessionsLock.Unlock()
+	gateway.sessions[clientID] = session
+}
+
+func (gateway *Gateway) unregisterSession(clientID string) {
+	gateway.sessionsLock.Lock()
+	defer gateway.sessionsLock.Unlock()
+	delete(gateway.sessions, clientID)
+}
+
+func (gateway *Gateway) getSession(clientID string) *clientSession {
+	gateway.sessionsLock.RLock()
+	defer gateway.sessionsLock.RUnlock()
+	return gateway.sessions[clientID]
 }
 
 func (gateway *Gateway) handleClientRequest(conn net.Conn) {
 	defer conn.Close()
 
+	seq := gateway.clientSeq.Add(1)
+	clientID := fmt.Sprintf("%s_%d", gateway.config.ID, seq)
+	session := &clientSession{
+		conn: conn,
+		done: make(chan struct{}),
+	}
+	gateway.registerSession(clientID, session)
+	defer func() {
+		session.finish()
+		gateway.unregisterSession(clientID)
+	}()
+
+	slog.Info("Client registered", "clientID", clientID)
+
 	received := 0
 	for {
 		msgType, err := external.ReadMsgType(conn)
 		if err != nil {
-			slog.Debug("While reading message type from client", "err", err)
+			slog.Debug("While reading message type from client", "clientID", clientID, "err", err)
 			return
 		}
 
 		switch msgType {
 		case external.ArticleRecord:
-			if err := gateway.handleArticleRecordMessage(conn); err != nil {
-				slog.Error("While handling article record message", "err", err)
+			if err := gateway.handleArticleRecordMessage(conn, clientID); err != nil {
+				slog.Error("While handling article record message", "clientID", clientID, "err", err)
 				return
 			}
 			received++
 
 		case external.EndOfRecords:
-			if err := gateway.handleEndOfRecordsMessage(conn, received); err != nil {
-				slog.Error("While handling end of records message", "err", err)
+			if err := gateway.handleEndOfRecordsMessage(conn, clientID, received); err != nil {
+				slog.Error("While handling end of records message", "clientID", clientID, "err", err)
 				return
 			}
-			gateway.streamResultsToClient(conn)
+
+			select {
+			case <-session.done:
+				slog.Info("Client session completed successfully", "clientID", clientID)
+			case <-gateway.shutdownChan:
+				slog.Warn("Gateway shutting down while waiting for client results", "clientID", clientID)
+			}
 			return
 
 		default:
-			slog.Error("Read unexpected message type from client", "type", msgType)
+			slog.Error("Read unexpected message type from client", "clientID", clientID, "type", msgType)
 			return
 		}
 	}
 }
 
-func (gateway *Gateway) handleArticleRecordMessage(conn net.Conn) error {
+func (gateway *Gateway) handleArticleRecordMessage(conn net.Conn, clientID string) error {
 	articleRecord, err := external.ReadArticleRecord(conn)
 	if err != nil {
 		return err
@@ -171,7 +239,7 @@ func (gateway *Gateway) handleArticleRecordMessage(conn net.Conn) error {
 		Url:          articleRecord.Url,
 		DateModified: articleRecord.DateModified,
 	}
-	msg, err := inner.SerializeQ1Articles([]inner.Q1ArticleItem{item})
+	msg, err := inner.SerializeQ1Articles(clientID, []inner.Q1ArticleItem{item})
 	if err != nil {
 		return err
 	}
@@ -183,10 +251,10 @@ func (gateway *Gateway) handleArticleRecordMessage(conn net.Conn) error {
 	return external.WriteAck(conn)
 }
 
-func (gateway *Gateway) handleEndOfRecordsMessage(conn net.Conn, received int) error {
-	slog.Info("Received END_OF_RECORDS message from client", "articles", received)
+func (gateway *Gateway) handleEndOfRecordsMessage(conn net.Conn, clientID string, received int) error {
+	slog.Info("Received END_OF_RECORDS message from client", "clientID", clientID, "articles", received)
 
-	eofMsg, err := inner.SerializeQ1Articles([]inner.Q1ArticleItem{})
+	eofMsg, err := inner.SerializeQ1Articles(clientID, []inner.Q1ArticleItem{})
 	if err != nil {
 		return err
 	}
@@ -198,43 +266,55 @@ func (gateway *Gateway) handleEndOfRecordsMessage(conn net.Conn, received int) e
 	return external.WriteAck(conn)
 }
 
-func (gateway *Gateway) streamResultsToClient(conn net.Conn) {
-	slog.Info("Waiting for Q1 results from RabbitMQ...")
+func (gateway *Gateway) consumeResults() {
+	resultsQueue := fmt.Sprintf("results_%s", gateway.config.ID)
+	slog.Info("Starting results consumer on queue...", "queue", resultsQueue)
 
 	err := gateway.resultsQueue.StartConsuming(func(msg middleware.Message, ack func(), nack func()) {
-		results, isEOF, err := inner.DeserializeQ1Results(&msg)
+		clientID, results, isEOF, err := inner.DeserializeQ1Results(&msg)
 		if err != nil {
 			slog.Error("While deserializing Q1 results", "err", err)
 			ack()
 			return
 		}
 
+		session := gateway.getSession(clientID)
+		if session == nil {
+			slog.Warn("Received results for unknown or disconnected client", "clientID", clientID)
+			ack()
+			return
+		}
+
 		if isEOF {
-			slog.Info("All Q1 results received from workers. Notifying client...")
-			if err := external.WriteEndOfRecords(conn); err != nil {
-				slog.Error("While writing END_OF_RECORDS to client", "err", err)
-				nack()
+			slog.Info("All Q1 results received from workers for client", "clientID", clientID)
+			if err := external.WriteEndOfRecords(session.conn); err != nil {
+				slog.Error("While writing END_OF_RECORDS to client", "clientID", clientID, "err", err)
+				session.finish()
+				ack()
 				return
 			}
-			if err := gateway.expectClientAck(conn); err != nil {
-				slog.Error("While waiting for client ACK to END_OF_RECORDS", "err", err)
-				nack()
+			if err := gateway.expectClientAck(session.conn); err != nil {
+				slog.Error("While waiting for client ACK to END_OF_RECORDS", "clientID", clientID, "err", err)
+				session.finish()
+				ack()
 				return
 			}
 			ack()
-			_ = gateway.resultsQueue.StopConsuming()
+			session.finish()
 			return
 		}
 
 		for _, res := range results {
-			if err := external.WriteQ1Result(conn, &res); err != nil {
-				slog.Error("While writing Q1 result to client", "err", err)
-				nack()
+			if err := external.WriteQ1Result(session.conn, &res); err != nil {
+				slog.Error("While writing Q1 result to client", "clientID", clientID, "err", err)
+				session.finish()
+				ack()
 				return
 			}
-			if err := gateway.expectClientAck(conn); err != nil {
-				slog.Error("While waiting for client ACK to Q1 result", "err", err)
-				nack()
+			if err := gateway.expectClientAck(session.conn); err != nil {
+				slog.Error("While waiting for client ACK to Q1 result", "clientID", clientID, "err", err)
+				session.finish()
+				ack()
 				return
 			}
 		}

@@ -11,6 +11,11 @@ import (
 )
 
 func loadConfig() (gateway.GatewayConfig, error) {
+	id := os.Getenv("ID")
+	if id == "" {
+		id = "0"
+	}
+
 	serverHost := os.Getenv("SERVER_HOST")
 	if serverHost == "" {
 		return gateway.GatewayConfig{}, errors.New("SERVER_HOST environment variable is required")
@@ -37,6 +42,7 @@ func loadConfig() (gateway.GatewayConfig, error) {
 	}
 
 	return gateway.GatewayConfig{
+		ID:         id,
 		ServerHost: serverHost,
 		ServerPort: serverPort,
 		MOMHost:    momHost,
