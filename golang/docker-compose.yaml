@@ -26,8 +26,8 @@ services:
     environment:
     - SERVER_HOST=gateway
     - SERVER_PORT=5678
-    - RABBITMQ_HOST=rabbitmq
-    - RABBITMQ_PORT=5672
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
 
   date_filter_0:
     build:
@@ -52,5 +52,5 @@ services:
       test: rabbitmq-diagnostics check_port_connectivity
       timeout: 3s
     ports:
-    #- 5672:5672
+    - 5672:5672
     - 15672:15672

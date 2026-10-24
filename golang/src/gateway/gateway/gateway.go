@@ -23,10 +23,10 @@ const (
 )
 
 type GatewayConfig struct {
-	ServerHost   string
-	ServerPort   string
-	RabbitMQHost string
-	RabbitMQPort int
+	ServerHost string
+	ServerPort string
+	MOMHost    string
+	MOMPort    int
 }
 
 type Gateway struct {
@@ -60,8 +60,8 @@ func NewGateway(config GatewayConfig) (*Gateway, error) {
 	}
 
 	settings := middleware.ConnSettings{
-		Hostname: config.RabbitMQHost,
-		Port:     config.RabbitMQPort,
+		Hostname: config.MOMHost,
+		Port:     config.MOMPort,
 	}
 
 	articlesQ, err := createQueueWithRetry(articlesQueueName, settings)

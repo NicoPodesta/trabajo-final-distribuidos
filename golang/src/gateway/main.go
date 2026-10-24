@@ -21,26 +21,26 @@ func loadConfig() (gateway.GatewayConfig, error) {
 		return gateway.GatewayConfig{}, errors.New("SERVER_PORT environment variable is required")
 	}
 
-	rabbitMQHost := os.Getenv("RABBITMQ_HOST")
-	if rabbitMQHost == "" {
-		return gateway.GatewayConfig{}, errors.New("RABBITMQ_HOST environment variable is required")
+	momHost := os.Getenv("MOM_HOST")
+	if momHost == "" {
+		return gateway.GatewayConfig{}, errors.New("MOM_HOST environment variable is required")
 	}
 
-	rabbitMQPortStr := os.Getenv("RABBITMQ_PORT")
-	if rabbitMQPortStr == "" {
-		return gateway.GatewayConfig{}, errors.New("RABBITMQ_PORT environment variable is required")
+	momPortStr := os.Getenv("MOM_PORT")
+	if momPortStr == "" {
+		return gateway.GatewayConfig{}, errors.New("MOM_PORT environment variable is required")
 	}
 
-	rabbitMQPort, err := strconv.Atoi(rabbitMQPortStr)
+	momPort, err := strconv.Atoi(momPortStr)
 	if err != nil {
-		return gateway.GatewayConfig{}, fmt.Errorf("invalid RABBITMQ_PORT: %w", err)
+		return gateway.GatewayConfig{}, fmt.Errorf("invalid MOM_PORT: %w", err)
 	}
 
 	return gateway.GatewayConfig{
-		ServerHost:   serverHost,
-		ServerPort:   serverPort,
-		RabbitMQHost: rabbitMQHost,
-		RabbitMQPort: rabbitMQPort,
+		ServerHost: serverHost,
+		ServerPort: serverPort,
+		MOMHost:    momHost,
+		MOMPort:    momPort,
 	}, nil
 }
 
