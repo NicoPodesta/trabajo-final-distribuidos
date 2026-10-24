@@ -35,9 +35,11 @@ services:
       context: ./src/
       dockerfile: filters/Dockerfile
     container_name: date_filter_0
+    depends_on:
+    - rabbitmq
     environment:
-    - SERVER_HOST=date_filter_0
-    - SERVER_PORT=5679
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
 
   rabbitmq:
     build:
@@ -53,5 +55,4 @@ services:
       test: rabbitmq-diagnostics check_port_connectivity
       timeout: 3s
     ports:
-    - 5672:5672
     - 15672:15672

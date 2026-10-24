@@ -2,55 +2,83 @@ package filters
 
 import (
 	"log/slog"
-	"net"
 	"os"
 	"os/signal"
-	"sync/atomic"
 	"syscall"
+	"time"
 
-	"trabajo-final-distribuidos/common/messageprotocol/external"
+	"trabajo-final-distribuidos/common/messageprotocol/inner"
+	"trabajo-final-distribuidos/common/middleware"
 )
 
-const progressLogInterval = 100
+const (
+	articlesQueueName          = "article_dates"
+	connectionAttempts         = 15
+	connectionAttemptsDelaySec = 2
+	progressLogInterval        = 100
+)
 
 type DateFilterConfig struct {
-	ServerHost string
-	ServerPort string
+	MOMHost string
+	MOMPort int
 }
 
 type DateFilter struct {
-	listener net.Listener
-	running  atomic.Bool
+	articlesQueue middleware.Middleware
+	received      int
+	matched       int
+}
+
+func createQueueWithRetry(queueName string, settings middleware.ConnSettings) (middleware.Middleware, error) {
+	var q middleware.Middleware
+	var err error
+	for i := 0; i < connectionAttempts; i++ {
+		q, err = middleware.CreateQueueMiddleware(queueName, settings)
+		if err == nil {
+			return q, nil
+		}
+		slog.Warn("Retrying connection to RabbitMQ...", "queue", queueName, "attempt", i+1, "err", err)
+		if i+1 < connectionAttempts {
+			time.Sleep(connectionAttemptsDelaySec * time.Second)
+		}
+	}
+	return nil, err
 }
 
 func NewDateFilter(config DateFilterConfig) (*DateFilter, error) {
-	listener, err := net.Listen("tcp", net.JoinHostPort(config.ServerHost, config.ServerPort))
+	settings := middleware.ConnSettings{Hostname: config.MOMHost, Port: config.MOMPort}
+	articlesQueue, err := createQueueWithRetry(articlesQueueName, settings)
 	if err != nil {
 		return nil, err
 	}
-
-	filter := &DateFilter{listener: listener}
-	filter.running.Store(true)
-	return filter, nil
+	return &DateFilter{articlesQueue: articlesQueue}, nil
 }
 
 func (filter *DateFilter) Run() error {
-	defer filter.listener.Close()
+	defer filter.articlesQueue.Close()
 	go filter.handleSignals()
 
-	slog.Info("Accepting gateway connections...")
-	for {
-		conn, err := filter.listener.Accept()
-		if err != nil {
-			if !filter.running.Load() {
-				return nil
-			}
-			return err
+	slog.Info("Consuming articles from RabbitMQ...", "queue", articlesQueueName)
+	var processingErr error
+	err := filter.articlesQueue.StartConsuming(func(msg middleware.Message, ack func(), nack func()) {
+		if processingErr != nil {
+			nack()
+			return
+		}
+		if processingErr = filter.handleGatewayMessage(msg); processingErr != nil {
+			slog.Error("While handling gateway message", "err", processingErr)
+			
+			filter.articlesQueue.StopConsuming()
+			nack()
+			return
 		}
 
-		slog.Info("Gateway connected...")
-		go filter.handleGatewayRequest(conn)
+		ack()
+	})
+	if processingErr != nil {
+		return processingErr
 	}
+	return err
 }
 
 func (filter *DateFilter) handleSignals() {
@@ -59,53 +87,45 @@ func (filter *DateFilter) handleSignals() {
 	defer signal.Stop(signals)
 	<-signals
 	slog.Info("Shutdown signal received")
-	filter.running.Store(false)
-	filter.listener.Close()
+	filter.articlesQueue.StopConsuming()
 }
 
-func (filter *DateFilter) handleGatewayRequest(conn net.Conn) {
-	defer conn.Close()
-	received := 0
-	for {
-		msgType, err := external.ReadMsgType(conn)
-		if err != nil {
-			slog.Error("While reading message type from gateway", "err", err)
-			return
-		}
-
-		switch msgType {
-		case external.ArticleRecord:
-			if err := filter.handleArticleRecordMessage(conn); err != nil {
-				slog.Error("While handling record message", "err", err)
-				return
-			}
-			received++
-			if received%progressLogInterval == 0 {
-				slog.Info("Received articles", "articles", received)
-			}
-		case external.EndOfRecords:
-			if err := filter.handleEndOfRecordsMessage(conn, received); err != nil {
-				slog.Error("While handling end of records message", "err", err)
-			}
-			return
-		default:
-			slog.Error("Read unexpected message type", "type", msgType)
-			return
-		}
-	}
-}
-
-func (filter *DateFilter) handleArticleRecordMessage(conn net.Conn) error {
-	_, err := external.ReadArticleRecord(conn)
+func (filter *DateFilter) handleGatewayMessage(msg middleware.Message) error {
+	clientID, records, isEOF, err := inner.DeserializeQ1Articles(&msg)
 	if err != nil {
 		return err
 	}
 
-	// Aca se iría agregando la logica para continuar Q1
-	return external.WriteAck(conn)
+	if isEOF {
+		filter.handleEndOfRecordsMessage(clientID)
+		return nil
+	}
+
+	for _, articleRecord := range records {
+		filter.handleArticleRecordMessage(clientID, articleRecord)
+		filter.received++
+		if filter.received%progressLogInterval == 0 {
+			slog.Info("Received articles", "clientID", clientID, "articles", filter.received)
+		}
+	}
+	return nil
 }
 
-func (filter *DateFilter) handleEndOfRecordsMessage(conn net.Conn, received int) error {
-	slog.Info("Received END_OF_RECORDS message", "articles", received)
-	return external.WriteAck(conn)
+func (filter *DateFilter) handleArticleRecordMessage(clientID string, articleRecord inner.Q1ArticleItem) {
+	dateModified := time.Unix(int64(articleRecord.DateModified), 0).UTC()
+	if articleRecord.Language == "en" && dateModified.Year() <= 2020 {
+		filter.matched++
+		slog.Info("Article matched date filter",
+			"clientID", clientID,
+			"language", articleRecord.Language,
+			"url", articleRecord.Url,
+			"date_modified", dateModified.Format(time.DateTime),
+		)
+	}
+}
+
+func (filter *DateFilter) handleEndOfRecordsMessage(clientID string) {
+	slog.Info("Received end of input", "clientID", clientID, "articles", filter.received, "matches", filter.matched)
+	filter.received = 0
+	filter.matched = 0
 }

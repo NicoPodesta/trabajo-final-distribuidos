@@ -2,26 +2,33 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"os"
+	"strconv"
 
 	"trabajo-final-distribuidos/filters/filters"
 )
 
 func loadConfig() (filters.DateFilterConfig, error) {
-	serverHost := os.Getenv("SERVER_HOST")
-	if serverHost == "" {
-		return filters.DateFilterConfig{}, errors.New("SERVER_HOST environment variable is required")
+	momHost := os.Getenv("MOM_HOST")
+	if momHost == "" {
+		return filters.DateFilterConfig{}, errors.New("MOM_HOST environment variable is required")
 	}
 
-	serverPort := os.Getenv("SERVER_PORT")
-	if serverPort == "" {
-		return filters.DateFilterConfig{}, errors.New("SERVER_PORT environment variable is required")
+	momPortStr := os.Getenv("MOM_PORT")
+	if momPortStr == "" {
+		return filters.DateFilterConfig{}, errors.New("MOM_PORT environment variable is required")
+	}
+
+	momPort, err := strconv.Atoi(momPortStr)
+	if err != nil {
+		return filters.DateFilterConfig{}, fmt.Errorf("invalid MOM_PORT: %w", err)
 	}
 
 	return filters.DateFilterConfig{
-		ServerHost: serverHost,
-		ServerPort: serverPort,
+		MOMHost: momHost,
+		MOMPort: momPort,
 	}, nil
 }
 
