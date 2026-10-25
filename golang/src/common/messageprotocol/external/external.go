@@ -14,8 +14,8 @@ const (
 	ArticleRecord MsgType = iota + 1
 	Ack
 	EndOfRecords
-	Q1Result
 	GatewayAssignment
+	Q1Result
 	Q2Result
 	Q3Result
 	Q4Result
