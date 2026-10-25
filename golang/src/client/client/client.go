@@ -3,12 +3,10 @@ package client
 import (
 	"context"
 	"fmt"
-	"io/fs"
 	"log/slog"
 	"net"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -29,9 +27,11 @@ type ClientConfig struct {
 }
 
 type Client struct {
-	conn    net.Conn
-	running atomic.Bool
-	config  ClientConfig
+	conn     net.Conn
+	sender   *Sender
+	receiver *Receiver
+	running  atomic.Bool
+	config   ClientConfig
 }
 
 func NewClient(config ClientConfig) (*Client, error) {
@@ -46,9 +46,40 @@ func NewClient(config ClientConfig) (*Client, error) {
 		return nil, err
 	}
 
-	client := &Client{conn: conn, config: config}
+	writer, err := NewResultWriter(config.OutputDir)
+	if err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("while initializing result writer: %w", err)
+	}
+
+	sender := NewSender(conn, config.InputDir)
+	receiver := NewReceiver(conn, writer)
+
+	client := &Client{
+		conn:     conn,
+		sender:   sender,
+		receiver: receiver,
+		config:   config,
+	}
 	client.running.Store(true)
 	return client, nil
+}
+
+func connectToServer(host, port string) (net.Conn, error) {
+	var err error
+	var conn net.Conn
+
+	for range connectionAttempts {
+		conn, err = net.Dial("tcp", host+":"+port)
+		if err != nil {
+			slog.Warn("Retrying connection...")
+			time.Sleep(connectionAttemptsDelayMs * time.Millisecond)
+			continue
+		}
+		break
+	}
+
+	return conn, err
 }
 
 func resolveGatewayFromLoadBalancer(lbHost, lbPort string) (string, string, error) {
@@ -71,23 +102,6 @@ func resolveGatewayFromLoadBalancer(lbHost, lbPort string) (string, string, erro
 	return host, port, nil
 }
 
-func connectToServer(host, port string) (net.Conn, error) {
-	var err error
-	var conn net.Conn
-
-	for range connectionAttempts {
-		conn, err = net.Dial("tcp", host+":"+port)
-		if err != nil {
-			slog.Warn("Retrying connection...")
-			time.Sleep(connectionAttemptsDelayMs * time.Millisecond)
-			continue
-		}
-		break
-	}
-
-	return conn, err
-}
-
 func (client *Client) Run() error {
 	defer client.conn.Close()
 
@@ -100,13 +114,13 @@ func (client *Client) Run() error {
 	receiverErrorChannel := make(chan error, 1)
 
 	go func() {
-		receiverErrorChannel <- client.receiveLoop(ctx, ackChannel)
+		receiverErrorChannel <- client.receiver.Receive(ctx, ackChannel)
 	}()
 
-	sendErr := client.sendArticleRecords(ctx, ackChannel)
+	sendErr := client.sender.Send(ctx, ackChannel)
 	if sendErr != nil {
+		client.running.Store(false)
 		cancel()
-		client.conn.Close()
 		if client.running.Load() {
 			return sendErr
 		}
@@ -130,88 +144,4 @@ func (client *Client) handleSignals(cancel context.CancelFunc) {
 	client.running.Store(false)
 	cancel()
 	client.conn.Close()
-}
-
-func (client *Client) sendArticleRecords(ctx context.Context, ackChannel <-chan struct{}) error {
-	total := 0
-	err := filepath.WalkDir(client.config.InputDir, func(path string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if entry.IsDir() || filepath.Ext(path) != ".parquet" {
-			return nil
-		}
-
-		sent, err := client.sendArticleFile(ctx, path, ackChannel)
-		if err != nil {
-			return err
-		}
-		slog.Info("Input file sent", "file", path, "articles", sent)
-		total += sent
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-
-	if err := external.WriteEndOfRecords(client.conn); err != nil {
-		return err
-	}
-
-	select {
-	case <-ackChannel:
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-
-	slog.Info("Finished sending input", "articles", total)
-	return nil
-}
-
-func (client *Client) receiveLoop(ctx context.Context, ackChannel chan<- struct{}) error {
-	if err := os.MkdirAll(client.config.OutputDir, 0755); err != nil {
-		return err
-	}
-	outputPath := filepath.Join(client.config.OutputDir, "q1_results.csv")
-	file, err := os.Create(outputPath)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	slog.Info("Receiver listening for results and ACKs from gateway...")
-	receivedResults := 0
-
-	for {
-		msgType, err := external.ReadMsgType(client.conn)
-		if err != nil {
-			return err
-		}
-
-		switch msgType {
-		case external.Ack:
-			select {
-			case ackChannel <- struct{}{}:
-			case <-ctx.Done():
-				return ctx.Err()
-			}
-
-		case external.Q1Result:
-			result, err := external.ReadQ1Result(client.conn)
-			if err != nil {
-				return err
-			}
-			if _, err := fmt.Fprintf(file, "%s,%d\n", result.Url, result.DateModified); err != nil {
-				return err
-			}
-			receivedResults++
-
-		case external.EndOfRecords:
-			slog.Info("Finished receiving results", "total_q1_results", receivedResults)
-			return nil
-
-		default:
-			return fmt.Errorf("unexpected message type while receiving: %d", msgType)
-		}
-	}
 }

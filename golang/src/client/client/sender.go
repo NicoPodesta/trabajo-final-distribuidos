@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"io/fs"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/parquet-go/parquet-go"
@@ -51,7 +53,55 @@ type articleRow struct {
 	Abstract string `parquet:"abstract"`
 }
 
-func (client *Client) sendArticleFile(ctx context.Context, path string, ackChannel <-chan struct{}) (int, error) {
+type Sender struct {
+	conn     io.Writer
+	inputDir string
+}
+
+func NewSender(conn io.Writer, inputDir string) *Sender {
+	return &Sender{
+		conn:     conn,
+		inputDir: inputDir,
+	}
+}
+
+func (s *Sender) Send(ctx context.Context, ackChannel <-chan struct{}) error {
+	total := 0
+	err := filepath.WalkDir(s.inputDir, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() || filepath.Ext(path) != ".parquet" {
+			return nil
+		}
+
+		sent, err := s.sendFile(ctx, path, ackChannel)
+		if err != nil {
+			return err
+		}
+		slog.Info("Input file sent", "file", path, "articles", sent)
+		total += sent
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	if err := external.WriteEndOfRecords(s.conn); err != nil {
+		return err
+	}
+
+	select {
+	case <-ackChannel:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
+	slog.Info("Finished sending input", "articles", total)
+	return nil
+}
+
+func (s *Sender) sendFile(ctx context.Context, path string, ackChannel <-chan struct{}) (int, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		slog.Debug("Error while opening input file", "err", err)
@@ -76,7 +126,7 @@ func (client *Client) sendArticleFile(ctx context.Context, path string, ackChann
 				Sections:     parseSectionNames(row.Sections),
 				Abstract:     row.Abstract,
 			}
-			if err := external.WriteArticleRecord(client.conn, &articleRecord); err != nil {
+			if err := external.WriteArticleRecord(s.conn, &articleRecord); err != nil {
 				return sent, err
 			}
 
