@@ -13,7 +13,7 @@ services:
     - SERVER_PORT=5000
     volumes:
     - ../Articulos_ejemplo/Ejemplo_pequenio:/datasets
-    - ./output:/output
+    - ../output:/output
 
   load_balancer:
     build:
