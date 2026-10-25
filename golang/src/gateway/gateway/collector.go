@@ -53,7 +53,7 @@ func (c *ResultCollector) Start(running *atomic.Bool) {
 		}
 
 		for _, res := range results {
-			if err := session.sendResult(&res); err != nil {
+			if err := session.sendQ1Result(&res); err != nil {
 				slog.Error("While writing Q1 result to client", "clientID", clientID, "err", err)
 				session.finish()
 				ack()

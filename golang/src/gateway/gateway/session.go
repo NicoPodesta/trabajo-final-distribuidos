@@ -28,10 +28,34 @@ func (s *clientSession) sendAck() error {
 	return external.WriteAck(s.conn)
 }
 
-func (s *clientSession) sendResult(res *result.Q1Result) error {
+func (s *clientSession) sendQ1Result(res *result.Q1Result) error {
 	s.writeLock.Lock()
 	defer s.writeLock.Unlock()
 	return external.WriteQ1Result(s.conn, res)
+}
+
+func (s *clientSession) sendQ2Result(res *result.Q2Result) error {
+	s.writeLock.Lock()
+	defer s.writeLock.Unlock()
+	return external.WriteQ2Result(s.conn, res)
+}
+
+func (s *clientSession) sendQ3Result(res *result.Q3Result) error {
+	s.writeLock.Lock()
+	defer s.writeLock.Unlock()
+	return external.WriteQ3Result(s.conn, res)
+}
+
+func (s *clientSession) sendQ4Result(res *result.Q4Result) error {
+	s.writeLock.Lock()
+	defer s.writeLock.Unlock()
+	return external.WriteQ4Result(s.conn, res)
+}
+
+func (s *clientSession) sendQ5Result(res *result.Q5Result) error {
+	s.writeLock.Lock()
+	defer s.writeLock.Unlock()
+	return external.WriteQ5Result(s.conn, res)
 }
 
 func (s *clientSession) sendEndOfRecords() error {

@@ -13,8 +13,11 @@ func appendLenght(data []byte) []byte {
 }
 
 func SerializeString(value string) []byte {
-	data := []byte(value)
-	return appendLenght(data)
+	return SerializeBytes([]byte(value))
+}
+
+func SerializeBytes(value []byte) []byte {
+	return appendLenght(value)
 }
 
 func DeserializeString(bytes []byte) string {
