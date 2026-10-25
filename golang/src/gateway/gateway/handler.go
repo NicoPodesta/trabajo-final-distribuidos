@@ -92,46 +92,31 @@ func (h *ClientHandler) handleArticleRecord(session *clientSession, clientID str
 		return err
 	}
 
-	q1Item := inner.Q1ArticleItem{
+	if err := h.sendQ1Articles(clientID, []inner.Q1ArticleItem{{
 		Language:     articleRecord.Language,
 		Url:          articleRecord.Url,
 		DateModified: articleRecord.DateModified,
-	}
-	q1Msg, err := inner.SerializeQ1Articles(clientID, []inner.Q1ArticleItem{q1Item})
-	if err != nil {
-		return err
-	}
-	if err := h.articleDatesQueue.Send(*q1Msg); err != nil {
+	}}); err != nil {
 		return err
 	}
 
-	q2Item := inner.Q2ArticleItem{
+	if err := h.sendQ2Articles(clientID, []inner.Q2ArticleItem{{
 		Language:     articleRecord.Language,
 		Name:         articleRecord.Name,
 		Url:          articleRecord.Url,
 		DateModified: articleRecord.DateModified,
 		Image:        articleRecord.Image,
 		Sections:     articleRecord.Sections,
-	}
-	q2Msg, err := inner.SerializeQ2Articles(clientID, []inner.Q2ArticleItem{q2Item})
-	if err != nil {
-		return err
-	}
-	if err := h.articleSectionsQueue.Send(*q2Msg); err != nil {
+	}}); err != nil {
 		return err
 	}
 
-	abstractItem := inner.AbstractItem{
+	if err := h.sendAbstracts(clientID, []inner.AbstractItem{{
 		Language:     articleRecord.Language,
 		Url:          articleRecord.Url,
 		DateModified: articleRecord.DateModified,
 		Abstract:     articleRecord.Abstract,
-	}
-	abstractMsg, err := inner.SerializeAbstracts(clientID, []inner.AbstractItem{abstractItem})
-	if err != nil {
-		return err
-	}
-	if err := h.abstractsQueue.Send(*abstractMsg); err != nil {
+	}}); err != nil {
 		return err
 	}
 
@@ -145,31 +130,41 @@ func (h *ClientHandler) handleEndOfRecords(session *clientSession, clientID stri
 		return err
 	}
 
-	q1EofMsg, err := inner.SerializeQ1Articles(clientID, []inner.Q1ArticleItem{})
-	if err != nil {
+	if err := h.sendQ1Articles(clientID, []inner.Q1ArticleItem{}); err != nil {
 		return err
 	}
-	if err := h.articleDatesQueue.Send(*q1EofMsg); err != nil {
+	if err := h.sendQ2Articles(clientID, []inner.Q2ArticleItem{}); err != nil {
 		return err
 	}
-
-	q2EofMsg, err := inner.SerializeQ2Articles(clientID, []inner.Q2ArticleItem{})
-	if err != nil {
-		return err
-	}
-	if err := h.articleSectionsQueue.Send(*q2EofMsg); err != nil {
-		return err
-	}
-
-	abstractEofMsg, err := inner.SerializeAbstracts(clientID, []inner.AbstractItem{})
-	if err != nil {
-		return err
-	}
-	if err := h.abstractsQueue.Send(*abstractEofMsg); err != nil {
+	if err := h.sendAbstracts(clientID, []inner.AbstractItem{}); err != nil {
 		return err
 	}
 
 	return nil
+}
+
+func (h *ClientHandler) sendQ1Articles(clientID string, items []inner.Q1ArticleItem) error {
+	msg, err := inner.SerializeQ1Articles(clientID, items)
+	if err != nil {
+		return err
+	}
+	return h.articleDatesQueue.Send(*msg)
+}
+
+func (h *ClientHandler) sendQ2Articles(clientID string, items []inner.Q2ArticleItem) error {
+	msg, err := inner.SerializeQ2Articles(clientID, items)
+	if err != nil {
+		return err
+	}
+	return h.articleSectionsQueue.Send(*msg)
+}
+
+func (h *ClientHandler) sendAbstracts(clientID string, items []inner.AbstractItem) error {
+	msg, err := inner.SerializeAbstracts(clientID, items)
+	if err != nil {
+		return err
+	}
+	return h.abstractsQueue.Send(*msg)
 }
 
 func (h *ClientHandler) Close() {
