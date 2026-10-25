@@ -1,6 +1,7 @@
 package filters
 
 import (
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -9,13 +10,14 @@ import (
 
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/common/middleware"
+	"trabajo-final-distribuidos/common/result"
 )
 
 const (
 	articlesQueueName          = "article_dates"
 	connectionAttempts         = 15
 	connectionAttemptsDelaySec = 2
-	progressLogInterval        = 100
+	progressLogInterval        = 1000
 )
 
 type DateFilterConfig struct {
@@ -24,9 +26,11 @@ type DateFilterConfig struct {
 }
 
 type DateFilter struct {
-	articlesQueue middleware.Middleware
-	received      int
-	matched       int
+	articlesQueue      middleware.Middleware
+	resultsQueue       middleware.Middleware
+	connectionSettings middleware.ConnSettings
+	received           int
+	matched            int
 }
 
 func createQueueWithRetry(queueName string, settings middleware.ConnSettings) (middleware.Middleware, error) {
@@ -51,11 +55,16 @@ func NewDateFilter(config DateFilterConfig) (*DateFilter, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &DateFilter{articlesQueue: articlesQueue}, nil
+	return &DateFilter{articlesQueue: articlesQueue, connectionSettings: settings}, nil
 }
 
 func (filter *DateFilter) Run() error {
 	defer filter.articlesQueue.Close()
+	defer func() {
+		if filter.resultsQueue != nil {
+			filter.resultsQueue.Close()
+		}
+	}()
 	go filter.handleSignals()
 
 	slog.Info("Consuming articles from RabbitMQ...", "queue", articlesQueueName)
@@ -67,7 +76,7 @@ func (filter *DateFilter) Run() error {
 		}
 		if processingErr = filter.handleGatewayMessage(msg); processingErr != nil {
 			slog.Error("While handling gateway message", "err", processingErr)
-			
+
 			filter.articlesQueue.StopConsuming()
 			nack()
 			return
@@ -97,35 +106,59 @@ func (filter *DateFilter) handleGatewayMessage(msg middleware.Message) error {
 	}
 
 	if isEOF {
-		filter.handleEndOfRecordsMessage(clientID)
-		return nil
+		return filter.handleEndOfRecordsMessage(clientID)
 	}
 
+	var results []result.Q1Result
 	for _, articleRecord := range records {
-		filter.handleArticleRecordMessage(clientID, articleRecord)
+		if matched := filter.handleArticleRecordMessage(articleRecord); matched != nil {
+			results = append(results, *matched)
+		}
 		filter.received++
 		if filter.received%progressLogInterval == 0 {
 			slog.Info("Received articles", "clientID", clientID, "articles", filter.received)
 		}
 	}
-	return nil
+	// Una lista vacia indica EOF
+	if len(results) == 0 {
+		return nil
+	}
+	return filter.publishResults(clientID, results)
 }
 
-func (filter *DateFilter) handleArticleRecordMessage(clientID string, articleRecord inner.Q1ArticleItem) {
+func (filter *DateFilter) handleArticleRecordMessage(articleRecord inner.Q1ArticleItem) *result.Q1Result {
 	dateModified := time.Unix(int64(articleRecord.DateModified), 0).UTC()
 	if articleRecord.Language == "en" && dateModified.Year() <= 2020 {
 		filter.matched++
-		slog.Info("Article matched date filter",
-			"clientID", clientID,
-			"language", articleRecord.Language,
-			"url", articleRecord.Url,
-			"date_modified", dateModified.Format(time.DateTime),
-		)
+		return &result.Q1Result{Url: articleRecord.Url, DateModified: articleRecord.DateModified}
 	}
+	return nil
 }
 
-func (filter *DateFilter) handleEndOfRecordsMessage(clientID string) {
+func (filter *DateFilter) publishResults(clientID string, records []result.Q1Result) error {
+	msg, err := inner.SerializeQ1Results(clientID, records)
+	if err != nil {
+		return err
+	}
+	if filter.resultsQueue == nil {
+		queueName := fmt.Sprintf("results_%s", inner.ExtractGatewayID(clientID))
+		filter.resultsQueue, err = createQueueWithRetry(queueName, filter.connectionSettings)
+		if err != nil {
+			return err
+		}
+		slog.Info("Publishing Q1 results", "clientID", clientID, "queue", queueName)
+	}
+	return filter.resultsQueue.Send(*msg)
+}
+
+func (filter *DateFilter) handleEndOfRecordsMessage(clientID string) error {
+	if err := filter.publishResults(clientID, nil); err != nil {
+		return err
+	}
 	slog.Info("Received end of input", "clientID", clientID, "articles", filter.received, "matches", filter.matched)
+	filter.resultsQueue.Close()
+	filter.resultsQueue = nil
 	filter.received = 0
 	filter.matched = 0
+	return nil
 }

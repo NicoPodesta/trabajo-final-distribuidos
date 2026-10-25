@@ -5,6 +5,8 @@
 - Client envia secuancial, sin hilos
 - Gateway publica JSON en article_dates
 - Filtro Q1 consume article_dates y confirma los mensajes
+- Filtro publica coincidencias y fin en results_0
+- Client guarda los resultados y termina
 - Lista vacia indica fin de entrada
 
 ## Pendientes

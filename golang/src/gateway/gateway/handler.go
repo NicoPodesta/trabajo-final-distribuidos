@@ -145,6 +145,10 @@ func (h *ClientHandler) handleEndOfRecords(session *clientSession, clientID stri
 	if err != nil {
 		return err
 	}
+	// Si el EOF de resultados llegara antes que el ACK de entrada, el cliente
+	// quedaria esperando ACK para siempre
+	session.writeLock.Lock()
+	defer session.writeLock.Unlock()
 	if err := h.articleDatesQueue.Send(*q1EofMsg); err != nil {
 		return err
 	}
@@ -165,7 +169,8 @@ func (h *ClientHandler) handleEndOfRecords(session *clientSession, clientID stri
 		return err
 	}
 
-	return session.sendAck()
+	// El lock ya esta tomado; sendAck intentaria tomarlo otra vez.
+	return external.WriteAck(session.conn)
 }
 
 func (h *ClientHandler) Close() {
