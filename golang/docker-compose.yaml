@@ -5,27 +5,39 @@ services:
       dockerfile: client/Dockerfile
     container_name: client_0
     depends_on:
-    - gateway
+    - load_balancer
     environment:
     - INPUT_DIR=/datasets
     - OUTPUT_DIR=/output
-    - SERVER_HOST=gateway
-    - SERVER_PORT=5678
+    - SERVER_HOST=load_balancer
+    - SERVER_PORT=5000
     volumes:
     - ../Articulos_ejemplo/Ejemplo_pequenio:/datasets
     - ./output:/output
 
-  gateway:
+  load_balancer:
+    build:
+      context: ./src/
+      dockerfile: loadbalancer/Dockerfile
+    container_name: load_balancer
+    depends_on:
+    - gateway_0
+    environment:
+    - SERVER_HOST=load_balancer
+    - SERVER_PORT=5000
+    - GATEWAYS=gateway_0:5678
+
+  gateway_0:
     build:
       context: ./src/
       dockerfile: gateway/Dockerfile
-    container_name: gateway
+    container_name: gateway_0
     depends_on:
       rabbitmq:
         condition: service_healthy
     environment:
     - ID=0
-    - SERVER_HOST=gateway
+    - SERVER_HOST=gateway_0
     - SERVER_PORT=5678
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672

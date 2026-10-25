@@ -1,6 +1,7 @@
 package external
 
 import (
+	"fmt"
 	"io"
 
 	"trabajo-final-distribuidos/common/article"
@@ -16,6 +17,7 @@ const (
 	Ack
 	EndOfRecords
 	Q1Result
+	GatewayAssignment
 )
 
 func serializeArticleRecord(articleRecord *article.Article) []byte {
@@ -156,4 +158,21 @@ func ReadQ1Result(reader io.Reader) (*result.Q1Result, error) {
 	dateModified := serializer.DeserializeUint32(serializedDateModified)
 
 	return &result.Q1Result{Url: url, DateModified: dateModified}, nil
+}
+
+func WriteGatewayAssignment(writer io.Writer, gatewayAddr string) error {
+	msg := serializer.SerializeUint32(uint32(GatewayAssignment))
+	msg = append(msg, serializer.SerializeString(gatewayAddr)...)
+	return safeio.WriteAll(writer, msg)
+}
+
+func ReadGatewayAssignment(reader io.Reader) (string, error) {
+	msgType, err := ReadMsgType(reader)
+	if err != nil {
+		return "", err
+	}
+	if msgType != GatewayAssignment {
+		return "", fmt.Errorf("unexpected message type from load balancer: %d", msgType)
+	}
+	return readString(reader)
 }

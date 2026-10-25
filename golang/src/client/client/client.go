@@ -17,8 +17,8 @@ import (
 )
 
 const (
-	connectionAttempts        = 3
-	connectionAttemptsDelayMs = 300
+	connectionAttempts        = 15
+	connectionAttemptsDelayMs = 500
 )
 
 type ClientConfig struct {
@@ -35,7 +35,13 @@ type Client struct {
 }
 
 func NewClient(config ClientConfig) (*Client, error) {
-	conn, err := connectToServer(config.ServerHost, config.ServerPort)
+	gatewayHost, gatewayPort, err := resolveGatewayFromLoadBalancer(config.ServerHost, config.ServerPort)
+	if err != nil {
+		return nil, fmt.Errorf("while querying load balancer: %w", err)
+	}
+	slog.Info("Discovered assigned gateway from load balancer", "gateway", gatewayHost+":"+gatewayPort)
+
+	conn, err := connectToServer(gatewayHost, gatewayPort)
 	if err != nil {
 		return nil, err
 	}
@@ -43,6 +49,26 @@ func NewClient(config ClientConfig) (*Client, error) {
 	client := &Client{conn: conn, config: config}
 	client.running.Store(true)
 	return client, nil
+}
+
+func resolveGatewayFromLoadBalancer(lbHost, lbPort string) (string, string, error) {
+	conn, err := connectToServer(lbHost, lbPort)
+	if err != nil {
+		return "", "", fmt.Errorf("connecting to load balancer: %w", err)
+	}
+	defer conn.Close()
+
+	gatewayAddr, err := external.ReadGatewayAssignment(conn)
+	if err != nil {
+		return "", "", fmt.Errorf("reading gateway assignment: %w", err)
+	}
+
+	host, port, err := net.SplitHostPort(gatewayAddr)
+	if err != nil {
+		return "", "", fmt.Errorf("invalid gateway address format '%s': %w", gatewayAddr, err)
+	}
+
+	return host, port, nil
 }
 
 func connectToServer(host, port string) (net.Conn, error) {
