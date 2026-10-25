@@ -23,50 +23,35 @@ func NewResultWriter(outputDir string) (*ResultWriter, error) {
 		return nil, err
 	}
 
-	q1Path := filepath.Join(outputDir, "q1_results.csv")
-	q1File, err := os.Create(q1Path)
-	if err != nil {
-		return nil, err
-	}
-
 	q2Dir := filepath.Join(outputDir, "q2_images")
 	if err := os.MkdirAll(q2Dir, 0755); err != nil {
-		q1File.Close()
 		return nil, err
 	}
 
-	q3Path := filepath.Join(outputDir, "q3_results.csv")
-	q3File, err := os.Create(q3Path)
-	if err != nil {
-		q1File.Close()
-		return nil, err
-	}
-
-	q4Path := filepath.Join(outputDir, "q4_results.csv")
-	q4File, err := os.Create(q4Path)
-	if err != nil {
-		q1File.Close()
-		q3File.Close()
-		return nil, err
-	}
-
-	q5Path := filepath.Join(outputDir, "q5_results.csv")
-	q5File, err := os.Create(q5Path)
-	if err != nil {
-		q1File.Close()
-		q3File.Close()
-		q4File.Close()
-		return nil, err
-	}
-
-	return &ResultWriter{
+	w := &ResultWriter{
 		outputDir: outputDir,
-		q1File:    q1File,
 		q2Dir:     q2Dir,
-		q3File:    q3File,
-		q4File:    q4File,
-		q5File:    q5File,
-	}, nil
+	}
+
+	var err error
+	if w.q1File, err = os.Create(filepath.Join(outputDir, "q1_results.csv")); err != nil {
+		w.Close()
+		return nil, err
+	}
+	if w.q3File, err = os.Create(filepath.Join(outputDir, "q3_results.csv")); err != nil {
+		w.Close()
+		return nil, err
+	}
+	if w.q4File, err = os.Create(filepath.Join(outputDir, "q4_results.csv")); err != nil {
+		w.Close()
+		return nil, err
+	}
+	if w.q5File, err = os.Create(filepath.Join(outputDir, "q5_results.csv")); err != nil {
+		w.Close()
+		return nil, err
+	}
+
+	return w, nil
 }
 
 func (w *ResultWriter) WriteQ1(res *result.Q1Result) error {
@@ -111,14 +96,10 @@ func (w *ResultWriter) Close() error {
 }
 
 func sanitizeFilename(name string) string {
-	var builder strings.Builder
-	for _, r := range name {
-		if r == '/' || r == '\\' || r == ':' || r == '*' || r == '?' || r == '"' || r == '<' || r == '>' || r == '|' {
-			builder.WriteRune('_')
-		} else {
-			builder.WriteRune(r)
+	return strings.Map(func(r rune) rune {
+		if strings.ContainsRune(`/\\:*?"<>|`, r) {
+			return '_'
 		}
-	}
-	return builder.String()
+		return r
+	}, name)
 }
-
