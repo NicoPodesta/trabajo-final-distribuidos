@@ -9,16 +9,16 @@ import (
 )
 
 type clientSession struct {
-	conn      net.Conn
-	writeLock sync.Mutex
-	done      chan struct{}
-	closeOnce sync.Once
+	conn        net.Conn
+	writeLock   sync.Mutex
+	doneChannel chan struct{}
+	closeOnce   sync.Once
 }
 
 func newClientSession(conn net.Conn) *clientSession {
 	return &clientSession{
-		conn: conn,
-		done: make(chan struct{}),
+		conn:        conn,
+		doneChannel: make(chan struct{}),
 	}
 }
 
@@ -42,6 +42,38 @@ func (s *clientSession) sendEndOfRecords() error {
 
 func (s *clientSession) finish() {
 	s.closeOnce.Do(func() {
-		close(s.done)
+		close(s.doneChannel)
 	})
+}
+
+type SessionManager struct {
+	sessionsLock sync.RWMutex
+	sessions     map[string]*clientSession
+}
+
+func NewSessionManager() *SessionManager {
+	return &SessionManager{
+		sessions: make(map[string]*clientSession),
+	}
+}
+
+func (sm *SessionManager) CreateSession(clientID string, conn net.Conn) *clientSession {
+	sm.sessionsLock.Lock()
+	defer sm.sessionsLock.Unlock()
+
+	session := newClientSession(conn)
+	sm.sessions[clientID] = session
+	return session
+}
+
+func (sm *SessionManager) Unregister(clientID string) {
+	sm.sessionsLock.Lock()
+	defer sm.sessionsLock.Unlock()
+	delete(sm.sessions, clientID)
+}
+
+func (sm *SessionManager) Get(clientID string) *clientSession {
+	sm.sessionsLock.RLock()
+	defer sm.sessionsLock.RUnlock()
+	return sm.sessions[clientID]
 }
