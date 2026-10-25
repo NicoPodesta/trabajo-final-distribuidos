@@ -1,9 +1,7 @@
 package inner
 
 import (
-	"encoding/json"
 	"errors"
-	"strings"
 
 	"trabajo-final-distribuidos/common/middleware"
 	"trabajo-final-distribuidos/common/result"
@@ -13,26 +11,6 @@ type Q1ArticleItem struct {
 	Language     string
 	Url          string
 	DateModified uint32
-}
-
-func ExtractGatewayID(clientID string) string {
-	idx := strings.LastIndex(clientID, "_")
-	if idx > 0 {
-		return clientID[:idx]
-	}
-	return clientID
-}
-
-func serializeJson(message []interface{}) ([]byte, error) {
-	return json.Marshal(message)
-}
-
-func deserializeJson(message []byte) ([]interface{}, error) {
-	var data []interface{}
-	if err := json.Unmarshal(message, &data); err != nil {
-		return nil, err
-	}
-	return data, nil
 }
 
 func SerializeQ1Articles(clientID string, records []Q1ArticleItem) (*middleware.Message, error) {

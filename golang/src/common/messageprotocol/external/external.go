@@ -20,8 +20,15 @@ const (
 
 func serializeArticleRecord(articleRecord *article.Article) []byte {
 	msg := serializer.SerializeString(articleRecord.Language)
+	msg = append(msg, serializer.SerializeString(articleRecord.Name)...)
 	msg = append(msg, serializer.SerializeString(articleRecord.Url)...)
 	msg = append(msg, serializer.SerializeUint32(articleRecord.DateModified)...)
+	msg = append(msg, serializer.SerializeString(articleRecord.Image)...)
+	msg = append(msg, serializer.SerializeUint32(uint32(len(articleRecord.Sections)))...)
+	for _, sec := range articleRecord.Sections {
+		msg = append(msg, serializer.SerializeString(sec)...)
+	}
+	msg = append(msg, serializer.SerializeString(articleRecord.Abstract)...)
 	return msg
 }
 
@@ -67,6 +74,11 @@ func ReadArticleRecord(reader io.Reader) (*article.Article, error) {
 		return nil, err
 	}
 
+	name, err := readString(reader)
+	if err != nil {
+		return nil, err
+	}
+
 	url, err := readString(reader)
 	if err != nil {
 		return nil, err
@@ -78,7 +90,40 @@ func ReadArticleRecord(reader io.Reader) (*article.Article, error) {
 	}
 	dateModified := serializer.DeserializeUint32(serializedDateModified)
 
-	articleRecord := article.Article{Language: language, Url: url, DateModified: dateModified}
+	image, err := readString(reader)
+	if err != nil {
+		return nil, err
+	}
+
+	serializedNumSections, err := safeio.ReadAll(reader, serializer.UINT32_SIZE)
+	if err != nil {
+		return nil, err
+	}
+	numSections := serializer.DeserializeUint32(serializedNumSections)
+
+	sections := make([]string, 0, numSections)
+	for i := uint32(0); i < numSections; i++ {
+		sec, err := readString(reader)
+		if err != nil {
+			return nil, err
+		}
+		sections = append(sections, sec)
+	}
+
+	abstract, err := readString(reader)
+	if err != nil {
+		return nil, err
+	}
+
+	articleRecord := article.Article{
+		Language:     language,
+		Name:         name,
+		Url:          url,
+		DateModified: dateModified,
+		Image:        image,
+		Sections:     sections,
+		Abstract:     abstract,
+	}
 	return &articleRecord, nil
 }
 
