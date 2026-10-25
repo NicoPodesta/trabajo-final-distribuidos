@@ -45,22 +45,20 @@ func ReadArticleRecord(reader io.Reader) (*article.Article, error) {
 		return nil, err
 	}
 
-	serializedDateModified, err := safeio.ReadAll(reader, serializer.UINT32_SIZE)
+	dateModified, err := readUint32(reader)
 	if err != nil {
 		return nil, err
 	}
-	dateModified := serializer.DeserializeUint32(serializedDateModified)
 
 	image, err := readString(reader)
 	if err != nil {
 		return nil, err
 	}
 
-	serializedSectionsLen, err := safeio.ReadAll(reader, serializer.UINT32_SIZE)
+	sectionsLen, err := readUint32(reader)
 	if err != nil {
 		return nil, err
 	}
-	sectionsLen := serializer.DeserializeUint32(serializedSectionsLen)
 
 	sections := make([]string, sectionsLen)
 	for i := range sectionsLen {

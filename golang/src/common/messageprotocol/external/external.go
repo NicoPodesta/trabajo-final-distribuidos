@@ -27,24 +27,24 @@ func writeMsgType(writer io.Writer, msgType MsgType) error {
 	return safeio.WriteAll(writer, msg)
 }
 
-func ReadMsgType(reader io.Reader) (MsgType, error) {
-	msgTypeSerialized, err := safeio.ReadAll(reader, serializer.UINT32_SIZE)
+func readUint32(reader io.Reader) (uint32, error) {
+	serialized, err := safeio.ReadAll(reader, serializer.UINT32_SIZE)
 	if err != nil {
 		return 0, err
 	}
-	msgType := MsgType(serializer.DeserializeUint32(msgTypeSerialized))
+	return serializer.DeserializeUint32(serialized), nil
+}
 
-	return msgType, nil
+func ReadMsgType(reader io.Reader) (MsgType, error) {
+	msgType, err := readUint32(reader)
+	if err != nil {
+		return 0, err
+	}
+	return MsgType(msgType), nil
 }
 
 func readString(reader io.Reader) (string, error) {
-	serializedSize, err := safeio.ReadAll(reader, serializer.UINT32_SIZE)
-	if err != nil {
-		return "", err
-	}
-	size := serializer.DeserializeUint32(serializedSize)
-
-	serialized, err := safeio.ReadAll(reader, size)
+	serialized, err := readBytes(reader)
 	if err != nil {
 		return "", err
 	}
@@ -52,12 +52,10 @@ func readString(reader io.Reader) (string, error) {
 }
 
 func readBytes(reader io.Reader) ([]byte, error) {
-	serializedSize, err := safeio.ReadAll(reader, serializer.UINT32_SIZE)
+	size, err := readUint32(reader)
 	if err != nil {
 		return nil, err
 	}
-	size := serializer.DeserializeUint32(serializedSize)
-
 	return safeio.ReadAll(reader, size)
 }
 

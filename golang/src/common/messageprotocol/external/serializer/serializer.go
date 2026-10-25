@@ -6,10 +6,8 @@ import (
 
 const UINT32_SIZE uint32 = 4
 
-func appendLenght(data []byte) []byte {
-	length := make([]byte, UINT32_SIZE)
-	binary.BigEndian.PutUint32(length, uint32(len(data)))
-	return append(length, data...)
+func appendLength(data []byte) []byte {
+	return append(SerializeUint32(uint32(len(data))), data...)
 }
 
 func SerializeString(value string) []byte {
@@ -17,11 +15,11 @@ func SerializeString(value string) []byte {
 }
 
 func SerializeBytes(value []byte) []byte {
-	return appendLenght(value)
+	return appendLength(value)
 }
 
 func DeserializeString(bytes []byte) string {
-	return string(bytes[:])
+	return string(bytes)
 }
 
 func SerializeUint32(value uint32) []byte {

@@ -22,11 +22,10 @@ func ReadQ1Result(reader io.Reader) (*result.Q1Result, error) {
 		return nil, err
 	}
 
-	serializedDateModified, err := safeio.ReadAll(reader, serializer.UINT32_SIZE)
+	dateModified, err := readUint32(reader)
 	if err != nil {
 		return nil, err
 	}
-	dateModified := serializer.DeserializeUint32(serializedDateModified)
 
 	return &result.Q1Result{Url: url, DateModified: dateModified}, nil
 }
@@ -81,11 +80,10 @@ func ReadQ4Result(reader io.Reader) (*result.Q4Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	serializedCount, err := safeio.ReadAll(reader, serializer.UINT32_SIZE)
+	count, err := readUint32(reader)
 	if err != nil {
 		return nil, err
 	}
-	count := serializer.DeserializeUint32(serializedCount)
 	return &result.Q4Result{Word: word, Count: count}, nil
 }
 
@@ -101,10 +99,9 @@ func ReadQ5Result(reader io.Reader) (*result.Q5Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	serializedWordCount, err := safeio.ReadAll(reader, serializer.UINT32_SIZE)
+	wordCount, err := readUint32(reader)
 	if err != nil {
 		return nil, err
 	}
-	wordCount := serializer.DeserializeUint32(serializedWordCount)
 	return &result.Q5Result{Url: url, WordCount: wordCount}, nil
 }
