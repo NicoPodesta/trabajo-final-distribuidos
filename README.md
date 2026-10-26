@@ -13,6 +13,7 @@
 - Filtro publica coincidencias y EOF en results_0.
 - Cliente preparado para recibir y persistir resultados de Q1 a Q5.
 - Lista vacia indica EOF de entrada y de resultados.
+- Stopwords: Go no trae listas en la libreria estandar, asi que se copiaron las de NLTK (las mismas que usa el notebook) a `tokenizer/stopwords.go`.
 
 ## Pendientes
 
@@ -24,6 +25,7 @@
 ## Consultas
 
 - Se puede utilizar la libreria externa parquet-go?
+- Se puede utilizar la libreria externa `github.com/bbalet/stopwords` para las stopwords?
 - Que proyecciones enviará Gateway a los filtros y al Tokenizer?
   Por ahora Gateway proyecta en las queues: article_dates (language, url, date_modified) hacia q1, article_sections (language, name, url, date_modified, image, sections) hacia q2 y abstracts (language, url, date_modified, abstract) hacia el tokenizer.
 - Como avisa cada etapa al Collector que termino? Y si no hay coincidencias?

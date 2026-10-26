@@ -74,7 +74,7 @@ func (tokenizer *Tokenizer) handleGatewayMessage(msg middleware.Message) error {
 func (tokenizer *Tokenizer) countWords(clientID string, records []inner.AbstractItem) []inner.WordCountItem {
 	counts := make(map[string]uint32)
 	for _, record := range records {
-		for _, word := range extractWords(record.Abstract) {
+		for _, word := range extractWords(record.Abstract, Language(record.Language)) {
 			counts[word]++
 		}
 		tokenizer.logProgress(clientID)
