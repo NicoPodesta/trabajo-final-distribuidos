@@ -42,24 +42,24 @@ func (tokenizer *Tokenizer) Run() error {
 }
 
 func (tokenizer *Tokenizer) handleGatewayMessage(msg middleware.Message) {
-	clientID, records, isEOF, err := inner.DeserializeAbstracts(&msg)
+	abstractMsg, err := inner.DeserializeAbstracts(&msg)
 	if err != nil {
 		slog.Error("While deserializing abstracts", "err", err)
 		return
 	}
 
-	if isEOF {
-		slog.Info("Received end of input", "clientID", clientID)
+	if abstractMsg.IsEOF() {
+		slog.Info("Received end of input", "clientID", abstractMsg.ClientID)
 		return
 	}
 
-	slog.Debug("Received abstracts", "clientID", clientID, "records", len(records))
+	slog.Debug("Received abstracts", "clientID", abstractMsg.ClientID, "records", len(abstractMsg.Records))
 
-	for _, record := range records {
+	for _, record := range abstractMsg.Records {
 		words := extractWords(record.Abstract)
 		tokenizer.received++
 		if tokenizer.received%progressLogInterval == 0 {
-			slog.Info("Tokenized abstracts", "clientID", clientID, "abstracts", tokenizer.received, "url", record.Url, "words", len(words))
+			slog.Info("Tokenized abstracts", "clientID", abstractMsg.ClientID, "abstracts", tokenizer.received, "url", record.Url, "words", len(words))
 		}
 	}
 }
