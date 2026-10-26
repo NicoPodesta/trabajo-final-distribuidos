@@ -1,7 +1,6 @@
 package filters
 
 import (
-	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -26,11 +25,10 @@ type DateFilterConfig struct {
 }
 
 type DateFilter struct {
-	articlesQueue      middleware.Middleware
-	resultsQueue       middleware.Middleware
-	connectionSettings middleware.ConnSettings
-	received           int
-	matched            int
+	articlesQueue    middleware.Middleware
+	resultsPublisher *resultPublisher
+	received         int
+	matched          int
 }
 
 func createQueueWithRetry(queueName string, settings middleware.ConnSettings) (middleware.Middleware, error) {
@@ -55,14 +53,17 @@ func NewDateFilter(config DateFilterConfig) (*DateFilter, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &DateFilter{articlesQueue: articlesQueue, connectionSettings: settings}, nil
+	return &DateFilter{
+		articlesQueue:    articlesQueue,
+		resultsPublisher: newResultPublisher(settings),
+	}, nil
 }
 
 func (filter *DateFilter) Run() error {
 	defer filter.articlesQueue.Close()
 	defer func() {
-		if filter.resultsQueue != nil {
-			filter.resultsQueue.Close()
+		if err := filter.resultsPublisher.close(); err != nil {
+			slog.Error("While closing results publishers", "err", err)
 		}
 	}()
 	go filter.handleSignals()
@@ -129,25 +130,13 @@ func (filter *DateFilter) handleArticleRecordMessage(articleRecord inner.Q1Artic
 	dateModified := time.Unix(int64(articleRecord.DateModified), 0).UTC()
 	if articleRecord.Language == "en" && dateModified.Year() <= 2020 {
 		filter.matched++
-		return &result.Q1Result{Url: articleRecord.Url, DateModified: articleRecord.DateModified}
+		return &result.Q1Result{URL: articleRecord.URL, DateModified: articleRecord.DateModified}
 	}
 	return nil
 }
 
 func (filter *DateFilter) publishResults(clientID string, records []result.Q1Result) error {
-	msg, err := inner.SerializeQ1Results(clientID, records)
-	if err != nil {
-		return err
-	}
-	if filter.resultsQueue == nil {
-		queueName := fmt.Sprintf("results_%s", inner.ExtractGatewayID(clientID))
-		filter.resultsQueue, err = createQueueWithRetry(queueName, filter.connectionSettings)
-		if err != nil {
-			return err
-		}
-		slog.Info("Publishing Q1 results", "clientID", clientID, "queue", queueName)
-	}
-	return filter.resultsQueue.Send(*msg)
+	return filter.resultsPublisher.publish(clientID, records)
 }
 
 func (filter *DateFilter) handleEndOfRecordsMessage(clientID string) error {
@@ -155,8 +144,6 @@ func (filter *DateFilter) handleEndOfRecordsMessage(clientID string) error {
 		return err
 	}
 	slog.Info("Received end of input", "clientID", clientID, "articles", filter.received, "matches", filter.matched)
-	filter.resultsQueue.Close()
-	filter.resultsQueue = nil
 	filter.received = 0
 	filter.matched = 0
 	return nil
