@@ -54,13 +54,13 @@ type articleRow struct {
 }
 
 type Sender struct {
-	conn     io.Writer
+	writer   *external.Writer
 	inputDir string
 }
 
 func NewSender(conn io.Writer, inputDir string) *Sender {
 	return &Sender{
-		conn:     conn,
+		writer:   external.NewWriter(conn),
 		inputDir: inputDir,
 	}
 }
@@ -87,7 +87,7 @@ func (s *Sender) Send(ctx context.Context, ackChannel <-chan struct{}) error {
 		return err
 	}
 
-	if err := external.WriteEndOfRecords(s.conn); err != nil {
+	if err := s.writer.WriteEndOfRecords(); err != nil {
 		return err
 	}
 
@@ -126,7 +126,7 @@ func (s *Sender) sendFile(ctx context.Context, path string, ackChannel <-chan st
 				Sections:     parseSectionNames(row.Sections),
 				Abstract:     row.Abstract,
 			}
-			if err := external.WriteArticleRecord(s.conn, &articleRecord); err != nil {
+			if err := s.writer.WriteArticleRecord(&articleRecord); err != nil {
 				return sent, err
 			}
 

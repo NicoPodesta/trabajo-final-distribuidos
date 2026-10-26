@@ -10,13 +10,13 @@ import (
 )
 
 type Receiver struct {
-	conn   io.Reader
+	reader *external.Reader
 	writer *ResultWriter
 }
 
 func NewReceiver(conn io.Reader, writer *ResultWriter) *Receiver {
 	return &Receiver{
-		conn:   conn,
+		reader: external.NewReader(conn),
 		writer: writer,
 	}
 }
@@ -32,7 +32,7 @@ func (r *Receiver) Receive(ctx context.Context, ackChannel chan<- struct{}) erro
 	receivedQ5 := 0
 
 	for {
-		msgType, err := external.ReadMsgType(r.conn)
+		msgType, err := r.reader.ReadMsgType()
 		if err != nil {
 			return err
 		}
@@ -46,7 +46,7 @@ func (r *Receiver) Receive(ctx context.Context, ackChannel chan<- struct{}) erro
 			}
 
 		case external.Q1Result:
-			result, err := external.ReadQ1Result(r.conn)
+			result, err := r.reader.ReadQ1Result()
 			if err != nil {
 				return err
 			}
@@ -56,7 +56,7 @@ func (r *Receiver) Receive(ctx context.Context, ackChannel chan<- struct{}) erro
 			receivedQ1++
 
 		case external.Q2Result:
-			result, err := external.ReadQ2Result(r.conn)
+			result, err := r.reader.ReadQ2Result()
 			if err != nil {
 				return err
 			}
@@ -66,7 +66,7 @@ func (r *Receiver) Receive(ctx context.Context, ackChannel chan<- struct{}) erro
 			receivedQ2++
 
 		case external.Q3Result:
-			result, err := external.ReadQ3Result(r.conn)
+			result, err := r.reader.ReadQ3Result()
 			if err != nil {
 				return err
 			}
@@ -76,7 +76,7 @@ func (r *Receiver) Receive(ctx context.Context, ackChannel chan<- struct{}) erro
 			receivedQ3++
 
 		case external.Q4Result:
-			result, err := external.ReadQ4Result(r.conn)
+			result, err := r.reader.ReadQ4Result()
 			if err != nil {
 				return err
 			}
@@ -86,7 +86,7 @@ func (r *Receiver) Receive(ctx context.Context, ackChannel chan<- struct{}) erro
 			receivedQ4++
 
 		case external.Q5Result:
-			result, err := external.ReadQ5Result(r.conn)
+			result, err := r.reader.ReadQ5Result()
 			if err != nil {
 				return err
 			}

@@ -89,7 +89,8 @@ func resolveGatewayFromLoadBalancer(lbHost, lbPort string) (string, string, erro
 	}
 	defer conn.Close()
 
-	gatewayAddr, err := external.ReadGatewayAssignment(conn)
+	reader := external.NewReader(conn)
+	gatewayAddr, err := reader.ReadGatewayAssignment()
 	if err != nil {
 		return "", "", fmt.Errorf("reading gateway assignment: %w", err)
 	}

@@ -49,9 +49,10 @@ func (h *ClientHandler) Handle(conn net.Conn, shutdownChannel <-chan struct{}) {
 
 	slog.Info("Client registered", "clientID", clientID)
 
+	reader := external.NewReader(conn)
 	received := 0
 	for {
-		msgType, err := external.ReadMsgType(conn)
+		msgType, err := reader.ReadMsgType()
 		if err != nil {
 			slog.Debug("While reading message type from client", "clientID", clientID, "err", err)
 			return
@@ -59,7 +60,7 @@ func (h *ClientHandler) Handle(conn net.Conn, shutdownChannel <-chan struct{}) {
 
 		switch msgType {
 		case external.ArticleRecord:
-			if err := h.handleArticleRecord(session, clientID); err != nil {
+			if err := h.handleArticleRecord(session, reader, clientID); err != nil {
 				slog.Error("While handling article record message", "clientID", clientID, "err", err)
 				return
 			}
@@ -86,8 +87,8 @@ func (h *ClientHandler) Handle(conn net.Conn, shutdownChannel <-chan struct{}) {
 	}
 }
 
-func (h *ClientHandler) handleArticleRecord(session *clientSession, clientID string) error {
-	articleRecord, err := external.ReadArticleRecord(session.conn)
+func (h *ClientHandler) handleArticleRecord(session *clientSession, reader *external.Reader, clientID string) error {
+	articleRecord, err := reader.ReadArticleRecord()
 	if err != nil {
 		return err
 	}

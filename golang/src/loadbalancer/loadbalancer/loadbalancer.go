@@ -75,7 +75,8 @@ func (lb *LoadBalancer) handleClient(conn net.Conn) {
 	assignedGateway := lb.selectGateway()
 	slog.Info("Assigning gateway to client", "client", conn.RemoteAddr().String(), "gateway", assignedGateway)
 
-	if err := external.WriteGatewayAssignment(conn, assignedGateway); err != nil {
+	writer := external.NewWriter(conn)
+	if err := writer.WriteGatewayAssignment(assignedGateway); err != nil {
 		slog.Error("While writing gateway assignment to client", "client", conn.RemoteAddr().String(), "err", err)
 		return
 	}
