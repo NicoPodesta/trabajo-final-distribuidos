@@ -1,6 +1,7 @@
 package filters
 
 import (
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -24,11 +25,15 @@ type DateFilterConfig struct {
 	MOMPort int
 }
 
+type clientStats struct {
+	received int
+	matched  int
+}
+
 type DateFilter struct {
 	articlesQueue    middleware.Middleware
 	resultsPublisher *resultPublisher
-	received         int
-	matched          int
+	statsByClient    map[string]clientStats
 }
 
 func createQueueWithRetry(queueName string, settings middleware.ConnSettings) (middleware.Middleware, error) {
@@ -56,6 +61,7 @@ func NewDateFilter(config DateFilterConfig) (*DateFilter, error) {
 	return &DateFilter{
 		articlesQueue:    articlesQueue,
 		resultsPublisher: newResultPublisher(settings),
+		statsByClient:    make(map[string]clientStats),
 	}, nil
 }
 
@@ -106,20 +112,30 @@ func (filter *DateFilter) handleGatewayMessage(msg middleware.Message) error {
 		return err
 	}
 
-	if articleMsg.IsEOF() {
+	switch articleMsg.Type {
+	case inner.MsgData:
+		return filter.handleArticlesMessage(articleMsg)
+	case inner.MsgEOF:
 		return filter.handleEndOfRecordsMessage(articleMsg.ClientID)
+	default:
+		return fmt.Errorf("unexpected Q1 message type: %d", articleMsg.Type)
 	}
+}
 
+func (filter *DateFilter) handleArticlesMessage(articleMsg *inner.Q1ArticlesMessage) error {
+	stats := filter.statsByClient[articleMsg.ClientID]
 	var results []result.Q1Result
 	for _, articleRecord := range articleMsg.Records {
 		if matched := filter.handleArticleRecordMessage(articleRecord); matched != nil {
 			results = append(results, *matched)
+			stats.matched++
 		}
-		filter.received++
-		if filter.received%progressLogInterval == 0 {
-			slog.Info("Received articles", "clientID", articleMsg.ClientID, "articles", filter.received)
+		stats.received++
+		if stats.received%progressLogInterval == 0 {
+			slog.Info("Received articles", "clientID", articleMsg.ClientID, "articles", stats.received)
 		}
 	}
+	filter.statsByClient[articleMsg.ClientID] = stats
 	if len(results) == 0 {
 		return nil
 	}
@@ -129,8 +145,7 @@ func (filter *DateFilter) handleGatewayMessage(msg middleware.Message) error {
 func (filter *DateFilter) handleArticleRecordMessage(articleRecord inner.Q1ArticleItem) *result.Q1Result {
 	dateModified := time.Unix(int64(articleRecord.DateModified), 0).UTC()
 	if articleRecord.Language == "en" && dateModified.Year() <= 2020 {
-		filter.matched++
-		return &result.Q1Result{URL: articleRecord.URL, DateModified: articleRecord.DateModified}
+		return &result.Q1Result{Url: articleRecord.Url, DateModified: articleRecord.DateModified}
 	}
 	return nil
 }
@@ -140,11 +155,11 @@ func (filter *DateFilter) publishResults(clientID string, records []result.Q1Res
 }
 
 func (filter *DateFilter) handleEndOfRecordsMessage(clientID string) error {
-	if err := filter.publishResults(clientID, nil); err != nil {
+	if err := filter.resultsPublisher.publishEOF(clientID); err != nil {
 		return err
 	}
-	slog.Info("Received end of input", "clientID", clientID, "articles", filter.received, "matches", filter.matched)
-	filter.received = 0
-	filter.matched = 0
+	stats := filter.statsByClient[clientID]
+	slog.Info("Received end of input", "clientID", clientID, "articles", stats.received, "matches", stats.matched)
+	delete(filter.statsByClient, clientID)
 	return nil
 }
