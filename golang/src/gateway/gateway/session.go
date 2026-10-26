@@ -10,6 +10,7 @@ import (
 
 type clientSession struct {
 	conn        net.Conn
+	writer      *external.Writer
 	writeLock   sync.Mutex
 	doneChannel chan struct{}
 	closeOnce   sync.Once
@@ -18,6 +19,7 @@ type clientSession struct {
 func newClientSession(conn net.Conn) *clientSession {
 	return &clientSession{
 		conn:        conn,
+		writer:      external.NewWriter(conn),
 		doneChannel: make(chan struct{}),
 	}
 }
@@ -25,43 +27,43 @@ func newClientSession(conn net.Conn) *clientSession {
 func (s *clientSession) sendAck() error {
 	s.writeLock.Lock()
 	defer s.writeLock.Unlock()
-	return external.WriteAck(s.conn)
+	return s.writer.WriteAck()
 }
 
 func (s *clientSession) sendQ1Result(res *result.Q1Result) error {
 	s.writeLock.Lock()
 	defer s.writeLock.Unlock()
-	return external.WriteQ1Result(s.conn, res)
+	return s.writer.WriteQ1Result(res)
 }
 
 func (s *clientSession) sendQ2Result(res *result.Q2Result) error {
 	s.writeLock.Lock()
 	defer s.writeLock.Unlock()
-	return external.WriteQ2Result(s.conn, res)
+	return s.writer.WriteQ2Result(res)
 }
 
 func (s *clientSession) sendQ3Result(res *result.Q3Result) error {
 	s.writeLock.Lock()
 	defer s.writeLock.Unlock()
-	return external.WriteQ3Result(s.conn, res)
+	return s.writer.WriteQ3Result(res)
 }
 
 func (s *clientSession) sendQ4Result(res *result.Q4Result) error {
 	s.writeLock.Lock()
 	defer s.writeLock.Unlock()
-	return external.WriteQ4Result(s.conn, res)
+	return s.writer.WriteQ4Result(res)
 }
 
 func (s *clientSession) sendQ5Result(res *result.Q5Result) error {
 	s.writeLock.Lock()
 	defer s.writeLock.Unlock()
-	return external.WriteQ5Result(s.conn, res)
+	return s.writer.WriteQ5Result(res)
 }
 
 func (s *clientSession) sendEndOfRecords() error {
 	s.writeLock.Lock()
 	defer s.writeLock.Unlock()
-	return external.WriteEndOfRecords(s.conn)
+	return s.writer.WriteEndOfRecords()
 }
 
 func (s *clientSession) finish() {
