@@ -92,4 +92,3 @@ func DeserializeAbstracts(message *middleware.Message) (string, []AbstractItem, 
 
 	return clientID, records, len(records) == 0, nil
 }
-

@@ -20,8 +20,6 @@
 - Validar multiples gateways con el load balancer.
 - Implementar nodos de Q2, Q3, Q4 y Q5.
 - Gateway: adaptar ResultCollector para recibir resultados de Q2 a Q5.
-- Definir ajuste al protocolo interno para EOFs.
-- Definir queues de resultados hacia el Collector.
 
 ## Consultas
 
@@ -35,13 +33,11 @@
   - Si un filtro recibe un lote y ningun articulo cumple la condicion, la lista resultante queda vacia. Si publica esa lista vacia, la etapa siguiente cree que termino todo el archivo por error.
   - El Collector recibira 5 mensajes de eof por cliente (uno por cada consulta: Q1 a Q5) y no debe cerrar la sesion hasta que terminen todas (como hace ahora).
 
-  Posibles soluciones:
-  - Agregar un booleano explicito de EOF en el mensaje (`[clientID, isEOF, records]`).
-  - Usar `null` en JSON para indicar EOF (`[clientID, null]`) y reservar `[]` unicamente para listas vacias de datos.
+  Solucion: Tipos de mensaje (enums) -> mas escalable y legible
 
 - Como retornan los resultados de Q1 a Q5 hacia el Collector?
   Por ahora solo Q1 publica en `results_<gatewayID>`.
 
-  Opciones para sumar Q2 a Q5:
-  - Una sola queue compartida: requiere agregar un `queryID` en el mensaje (`[queryID, clientID, records]`) para saber que deserializar.
-  - Queues dedicadas por query (`results_<query>_<gatewayID>`): no requiere `queryID` y evita que las imagenes pesadas de Q2 frenen los resultados de las otras consultas (a checkear si puede llegar a ser un problemas esto).
+  Solucion por ahora: Una sola queue compartida: requiere agregar un `queryID` en el mensaje (`[queryID, clientID, records]`) para saber que deserializar (el gateway recibe ese parametro en results)
+
+- Es necesario mandar los acks por aplicación en la ida?
