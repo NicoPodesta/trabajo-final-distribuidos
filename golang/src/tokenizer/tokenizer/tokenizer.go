@@ -7,7 +7,10 @@ import (
 	"trabajo-final-distribuidos/common/middleware"
 )
 
-const abstractsQueueName = "abstracts"
+const (
+	abstractsQueueName  = "abstracts"
+	progressLogInterval = 1000
+)
 
 type TokenizerConfig struct {
 	MOMHost string
@@ -16,6 +19,7 @@ type TokenizerConfig struct {
 
 type Tokenizer struct {
 	abstractsQueue middleware.Middleware
+	received       int
 }
 
 func NewTokenizer(config TokenizerConfig) (*Tokenizer, error) {
@@ -50,4 +54,12 @@ func (tokenizer *Tokenizer) handleGatewayMessage(msg middleware.Message) {
 	}
 
 	slog.Debug("Received abstracts", "clientID", clientID, "records", len(records))
+
+	for _, record := range records {
+		words := extractWords(record.Abstract)
+		tokenizer.received++
+		if tokenizer.received%progressLogInterval == 0 {
+			slog.Info("Tokenized abstracts", "clientID", clientID, "abstracts", tokenizer.received, "url", record.Url, "words", len(words))
+		}
+	}
 }
