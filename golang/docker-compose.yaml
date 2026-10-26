@@ -41,6 +41,7 @@ services:
     - SERVER_PORT=5678
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
+    - EXPECTED_QUERIES=1 # Temporary: only Q1 worker is active
 
   date_filter_0:
     build:

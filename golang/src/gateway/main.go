@@ -41,12 +41,20 @@ func loadConfig() (gateway.GatewayConfig, error) {
 		return gateway.GatewayConfig{}, fmt.Errorf("invalid MOM_PORT: %w", err)
 	}
 
+	expectedQueries := 5
+	if expectedQueriesStr := os.Getenv("EXPECTED_QUERIES"); expectedQueriesStr != "" {
+		if val, err := strconv.Atoi(expectedQueriesStr); err == nil && val > 0 {
+			expectedQueries = val
+		}
+	}
+
 	return gateway.GatewayConfig{
-		ID:         id,
-		ServerHost: serverHost,
-		ServerPort: serverPort,
-		MOMHost:    momHost,
-		MOMPort:    momPort,
+		ID:              id,
+		ServerHost:      serverHost,
+		ServerPort:      serverPort,
+		MOMHost:         momHost,
+		MOMPort:         momPort,
+		ExpectedQueries: expectedQueries,
 	}, nil
 }
 

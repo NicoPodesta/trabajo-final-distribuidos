@@ -5,23 +5,46 @@ import (
 	"sync"
 
 	"trabajo-final-distribuidos/common/messageprotocol/external"
+	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/common/result"
 )
 
 type clientSession struct {
-	conn        net.Conn
-	writer      *external.Writer
-	writeLock   sync.Mutex
-	doneChannel chan struct{}
-	closeOnce   sync.Once
+	conn            net.Conn
+	writer          *external.Writer
+	writeLock       sync.Mutex
+	doneChannel     chan struct{}
+	closeOnce       sync.Once
+	expectedQueries int
+	completedEOFs   map[inner.QueryID]bool
 }
 
-func newClientSession(conn net.Conn) *clientSession {
-	return &clientSession{
-		conn:        conn,
-		writer:      external.NewWriter(conn),
-		doneChannel: make(chan struct{}),
+func newClientSession(conn net.Conn, expectedQueries int) *clientSession {
+	if expectedQueries <= 0 {
+		expectedQueries = 5
 	}
+	return &clientSession{
+		conn:            conn,
+		writer:          external.NewWriter(conn),
+		doneChannel:     make(chan struct{}),
+		expectedQueries: expectedQueries,
+		completedEOFs:   make(map[inner.QueryID]bool),
+	}
+}
+
+func (s *clientSession) registerEOF(queryID inner.QueryID) (bool, error) {
+	s.writeLock.Lock()
+	defer s.writeLock.Unlock()
+
+	s.completedEOFs[queryID] = true
+	if len(s.completedEOFs) >= s.expectedQueries {
+		if err := s.writer.WriteEndOfRecords(); err != nil {
+			return true, err
+		}
+		s.finish()
+		return true, nil
+	}
+	return false, nil
 }
 
 func (s *clientSession) sendAck() error {
@@ -73,13 +96,15 @@ func (s *clientSession) finish() {
 }
 
 type SessionManager struct {
-	sessionsLock sync.RWMutex
-	sessions     map[string]*clientSession
+	sessionsLock    sync.RWMutex
+	sessions        map[string]*clientSession
+	expectedQueries int
 }
 
-func NewSessionManager() *SessionManager {
+func NewSessionManager(expectedQueries int) *SessionManager {
 	return &SessionManager{
-		sessions: make(map[string]*clientSession),
+		sessions:        make(map[string]*clientSession),
+		expectedQueries: expectedQueries,
 	}
 }
 
@@ -87,7 +112,7 @@ func (sm *SessionManager) CreateSession(clientID string, conn net.Conn) *clientS
 	sm.sessionsLock.Lock()
 	defer sm.sessionsLock.Unlock()
 
-	session := newClientSession(conn)
+	session := newClientSession(conn, sm.expectedQueries)
 	sm.sessions[clientID] = session
 	return session
 }

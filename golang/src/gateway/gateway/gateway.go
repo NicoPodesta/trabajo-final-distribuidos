@@ -22,11 +22,12 @@ const (
 )
 
 type GatewayConfig struct {
-	ID         string
-	ServerHost string
-	ServerPort string
-	MOMHost    string
-	MOMPort    int
+	ID              string
+	ServerHost      string
+	ServerPort      string
+	MOMHost         string
+	MOMPort         int
+	ExpectedQueries int
 }
 
 type Gateway struct {
@@ -96,7 +97,7 @@ func NewGateway(config GatewayConfig) (*Gateway, error) {
 		return nil, err
 	}
 
-	sessionManager := NewSessionManager()
+	sessionManager := NewSessionManager(config.ExpectedQueries)
 	handler := NewClientHandler(config.ID, sessionManager, articleDatesQ, articleSectionsQ, abstractsQ)
 	collector := NewResultCollector(config.ID, resultsQ, sessionManager)
 
