@@ -1,94 +1,67 @@
 package inner
 
 import (
-	"errors"
+	"encoding/json"
 
 	"trabajo-final-distribuidos/common/middleware"
 )
 
 type AbstractItem struct {
-	Language     string
-	Url          string
-	DateModified uint32
-	Abstract     string
+	Language     string `json:"language"`
+	Url          string `json:"url"`
+	DateModified uint32 `json:"date_modified"`
+	Abstract     string `json:"abstract"`
 }
 
-func SerializeAbstracts(clientID string, records []AbstractItem) (*middleware.Message, error) {
-	recordsData := []interface{}{}
-	for _, record := range records {
-		item := []interface{}{
-			record.Language,
-			record.Url,
-			record.DateModified,
-			record.Abstract,
-		}
-		recordsData = append(recordsData, item)
-	}
+type AbstractsMessage struct {
+	Type     MsgType        `json:"type"`
+	ClientID string         `json:"client_id"`
+	Records  []AbstractItem `json:"records,omitempty"`
+}
 
-	body, err := serializeJson([]interface{}{clientID, recordsData})
+func (m *AbstractsMessage) IsEOF() bool {
+	return m.Type == MsgEOF
+}
+
+func NewAbstractsMessage(clientID string, records []AbstractItem) *AbstractsMessage {
+	msgType := MsgData
+	if len(records) == 0 {
+		msgType = MsgEOF
+	}
+	return &AbstractsMessage{
+		Type:     msgType,
+		ClientID: clientID,
+		Records:  records,
+	}
+}
+
+func NewAbstractsEOF(clientID string) *AbstractsMessage {
+	return &AbstractsMessage{
+		Type:     MsgEOF,
+		ClientID: clientID,
+	}
+}
+
+func (m *AbstractsMessage) Serialize() (*middleware.Message, error) {
+	body, err := json.Marshal(m)
 	if err != nil {
 		return nil, err
 	}
-	message := middleware.Message{Body: string(body)}
-
-	return &message, nil
+	return &middleware.Message{Body: string(body)}, nil
 }
 
-func DeserializeAbstracts(message *middleware.Message) (string, []AbstractItem, bool, error) {
-	data, err := deserializeJson([]byte((*message).Body))
-	if err != nil {
-		return "", nil, false, err
+func SerializeAbstracts(clientID string, records []AbstractItem) (*middleware.Message, error) {
+	return NewAbstractsMessage(clientID, records).Serialize()
+}
+
+func SerializeAbstractsEOF(clientID string) (*middleware.Message, error) {
+	return NewAbstractsEOF(clientID).Serialize()
+}
+
+func DeserializeAbstracts(message *middleware.Message) (*AbstractsMessage, error) {
+	var msg AbstractsMessage
+	if err := json.Unmarshal([]byte(message.Body), &msg); err != nil {
+		return nil, err
 	}
-
-	if len(data) < 2 {
-		return "", nil, false, errors.New("message does not contain clientID and records")
-	}
-
-	clientID, ok := data[0].(string)
-	if !ok {
-		return "", nil, false, errors.New("clientID is not a string")
-	}
-
-	recordsRaw, ok := data[1].([]interface{})
-	if !ok {
-		return "", nil, false, errors.New("records is not a list")
-	}
-
-	records := make([]AbstractItem, 0, len(recordsRaw))
-	for _, item := range recordsRaw {
-		itemSlice, ok := item.([]interface{})
-		if !ok || len(itemSlice) < 4 {
-			return "", nil, false, errors.New("item is not an abstract tuple")
-		}
-
-		language, ok := itemSlice[0].(string)
-		if !ok {
-			return "", nil, false, errors.New("item language is not a string")
-		}
-
-		url, ok := itemSlice[1].(string)
-		if !ok {
-			return "", nil, false, errors.New("item url is not a string")
-		}
-
-		dateModifiedFloat, ok := itemSlice[2].(float64)
-		if !ok {
-			return "", nil, false, errors.New("item date_modified is not a number")
-		}
-
-		abstract, ok := itemSlice[3].(string)
-		if !ok {
-			return "", nil, false, errors.New("item abstract is not a string")
-		}
-
-		record := AbstractItem{
-			Language:     language,
-			Url:          url,
-			DateModified: uint32(dateModifiedFloat),
-			Abstract:     abstract,
-		}
-		records = append(records, record)
-	}
-
-	return clientID, records, len(records) == 0, nil
+	return &msg, nil
 }

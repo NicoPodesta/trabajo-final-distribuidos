@@ -1,120 +1,92 @@
 package inner
 
 import (
-	"errors"
+	"encoding/json"
 
 	"trabajo-final-distribuidos/common/middleware"
+	"trabajo-final-distribuidos/common/result"
 )
 
 type Q2ArticleItem struct {
-	Language     string
-	Name         string
-	Url          string
-	DateModified uint32
-	Image        string
-	Sections     []string
+	Language     string   `json:"language"`
+	Name         string   `json:"name"`
+	Url          string   `json:"url"`
+	DateModified uint32   `json:"date_modified"`
+	Image        string   `json:"image"`
+	Sections     []string `json:"sections"`
 }
 
-func SerializeQ2Articles(clientID string, records []Q2ArticleItem) (*middleware.Message, error) {
-	recordsData := []interface{}{}
-	for _, record := range records {
-		item := []interface{}{
-			record.Language,
-			record.Name,
-			record.Url,
-			record.DateModified,
-			record.Image,
-			record.Sections,
-		}
-		recordsData = append(recordsData, item)
-	}
+type Q2ArticlesMessage struct {
+	Type     MsgType         `json:"type"`
+	ClientID string          `json:"client_id"`
+	Records  []Q2ArticleItem `json:"records,omitempty"`
+}
 
-	body, err := serializeJson([]interface{}{clientID, recordsData})
+func (m *Q2ArticlesMessage) IsEOF() bool {
+	return m.Type == MsgEOF
+}
+
+func NewQ2ArticlesMessage(clientID string, records []Q2ArticleItem) *Q2ArticlesMessage {
+	msgType := MsgData
+	if len(records) == 0 {
+		msgType = MsgEOF
+	}
+	return &Q2ArticlesMessage{
+		Type:     msgType,
+		ClientID: clientID,
+		Records:  records,
+	}
+}
+
+func NewQ2ArticlesEOF(clientID string) *Q2ArticlesMessage {
+	return &Q2ArticlesMessage{
+		Type:     MsgEOF,
+		ClientID: clientID,
+	}
+}
+
+func (m *Q2ArticlesMessage) Serialize() (*middleware.Message, error) {
+	body, err := json.Marshal(m)
 	if err != nil {
 		return nil, err
 	}
-	message := middleware.Message{Body: string(body)}
-
-	return &message, nil
+	return &middleware.Message{Body: string(body)}, nil
 }
 
-func DeserializeQ2Articles(message *middleware.Message) (string, []Q2ArticleItem, bool, error) {
-	data, err := deserializeJson([]byte((*message).Body))
-	if err != nil {
-		return "", nil, false, err
-	}
-
-	if len(data) < 2 {
-		return "", nil, false, errors.New("message does not contain clientID and records")
-	}
-
-	clientID, ok := data[0].(string)
-	if !ok {
-		return "", nil, false, errors.New("clientID is not a string")
-	}
-
-	recordsRaw, ok := data[1].([]interface{})
-	if !ok {
-		return "", nil, false, errors.New("records is not a list")
-	}
-
-	records := make([]Q2ArticleItem, 0, len(recordsRaw))
-	for _, item := range recordsRaw {
-		itemSlice, ok := item.([]interface{})
-		if !ok || len(itemSlice) < 6 {
-			return "", nil, false, errors.New("item is not a Q2 article tuple")
-		}
-
-		language, ok := itemSlice[0].(string)
-		if !ok {
-			return "", nil, false, errors.New("item language is not a string")
-		}
-
-		name, ok := itemSlice[1].(string)
-		if !ok {
-			return "", nil, false, errors.New("item name is not a string")
-		}
-
-		url, ok := itemSlice[2].(string)
-		if !ok {
-			return "", nil, false, errors.New("item url is not a string")
-		}
-
-		dateModifiedFloat, ok := itemSlice[3].(float64)
-		if !ok {
-			return "", nil, false, errors.New("item date_modified is not a number")
-		}
-
-		image, ok := itemSlice[4].(string)
-		if !ok {
-			return "", nil, false, errors.New("item image is not a string")
-		}
-
-		sectionsRaw, ok := itemSlice[5].([]interface{})
-		if !ok {
-			return "", nil, false, errors.New("item sections is not a list")
-		}
-
-		sections := make([]string, 0, len(sectionsRaw))
-		for _, secRaw := range sectionsRaw {
-			sec, ok := secRaw.(string)
-			if !ok {
-				return "", nil, false, errors.New("section name is not a string")
-			}
-			sections = append(sections, sec)
-		}
-
-		record := Q2ArticleItem{
-			Language:     language,
-			Name:         name,
-			Url:          url,
-			DateModified: uint32(dateModifiedFloat),
-			Image:        image,
-			Sections:     sections,
-		}
-		records = append(records, record)
-	}
-
-	return clientID, records, len(records) == 0, nil
+func SerializeQ2Articles(clientID string, records []Q2ArticleItem) (*middleware.Message, error) {
+	return NewQ2ArticlesMessage(clientID, records).Serialize()
 }
 
+func SerializeQ2ArticlesEOF(clientID string) (*middleware.Message, error) {
+	return NewQ2ArticlesEOF(clientID).Serialize()
+}
+
+func DeserializeQ2Articles(message *middleware.Message) (*Q2ArticlesMessage, error) {
+	var msg Q2ArticlesMessage
+	if err := json.Unmarshal([]byte(message.Body), &msg); err != nil {
+		return nil, err
+	}
+	return &msg, nil
+}
+
+type Q2ResultsMessage = ResultsMessage[result.Q2Result]
+
+func NewQ2ResultsMessage(clientID string, records []result.Q2Result) *Q2ResultsMessage {
+	return NewResultsMessage(Q2, clientID, records)
+}
+
+func NewQ2ResultsEOF(clientID string) *Q2ResultsMessage {
+	return NewResultsEOF[result.Q2Result](Q2, clientID)
+}
+
+func SerializeQ2Results(clientID string, records []result.Q2Result) (*middleware.Message, error) {
+	return NewQ2ResultsMessage(clientID, records).Serialize()
+}
+
+func SerializeQ2ResultsEOF(clientID string) (*middleware.Message, error) {
+	return NewQ2ResultsEOF(clientID).Serialize()
+}
+
+func DeserializeQ2Results(message *middleware.Message) (*Q2ResultsMessage, error) {
+	return deserializeResults[result.Q2Result](message)
+}

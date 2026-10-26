@@ -100,30 +100,29 @@ func (filter *DateFilter) handleSignals() {
 }
 
 func (filter *DateFilter) handleGatewayMessage(msg middleware.Message) error {
-	clientID, records, isEOF, err := inner.DeserializeQ1Articles(&msg)
+	articleMsg, err := inner.DeserializeQ1Articles(&msg)
 	if err != nil {
 		return err
 	}
 
-	if isEOF {
-		return filter.handleEndOfRecordsMessage(clientID)
+	if articleMsg.IsEOF() {
+		return filter.handleEndOfRecordsMessage(articleMsg.ClientID)
 	}
 
 	var results []result.Q1Result
-	for _, articleRecord := range records {
+	for _, articleRecord := range articleMsg.Records {
 		if matched := filter.handleArticleRecordMessage(articleRecord); matched != nil {
 			results = append(results, *matched)
 		}
 		filter.received++
 		if filter.received%progressLogInterval == 0 {
-			slog.Info("Received articles", "clientID", clientID, "articles", filter.received)
+			slog.Info("Received articles", "clientID", articleMsg.ClientID, "articles", filter.received)
 		}
 	}
-	// Una lista vacia indica EOF
 	if len(results) == 0 {
 		return nil
 	}
-	return filter.publishResults(clientID, results)
+	return filter.publishResults(articleMsg.ClientID, results)
 }
 
 func (filter *DateFilter) handleArticleRecordMessage(articleRecord inner.Q1ArticleItem) *result.Q1Result {
