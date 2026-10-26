@@ -17,6 +17,10 @@ type WordCountsMessage struct {
 	Records  []WordCountItem `json:"records,omitempty"`
 }
 
+func (m *WordCountsMessage) IsEOF() bool {
+	return m.Type == MsgEOF
+}
+
 func (m *WordCountsMessage) Serialize() (*middleware.Message, error) {
 	body, err := json.Marshal(m)
 	if err != nil {
@@ -31,4 +35,12 @@ func SerializeWordCounts(clientID string, records []WordCountItem) (*middleware.
 
 func SerializeWordCountsEOF(clientID string) (*middleware.Message, error) {
 	return (&WordCountsMessage{Type: MsgEOF, ClientID: clientID}).Serialize()
+}
+
+func DeserializeWordCounts(message *middleware.Message) (*WordCountsMessage, error) {
+	var msg WordCountsMessage
+	if err := json.Unmarshal([]byte(message.Body), &msg); err != nil {
+		return nil, err
+	}
+	return &msg, nil
 }
