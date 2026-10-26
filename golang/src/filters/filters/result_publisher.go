@@ -24,15 +24,31 @@ func newResultPublisher(settings middleware.ConnSettings) *resultPublisher {
 }
 
 func (p *resultPublisher) publish(clientID string, records []result.Q1Result) error {
+	// Un lote sin coincidencias no termina la consulta.
+	if len(records) == 0 {
+		return nil
+	}
 	msg, err := inner.SerializeQ1Results(clientID, records)
 	if err != nil {
 		return err
 	}
+	return p.send(clientID, *msg)
+}
 
+func (p *resultPublisher) publishEOF(clientID string) error {
+	msg, err := inner.SerializeQ1ResultsEOF(clientID)
+	if err != nil {
+		return err
+	}
+	return p.send(clientID, *msg)
+}
+
+func (p *resultPublisher) send(clientID string, msg middleware.Message) error {
 	gatewayID := inner.ExtractGatewayID(clientID)
 	queue := p.queues[gatewayID]
 	if queue == nil {
 		queueName := fmt.Sprintf("results_%s", gatewayID)
+		var err error
 		queue, err = createQueueWithRetry(queueName, p.settings)
 		if err != nil {
 			return err
@@ -40,7 +56,7 @@ func (p *resultPublisher) publish(clientID string, records []result.Q1Result) er
 		p.queues[gatewayID] = queue
 		slog.Info("Publishing Q1 results", "clientID", clientID, "queue", queueName)
 	}
-	return queue.Send(*msg)
+	return queue.Send(msg)
 }
 
 func (p *resultPublisher) close() error {
