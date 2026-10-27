@@ -11,13 +11,12 @@ import (
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/common/middleware"
 	"trabajo-final-distribuidos/common/result"
+	"trabajo-final-distribuidos/common/resultpublisher"
 )
 
 const (
-	articlesQueueName          = "article_dates"
-	connectionAttempts         = 15
-	connectionAttemptsDelaySec = 2
-	progressLogInterval        = 1000
+	articlesQueueName   = "article_dates"
+	progressLogInterval = 1000
 )
 
 type DateFilterConfig struct {
@@ -32,35 +31,19 @@ type clientStats struct {
 
 type DateFilter struct {
 	articlesQueue    middleware.Middleware
-	resultsPublisher *resultPublisher
+	resultsPublisher *resultpublisher.Publisher
 	statsByClient    map[string]clientStats
-}
-
-func createQueueWithRetry(queueName string, settings middleware.ConnSettings) (middleware.Middleware, error) {
-	var q middleware.Middleware
-	var err error
-	for i := 0; i < connectionAttempts; i++ {
-		q, err = middleware.CreateQueueMiddleware(queueName, settings)
-		if err == nil {
-			return q, nil
-		}
-		slog.Warn("Retrying connection to RabbitMQ...", "queue", queueName, "attempt", i+1, "err", err)
-		if i+1 < connectionAttempts {
-			time.Sleep(connectionAttemptsDelaySec * time.Second)
-		}
-	}
-	return nil, err
 }
 
 func NewDateFilter(config DateFilterConfig) (*DateFilter, error) {
 	settings := middleware.ConnSettings{Hostname: config.MOMHost, Port: config.MOMPort}
-	articlesQueue, err := createQueueWithRetry(articlesQueueName, settings)
+	articlesQueue, err := middleware.CreateQueueWithRetry(articlesQueueName, settings)
 	if err != nil {
 		return nil, err
 	}
 	return &DateFilter{
 		articlesQueue:    articlesQueue,
-		resultsPublisher: newResultPublisher(settings),
+		resultsPublisher: resultpublisher.New(settings),
 		statsByClient:    make(map[string]clientStats),
 	}, nil
 }
@@ -68,7 +51,7 @@ func NewDateFilter(config DateFilterConfig) (*DateFilter, error) {
 func (filter *DateFilter) Run() error {
 	defer filter.articlesQueue.Close()
 	defer func() {
-		if err := filter.resultsPublisher.close(); err != nil {
+		if err := filter.resultsPublisher.Close(); err != nil {
 			slog.Error("While closing results publishers", "err", err)
 		}
 	}()
@@ -151,11 +134,23 @@ func (filter *DateFilter) handleArticleRecordMessage(articleRecord inner.Q1Artic
 }
 
 func (filter *DateFilter) publishResults(clientID string, records []result.Q1Result) error {
-	return filter.resultsPublisher.publish(clientID, records)
+	// Un batch sin coincidencias no termina la consulta
+	if len(records) == 0 {
+		return nil
+	}
+	msg, err := inner.SerializeQ1Results(clientID, records)
+	if err != nil {
+		return err
+	}
+	return filter.resultsPublisher.Publish(clientID, *msg)
 }
 
 func (filter *DateFilter) handleEndOfRecordsMessage(clientID string) error {
-	if err := filter.resultsPublisher.publishEOF(clientID); err != nil {
+	msg, err := inner.SerializeQ1ResultsEOF(clientID)
+	if err != nil {
+		return err
+	}
+	if err := filter.resultsPublisher.Publish(clientID, *msg); err != nil {
 		return err
 	}
 	stats := filter.statsByClient[clientID]

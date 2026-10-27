@@ -12,6 +12,7 @@
 - Filtro Q1 consume `article_dates` y confirma los mensajes.
 - Protocolo interno tipado con enums (`MsgData`, `MsgEOF`): se eliminó el uso de lista vacía como EOF para evitar que lotes sin coincidencias se confundan con el fin de transmisión.
 - Cola única compartida `results_<gatewayID>`: los mensajes incluyen un header con `type`, `client_id` y `query_id` (Q1 a Q5) para que Gateway sepa qué deserializar.
+- Q1 usa `common/resultpublisher`: cada consulta serializa sus resultados y su EOF; el publisher reutiliza conexiones por gateway y las cierra al finalizar el worker.
 - Gateway coordina la recepción de resultados de todas las queries: espera el EOF de cada consulta (configurable con `EXPECTED_QUERIES`) antes de enviar el `EndOfRecords` final al cliente y cerrar la sesión.
 - Cliente preparado para recibir y persistir resultados de Q1 a Q5.
 - Stopwords: Go no trae listas en la libreria estandar, asi que se copiaron las de NLTK (las mismas que usa el notebook) a `tokenizer/stopwords.go`.
@@ -24,7 +25,7 @@
 - Probar levantar multicliente.
 - Validar multiples gateways con el load balancer.
 - Implementar nodos de Q2, Q3, Q4 y Q5.
-- Generalizar y mover `resultPublisher` a `common/` para uso compartido de todos los workers.
+- Generalizar `resultPublisher` para uso compartido de todos los workers.
 
 ## Consultas
 
