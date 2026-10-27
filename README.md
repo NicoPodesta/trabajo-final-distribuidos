@@ -14,6 +14,8 @@
 - Cliente preparado para recibir y persistir resultados de Q1 a Q5.
 - Lista vacia indica EOF de entrada y de resultados.
 - Stopwords: Go no trae listas en la libreria estandar, asi que se copiaron las de NLTK (las mismas que usa el notebook) a `tokenizer/stopwords.go`.
+- Top parcial ordena por count descendente y desempata por palabra ascendente
+
 
 ## Pendientes
 
