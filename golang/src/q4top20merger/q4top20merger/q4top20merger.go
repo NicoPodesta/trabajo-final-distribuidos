@@ -1,6 +1,7 @@
 package q4top20merger
 
 import (
+	"fmt"
 	"log/slog"
 	"sort"
 
@@ -22,6 +23,8 @@ type TopMergerConfig struct {
 
 type TopMerger struct {
 	partialTop20Queue   middleware.Middleware
+	settings            middleware.ConnSettings
+	resultsQueues       map[string]middleware.Middleware
 	wordCounterAmount   int
 	partialTopsByClient map[string][]result.Q4Result
 	eofCountByClient    map[string]int
@@ -35,6 +38,8 @@ func NewTopMerger(config TopMergerConfig) (*TopMerger, error) {
 	}
 	return &TopMerger{
 		partialTop20Queue:   partialTop20Queue,
+		settings:            settings,
+		resultsQueues:       make(map[string]middleware.Middleware),
 		wordCounterAmount:   config.Q4WordCounterAmount,
 		partialTopsByClient: make(map[string][]result.Q4Result),
 		eofCountByClient:    make(map[string]int),
@@ -43,6 +48,7 @@ func NewTopMerger(config TopMergerConfig) (*TopMerger, error) {
 
 func (merger *TopMerger) Run() error {
 	defer merger.partialTop20Queue.Close()
+	defer merger.closeResultsQueues()
 
 	slog.Info("Consuming partial tops from RabbitMQ...", "queue", partialTop20QueueName)
 	return merger.partialTop20Queue.StartConsuming(func(msg middleware.Message, ack func(), nack func()) {
@@ -60,8 +66,7 @@ func (merger *TopMerger) handleMessage(msg middleware.Message) error {
 	}
 
 	if partialTopMsg.IsEOF() {
-		merger.handleEndOfPartialTop(partialTopMsg.ClientID)
-		return nil
+		return merger.handleEndOfPartialTop(partialTopMsg.ClientID)
 	}
 
 	clientID := partialTopMsg.ClientID
@@ -69,10 +74,10 @@ func (merger *TopMerger) handleMessage(msg middleware.Message) error {
 	return nil
 }
 
-func (merger *TopMerger) handleEndOfPartialTop(clientID string) {
+func (merger *TopMerger) handleEndOfPartialTop(clientID string) error {
 	merger.eofCountByClient[clientID]++
 	if merger.eofCountByClient[clientID] < merger.wordCounterAmount {
-		return
+		return nil
 	}
 
 	partialTops := merger.partialTopsByClient[clientID]
@@ -83,6 +88,55 @@ func (merger *TopMerger) handleEndOfPartialTop(clientID string) {
 	slog.Info("Merged partial tops", "clientID", clientID, "candidates", len(partialTops))
 	for rank, item := range top {
 		slog.Info("Final top", "clientID", clientID, "rank", rank+1, "word", item.Word, "count", item.Count)
+	}
+
+	return merger.publishFinalTop(clientID, top)
+}
+
+func (merger *TopMerger) publishFinalTop(clientID string, top []result.Q4Result) error {
+	resultsQueue, err := merger.resultsQueueFor(clientID)
+	if err != nil {
+		return err
+	}
+
+	if len(top) > 0 {
+		msg, err := inner.SerializeQ4Results(clientID, top)
+		if err != nil {
+			return err
+		}
+		if err := resultsQueue.Send(*msg); err != nil {
+			return err
+		}
+	}
+
+	eofMsg, err := inner.SerializeQ4ResultsEOF(clientID)
+	if err != nil {
+		return err
+	}
+	return resultsQueue.Send(*eofMsg)
+}
+
+func (merger *TopMerger) resultsQueueFor(clientID string) (middleware.Middleware, error) {
+	gatewayID := inner.ExtractGatewayID(clientID)
+	if queue, ok := merger.resultsQueues[gatewayID]; ok {
+		return queue, nil
+	}
+
+	queueName := fmt.Sprintf("results_%s", gatewayID)
+	queue, err := middleware.CreateQueueMiddleware(queueName, merger.settings)
+	if err != nil {
+		return nil, err
+	}
+	merger.resultsQueues[gatewayID] = queue
+	slog.Info("Publishing Q4 results", "clientID", clientID, "queue", queueName)
+	return queue, nil
+}
+
+func (merger *TopMerger) closeResultsQueues() {
+	for gatewayID, queue := range merger.resultsQueues {
+		if err := queue.Close(); err != nil {
+			slog.Error("While closing results queue", "gatewayID", gatewayID, "err", err)
+		}
 	}
 }
 
