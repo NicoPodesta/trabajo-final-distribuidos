@@ -78,6 +78,18 @@ services:
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
 
+  q4_top20_merger_0:
+    build:
+      context: ./src/
+      dockerfile: q4top20merger/Dockerfile
+    container_name: q4_top20_merger_0
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+
   rabbitmq:
     build:
       context: ./src/rabbitmq
