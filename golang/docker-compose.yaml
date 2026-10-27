@@ -89,6 +89,7 @@ services:
     environment:
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
+    - Q4_WORD_COUNTER_AMOUNT=1
 
   rabbitmq:
     build:

@@ -26,9 +26,20 @@ func loadConfig() (q4top20merger.TopMergerConfig, error) {
 		return q4top20merger.TopMergerConfig{}, fmt.Errorf("invalid MOM_PORT: %w", err)
 	}
 
+	wordCounterAmountStr := os.Getenv("Q4_WORD_COUNTER_AMOUNT")
+	if wordCounterAmountStr == "" {
+		return q4top20merger.TopMergerConfig{}, errors.New("Q4_WORD_COUNTER_AMOUNT environment variable is required")
+	}
+
+	wordCounterAmount, err := strconv.Atoi(wordCounterAmountStr)
+	if err != nil {
+		return q4top20merger.TopMergerConfig{}, fmt.Errorf("invalid Q4_WORD_COUNTER_AMOUNT: %w", err)
+	}
+
 	return q4top20merger.TopMergerConfig{
-		MOMHost: momHost,
-		MOMPort: momPort,
+		MOMHost:             momHost,
+		MOMPort:             momPort,
+		Q4WordCounterAmount: wordCounterAmount,
 	}, nil
 }
 
