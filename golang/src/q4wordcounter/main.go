@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 
+	"trabajo-final-distribuidos/common/logger"
 	"trabajo-final-distribuidos/q4wordcounter/q4wordcounter"
 )
 
@@ -33,6 +34,8 @@ func loadConfig() (q4wordcounter.WordCounterConfig, error) {
 }
 
 func run() int {
+	logger.Setup()
+
 	config, err := loadConfig()
 	if err != nil {
 		slog.Error("While loading config", "err", err)

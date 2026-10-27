@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 
+	"trabajo-final-distribuidos/common/logger"
 	"trabajo-final-distribuidos/q4top20merger/q4top20merger"
 )
 
@@ -44,6 +45,8 @@ func loadConfig() (q4top20merger.TopMergerConfig, error) {
 }
 
 func run() int {
+	logger.Setup()
+
 	config, err := loadConfig()
 	if err != nil {
 		slog.Error("While loading config", "err", err)

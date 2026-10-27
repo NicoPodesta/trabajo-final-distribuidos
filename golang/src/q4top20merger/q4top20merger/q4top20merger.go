@@ -87,7 +87,7 @@ func (merger *TopMerger) handleEndOfPartialTop(clientID string) error {
 	top := buildTop(partialTops)
 	slog.Info("Merged partial tops", "clientID", clientID, "candidates", len(partialTops))
 	for rank, item := range top {
-		slog.Info("Final top", "clientID", clientID, "rank", rank+1, "word", item.Word, "count", item.Count)
+		slog.Debug("Final top", "clientID", clientID, "rank", rank+1, "word", item.Word, "count", item.Count)
 	}
 
 	return merger.publishFinalTop(clientID, top)

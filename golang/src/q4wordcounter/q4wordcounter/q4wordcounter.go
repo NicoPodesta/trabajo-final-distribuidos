@@ -92,7 +92,7 @@ func (counter *WordCounter) handleEndOfInput(clientID string) error {
 	top := buildTop(counts)
 	slog.Info("Received end of input", "clientID", clientID, "distinctWords", len(counts))
 	for rank, item := range top {
-		slog.Info("Local top", "clientID", clientID, "rank", rank+1, "word", item.Word, "count", item.Count)
+		slog.Debug("Local top", "clientID", clientID, "rank", rank+1, "word", item.Word, "count", item.Count)
 	}
 
 	return counter.publishPartialTop(clientID, top)

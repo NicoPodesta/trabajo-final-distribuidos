@@ -65,6 +65,7 @@ services:
     environment:
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
+    - LOG_LEVEL=info
 
   q4_word_counter_0:
     build:
@@ -77,6 +78,7 @@ services:
     environment:
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
+    - LOG_LEVEL=info
 
   q4_top20_merger_0:
     build:
@@ -90,6 +92,7 @@ services:
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
     - Q4_WORD_COUNTER_AMOUNT=1
+    - LOG_LEVEL=info
 
   rabbitmq:
     build:
