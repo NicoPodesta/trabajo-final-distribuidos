@@ -1,13 +1,13 @@
 package q4top20merger
 
 import (
-	"fmt"
 	"log/slog"
 	"sort"
 
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/common/middleware"
 	"trabajo-final-distribuidos/common/result"
+	"trabajo-final-distribuidos/common/resultpublisher"
 )
 
 const (
@@ -23,8 +23,7 @@ type TopMergerConfig struct {
 
 type TopMerger struct {
 	partialTop20Queue   middleware.Middleware
-	settings            middleware.ConnSettings
-	resultsQueues       map[string]middleware.Middleware
+	resultsPublisher    *resultpublisher.Publisher
 	wordCounterAmount   int
 	partialTopsByClient map[string][]result.Q4Result
 	eofCountByClient    map[string]int
@@ -38,8 +37,7 @@ func NewTopMerger(config TopMergerConfig) (*TopMerger, error) {
 	}
 	return &TopMerger{
 		partialTop20Queue:   partialTop20Queue,
-		settings:            settings,
-		resultsQueues:       make(map[string]middleware.Middleware),
+		resultsPublisher:    resultpublisher.New(settings),
 		wordCounterAmount:   config.Q4WordCounterAmount,
 		partialTopsByClient: make(map[string][]result.Q4Result),
 		eofCountByClient:    make(map[string]int),
@@ -48,7 +46,11 @@ func NewTopMerger(config TopMergerConfig) (*TopMerger, error) {
 
 func (merger *TopMerger) Run() error {
 	defer merger.partialTop20Queue.Close()
-	defer merger.closeResultsQueues()
+	defer func() {
+		if err := merger.resultsPublisher.Close(); err != nil {
+			slog.Error("While closing results publisher", "err", err)
+		}
+	}()
 
 	slog.Info("Consuming partial tops from RabbitMQ...", "queue", partialTop20QueueName)
 	return merger.partialTop20Queue.StartConsuming(func(msg middleware.Message, ack func(), nack func()) {
@@ -94,17 +96,12 @@ func (merger *TopMerger) handleEndOfPartialTop(clientID string) error {
 }
 
 func (merger *TopMerger) publishFinalTop(clientID string, top []result.Q4Result) error {
-	resultsQueue, err := merger.resultsQueueFor(clientID)
-	if err != nil {
-		return err
-	}
-
 	if len(top) > 0 {
 		msg, err := inner.SerializeQ4Results(clientID, top)
 		if err != nil {
 			return err
 		}
-		if err := resultsQueue.Send(*msg); err != nil {
+		if err := merger.resultsPublisher.Publish(clientID, *msg); err != nil {
 			return err
 		}
 	}
@@ -113,31 +110,7 @@ func (merger *TopMerger) publishFinalTop(clientID string, top []result.Q4Result)
 	if err != nil {
 		return err
 	}
-	return resultsQueue.Send(*eofMsg)
-}
-
-func (merger *TopMerger) resultsQueueFor(clientID string) (middleware.Middleware, error) {
-	gatewayID := inner.ExtractGatewayID(clientID)
-	if queue, ok := merger.resultsQueues[gatewayID]; ok {
-		return queue, nil
-	}
-
-	queueName := fmt.Sprintf("results_%s", gatewayID)
-	queue, err := middleware.CreateQueueMiddleware(queueName, merger.settings)
-	if err != nil {
-		return nil, err
-	}
-	merger.resultsQueues[gatewayID] = queue
-	slog.Info("Publishing Q4 results", "clientID", clientID, "queue", queueName)
-	return queue, nil
-}
-
-func (merger *TopMerger) closeResultsQueues() {
-	for gatewayID, queue := range merger.resultsQueues {
-		if err := queue.Close(); err != nil {
-			slog.Error("While closing results queue", "gatewayID", gatewayID, "err", err)
-		}
-	}
+	return merger.resultsPublisher.Publish(clientID, *eofMsg)
 }
 
 func buildTop(records []result.Q4Result) []result.Q4Result {
