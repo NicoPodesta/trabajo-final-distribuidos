@@ -59,6 +59,8 @@ func (w *ResultWriter) WriteQ1(res *result.Q1Result) error {
 	return err
 }
 
+// TODO: consultar con el profe el formato de archivo (csv o json) 
+// para relacionar nombre, URL y archivo de cada imagen.
 func (w *ResultWriter) WriteQ2(res *result.Q2Result, index int) error {
 	filename := sanitizeFilename(res.Name)
 	if filename == "" {

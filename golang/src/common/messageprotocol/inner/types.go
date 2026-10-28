@@ -7,6 +7,7 @@ type MsgType int
 const (
 	MsgData MsgType = iota + 1
 	MsgEOF
+	MsgChunk
 )
 
 type QueryID int

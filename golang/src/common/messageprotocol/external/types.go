@@ -12,4 +12,5 @@ const (
 	Q3Result
 	Q4Result
 	Q5Result
+	Q2ImageChunk
 )

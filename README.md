@@ -11,6 +11,7 @@
 - Gateway soporta multicliente.
 - Filtro Q1 consume `article_dates` y confirma los mensajes.
 - Filtro Q2 implementado en `golang/src/q2filter`, aún sin activar en Compose: consume `article_sections` y publica pedidos individuales en `image_downloads`. Ver el contrato más abajo.
+- `Q2ImageChunk` y serializadores JSON/TCP implementados, pendientes de conectar al gateway, cliente y fetcher. Los datos se encuentran en el primer chunk y `last=true` en el último bloque con datos indicando que no hay mas data que enviar
 - Protocolo interno tipado con enums (`MsgData`, `MsgEOF`): se eliminó el uso de lista vacía como EOF para evitar que lotes sin coincidencias se confundan con el fin de transmisión.
 - Cola única compartida `results_<gatewayID>`: los mensajes incluyen un header con `type`, `client_id` y `query_id` (Q1 a Q5) para que Gateway sepa qué deserializar.
 - Q1 y Q4 TopMerger usan `common/resultpublisher`: cada consulta serializa sus resultados y su EOF; cada worker tiene su publisher, que reutiliza conexiones por gateway y las cierra al salir de `Run`. Si el top está vacío se publica solamente el EOF.
@@ -33,3 +34,5 @@
 - Se puede utilizar la libreria externa parquet-go?
 - Se puede utilizar la libreria externa `github.com/bbalet/stopwords` para las stopwords?
 - Es necesario mandar los acks por aplicación en la ida?
+- Consultar al profe el tamaño de los chunks Q2: por defecto, 64 KiB de contenido (`DefaultQ2ChunkSize`).
+- Consultar al profe la salida Q2 prevista: un archivo por imagen y CSV con `image_id,name,url,file`.
