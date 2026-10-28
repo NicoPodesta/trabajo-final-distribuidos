@@ -65,6 +65,12 @@ func (s *clientSession) sendQ2Result(res *result.Q2Result) error {
 	return s.writer.WriteQ2Result(res)
 }
 
+func (s *clientSession) sendQ2ImageChunk(chunk *result.Q2ImageChunk) error {
+	s.writeLock.Lock()
+	defer s.writeLock.Unlock()
+	return s.writer.WriteQ2ImageChunk(chunk)
+}
+
 func (s *clientSession) sendQ3Result(res *result.Q3Result) error {
 	s.writeLock.Lock()
 	defer s.writeLock.Unlock()

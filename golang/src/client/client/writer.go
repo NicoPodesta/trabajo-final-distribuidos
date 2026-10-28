@@ -13,6 +13,7 @@ type ResultWriter struct {
 	outputDir string
 	q1File    *os.File
 	q2Dir     string
+	q2Chunks  *q2ImageWriter
 	q3File    *os.File
 	q4File    *os.File
 	q5File    *os.File
@@ -47,6 +48,10 @@ func NewResultWriter(outputDir string) (*ResultWriter, error) {
 		return nil, err
 	}
 	if w.q5File, err = os.Create(filepath.Join(outputDir, "q5_results.csv")); err != nil {
+		w.Close()
+		return nil, err
+	}
+	if w.q2Chunks, err = newQ2ImageWriter(q2Dir); err != nil {
 		w.Close()
 		return nil, err
 	}
@@ -87,6 +92,9 @@ func (w *ResultWriter) WriteQ5(res *result.Q5Result) error {
 
 func (w *ResultWriter) Close() error {
 	var firstErr error
+	if w.q2Chunks != nil {
+		firstErr = w.q2Chunks.Close()
+	}
 	for _, file := range []*os.File{w.q1File, w.q3File, w.q4File, w.q5File} {
 		if file != nil {
 			if err := file.Close(); err != nil && firstErr == nil {
