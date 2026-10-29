@@ -7,6 +7,8 @@ import (
 
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/common/middleware"
+	"trabajo-final-distribuidos/common/result"
+	"trabajo-final-distribuidos/common/resultpublisher"
 )
 
 const recentArticlesQueueName = "recent_articles"
@@ -20,6 +22,7 @@ type FilterConfig struct {
 type Filter struct {
 	recentArticlesQueue middleware.Middleware
 	averageExchange     middleware.Middleware
+	resultsPublisher    *resultpublisher.Publisher
 	mutex               sync.Mutex
 	clients             map[string]*clientState
 }
@@ -41,11 +44,17 @@ func NewFilter(config FilterConfig) (*Filter, error) {
 	return &Filter{
 		recentArticlesQueue: recentArticlesQueue,
 		averageExchange:     averageExchange,
+		resultsPublisher:    resultpublisher.New(settings),
 		clients:             make(map[string]*clientState),
 	}, nil
 }
 
 func (filter *Filter) Run() error {
+	defer func() {
+		if err := filter.resultsPublisher.Close(); err != nil {
+			slog.Error("While closing results publisher", "err", err)
+		}
+	}()
 	defer filter.recentArticlesQueue.Close()
 	defer filter.averageExchange.Close()
 
@@ -96,12 +105,10 @@ func (filter *Filter) handleRecentArticles(msg middleware.Message) error {
 
 	if recentArticlesMsg.IsEOF() {
 		state.markRecentsEOF()
-		filter.finishIfComplete(clientID, state)
-		return nil
+		return filter.finishIfComplete(clientID, state)
 	}
 
-	filter.logSelected(clientID, state.addArticles(recentArticlesMsg.Records))
-	return nil
+	return filter.publishSelected(clientID, state.addArticles(recentArticlesMsg.Records))
 }
 
 func (filter *Filter) handleAverage(msg middleware.Message) error {
@@ -121,9 +128,10 @@ func (filter *Filter) handleAverage(msg middleware.Message) error {
 
 	slog.Info("Received average", "clientID", clientID, "average", averageMsg.Records[0], "pending", len(state.pending))
 
-	filter.logSelected(clientID, state.setAverage(averageMsg.Records[0]))
-	filter.finishIfComplete(clientID, state)
-	return nil
+	if err := filter.publishSelected(clientID, state.setAverage(averageMsg.Records[0])); err != nil {
+		return err
+	}
+	return filter.finishIfComplete(clientID, state)
 }
 
 func (filter *Filter) stateOf(clientID string) *clientState {
@@ -135,16 +143,32 @@ func (filter *Filter) stateOf(clientID string) *clientState {
 	return state
 }
 
-func (filter *Filter) logSelected(clientID string, articles []inner.RecentArticleItem) {
-	for _, article := range articles {
-		slog.Debug("Selected recent article", "clientID", clientID, "url", article.Url, "nWords", article.WordCount)
+func (filter *Filter) publishSelected(clientID string, articles []inner.RecentArticleItem) error {
+	if len(articles) == 0 {
+		return nil
 	}
+
+	results := make([]result.Q5Result, len(articles))
+	for i, article := range articles {
+		results[i] = result.Q5Result{Url: article.Url, WordCount: article.WordCount}
+	}
+	msg, err := inner.SerializeQ5Results(clientID, results)
+	if err != nil {
+		return err
+	}
+	return filter.resultsPublisher.Publish(clientID, *msg)
 }
 
-func (filter *Filter) finishIfComplete(clientID string, state *clientState) {
+func (filter *Filter) finishIfComplete(clientID string, state *clientState) error {
 	if !state.isComplete() {
-		return
+		return nil
 	}
 	slog.Info("Filtered recent articles", "clientID", clientID, "average", state.average, "total", state.total, "selected", state.selected)
 	delete(filter.clients, clientID)
+
+	eofMsg, err := inner.SerializeQ5ResultsEOF(clientID)
+	if err != nil {
+		return err
+	}
+	return filter.resultsPublisher.Publish(clientID, *eofMsg)
 }
