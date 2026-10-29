@@ -80,6 +80,20 @@ services:
     - MOM_PORT=5672
     - LOG_LEVEL=info
 
+  q5_avg_aggregator_0:
+    build:
+      context: ./src/
+      dockerfile: q5avgaggregator/Dockerfile
+    container_name: q5_avg_aggregator_0
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - Q5_AVG_PARTIAL_AMOUNT=1
+    - LOG_LEVEL=info
+
   q4_word_counter_0:
     build:
       context: ./src/

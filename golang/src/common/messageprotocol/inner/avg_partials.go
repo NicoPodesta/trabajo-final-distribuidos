@@ -18,3 +18,7 @@ func SerializeAvgPartials(clientID string, records []AvgPartialItem) (*middlewar
 func SerializeAvgPartialsEOF(clientID string) (*middleware.Message, error) {
 	return serializeRecordsEOF[AvgPartialItem](clientID)
 }
+
+func DeserializeAvgPartials(message *middleware.Message) (*AvgPartialsMessage, error) {
+	return deserializeRecords[AvgPartialItem](message)
+}
