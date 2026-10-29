@@ -10,12 +10,14 @@ const lastHistoricalYear = 2020
 
 type batchResult struct {
 	wordCounts       []inner.WordCountItem
+	vocabulary       []inner.VocabularyItem
 	historicalCounts []uint32
 	recentArticles   []inner.RecentArticleItem
 }
 
 func tokenizeBatch(records []inner.AbstractItem) batchResult {
 	counts := make(map[string]uint32)
+	vocabulary := make(map[inner.VocabularyItem]struct{})
 	result := batchResult{
 		historicalCounts: []uint32{},
 		recentArticles:   []inner.RecentArticleItem{},
@@ -25,6 +27,11 @@ func tokenizeBatch(records []inner.AbstractItem) batchResult {
 		words := extractWords(record.Abstract)
 		for _, word := range distinctWords(words) {
 			counts[word]++
+			item := inner.VocabularyItem{Word: word, Language: record.Language}
+			if _, exists := vocabulary[item]; !exists {
+				vocabulary[item] = struct{}{}
+				result.vocabulary = append(result.vocabulary, item)
+			}
 		}
 
 		if record.Abstract == "" {

@@ -10,6 +10,7 @@ import (
 const (
 	abstractsQueueName        = "abstracts"
 	wordCountsQueueName       = "word_counts_0"
+	vocabularyQueueName       = "vocabulary_0"
 	historicalCountsQueueName = "historical_counts"
 	recentArticlesQueueName   = "recent_articles"
 	progressLogInterval       = 1000
@@ -23,6 +24,7 @@ type TokenizerConfig struct {
 type Tokenizer struct {
 	abstractsQueue        middleware.Middleware
 	wordCountsQueue       middleware.Middleware
+	vocabularyQueue       middleware.Middleware
 	historicalCountsQueue middleware.Middleware
 	recentArticlesQueue   middleware.Middleware
 	received              int
@@ -41,10 +43,18 @@ func NewTokenizer(config TokenizerConfig) (*Tokenizer, error) {
 		return nil, err
 	}
 
+	vocabularyQueue, err := middleware.CreateQueueMiddleware(vocabularyQueueName, settings)
+	if err != nil {
+		_ = abstractsQueue.Close()
+		_ = wordCountsQueue.Close()
+		return nil, err
+	}
+
 	historicalCountsQueue, err := middleware.CreateQueueMiddleware(historicalCountsQueueName, settings)
 	if err != nil {
 		_ = abstractsQueue.Close()
 		_ = wordCountsQueue.Close()
+		_ = vocabularyQueue.Close()
 		return nil, err
 	}
 
@@ -52,6 +62,7 @@ func NewTokenizer(config TokenizerConfig) (*Tokenizer, error) {
 	if err != nil {
 		_ = abstractsQueue.Close()
 		_ = wordCountsQueue.Close()
+		_ = vocabularyQueue.Close()
 		_ = historicalCountsQueue.Close()
 		return nil, err
 	}
@@ -59,6 +70,7 @@ func NewTokenizer(config TokenizerConfig) (*Tokenizer, error) {
 	return &Tokenizer{
 		abstractsQueue:        abstractsQueue,
 		wordCountsQueue:       wordCountsQueue,
+		vocabularyQueue:       vocabularyQueue,
 		historicalCountsQueue: historicalCountsQueue,
 		recentArticlesQueue:   recentArticlesQueue,
 	}, nil
@@ -67,6 +79,7 @@ func NewTokenizer(config TokenizerConfig) (*Tokenizer, error) {
 func (tokenizer *Tokenizer) Run() error {
 	defer tokenizer.abstractsQueue.Close()
 	defer tokenizer.wordCountsQueue.Close()
+	defer tokenizer.vocabularyQueue.Close()
 	defer tokenizer.historicalCountsQueue.Close()
 	defer tokenizer.recentArticlesQueue.Close()
 
@@ -104,6 +117,12 @@ func (tokenizer *Tokenizer) logProgress(clientID string, processed int) {
 }
 
 func (tokenizer *Tokenizer) publish(clientID string, result batchResult) error {
+	if len(result.vocabulary) > 0 {
+		msg, err := inner.SerializeVocabulary(clientID, result.vocabulary)
+		if err := send(tokenizer.vocabularyQueue, msg, err); err != nil {
+			return err
+		}
+	}
 	if len(result.wordCounts) > 0 {
 		msg, err := inner.SerializeWordCounts(clientID, result.wordCounts)
 		if err := send(tokenizer.wordCountsQueue, msg, err); err != nil {
@@ -124,7 +143,12 @@ func (tokenizer *Tokenizer) publish(clientID string, result batchResult) error {
 }
 
 func (tokenizer *Tokenizer) publishEOF(clientID string) error {
-	msg, err := inner.SerializeWordCountsEOF(clientID)
+	msg, err := inner.SerializeVocabularyEOF(clientID)
+	if err := send(tokenizer.vocabularyQueue, msg, err); err != nil {
+		return err
+	}
+
+	msg, err = inner.SerializeWordCountsEOF(clientID)
 	if err := send(tokenizer.wordCountsQueue, msg, err); err != nil {
 		return err
 	}
