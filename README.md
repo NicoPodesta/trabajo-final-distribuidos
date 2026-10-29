@@ -21,7 +21,8 @@
 - Stopwords: Go no trae listas en la libreria estandar, asi que se copiaron las de NLTK (las mismas que usa el notebook) a `tokenizer/stopwords.go`.
 - Q4WordCounter - Top parcial: ordena por count descendente y desempata por palabra ascendente.
 - Q4WordCounter - mensajes: Se envia a la cola de partial_top20 2 mensajes: top y EOF, asegurando de enviar un solo EOF.
-
+- Q5 - promedio entero: el Avg Aggregator envia el promedio como numero entero truncado, no hace falta transmitir decimales.
+- Q5 - cliente sin articulos historicos, promedio como 0 que se envia al exchange hacia el q5Filter.
 
 ## Pendientes
 

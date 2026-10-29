@@ -37,10 +37,21 @@ func loadConfig() (q5avgaggregator.AvgAggregatorConfig, error) {
 		return q5avgaggregator.AvgAggregatorConfig{}, fmt.Errorf("invalid Q5_AVG_PARTIAL_AMOUNT: %w", err)
 	}
 
+	filterAmountStr := os.Getenv("Q5_FILTER_AMOUNT")
+	if filterAmountStr == "" {
+		return q5avgaggregator.AvgAggregatorConfig{}, errors.New("Q5_FILTER_AMOUNT environment variable is required")
+	}
+
+	filterAmount, err := strconv.Atoi(filterAmountStr)
+	if err != nil {
+		return q5avgaggregator.AvgAggregatorConfig{}, fmt.Errorf("invalid Q5_FILTER_AMOUNT: %w", err)
+	}
+
 	return q5avgaggregator.AvgAggregatorConfig{
 		MOMHost:            momHost,
 		MOMPort:            momPort,
 		Q5AvgPartialAmount: avgPartialAmount,
+		Q5FilterAmount:     filterAmount,
 	}, nil
 }
 

@@ -13,6 +13,7 @@ type AvgAggregatorConfig struct {
 	MOMHost            string
 	MOMPort            int
 	Q5AvgPartialAmount int
+	Q5FilterAmount     int
 }
 
 type totals struct {
@@ -22,6 +23,7 @@ type totals struct {
 
 type AvgAggregator struct {
 	avgPartialsQueue middleware.Middleware
+	averageExchange  middleware.Middleware
 	avgPartialAmount int
 	totalsByClient   map[string]*totals
 	eofCountByClient map[string]int
@@ -33,8 +35,20 @@ func NewAvgAggregator(config AvgAggregatorConfig) (*AvgAggregator, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	filterKeys := make([]string, config.Q5FilterAmount)
+	for filterID := range filterKeys {
+		filterKeys[filterID] = inner.Q5FilterRoutingKey(filterID)
+	}
+	averageExchange, err := middleware.CreateExchangeMiddleware(inner.Q5AverageExchange, filterKeys, settings)
+	if err != nil {
+		_ = avgPartialsQueue.Close()
+		return nil, err
+	}
+
 	return &AvgAggregator{
 		avgPartialsQueue: avgPartialsQueue,
+		averageExchange:  averageExchange,
 		avgPartialAmount: config.Q5AvgPartialAmount,
 		totalsByClient:   make(map[string]*totals),
 		eofCountByClient: make(map[string]int),
@@ -43,6 +57,7 @@ func NewAvgAggregator(config AvgAggregatorConfig) (*AvgAggregator, error) {
 
 func (aggregator *AvgAggregator) Run() error {
 	defer aggregator.avgPartialsQueue.Close()
+	defer aggregator.averageExchange.Close()
 
 	slog.Info("Consuming avg partials from RabbitMQ...", "queue", avgPartialsQueueName)
 	return aggregator.avgPartialsQueue.StartConsuming(func(msg middleware.Message, ack func(), nack func()) {
@@ -60,8 +75,7 @@ func (aggregator *AvgAggregator) handleMessage(msg middleware.Message) error {
 	}
 
 	if avgPartialsMsg.IsEOF() {
-		aggregator.handleEndOfPartials(avgPartialsMsg.ClientID)
-		return nil
+		return aggregator.handleEndOfPartials(avgPartialsMsg.ClientID)
 	}
 
 	aggregator.addPartials(avgPartialsMsg.ClientID, avgPartialsMsg.Records)
@@ -81,20 +95,32 @@ func (aggregator *AvgAggregator) addPartials(clientID string, records []inner.Av
 	}
 }
 
-func (aggregator *AvgAggregator) handleEndOfPartials(clientID string) {
+func (aggregator *AvgAggregator) handleEndOfPartials(clientID string) error {
 	aggregator.eofCountByClient[clientID]++
 	if aggregator.eofCountByClient[clientID] < aggregator.avgPartialAmount {
-		return
+		return nil
 	}
 
 	clientTotals := aggregator.totalsByClient[clientID]
 	delete(aggregator.totalsByClient, clientID)
 	delete(aggregator.eofCountByClient, clientID)
 
+	var average uint64
 	if clientTotals == nil || clientTotals.count == 0 {
-		slog.Warn("Client has no historical articles, average is undefined", "clientID", clientID)
-		return
+		slog.Warn("Client has no historical articles, using average 0", "clientID", clientID)
+	} else {
+		average = clientTotals.sum / clientTotals.count
+		exactAverage := float64(clientTotals.sum) / float64(clientTotals.count)
+		slog.Info("Calculated average", "clientID", clientID, "sum", clientTotals.sum, "count", clientTotals.count, "average", exactAverage, "integerAverage", average)
 	}
-	average := float64(clientTotals.sum) / float64(clientTotals.count)
-	slog.Info("Calculated average", "clientID", clientID, "sum", clientTotals.sum, "count", clientTotals.count, "average", average)
+
+	return aggregator.publishAverage(clientID, average)
+}
+
+func (aggregator *AvgAggregator) publishAverage(clientID string, average uint64) error {
+	msg, err := inner.SerializeAverage(clientID, average)
+	if err != nil {
+		return err
+	}
+	return aggregator.averageExchange.Send(*msg)
 }
