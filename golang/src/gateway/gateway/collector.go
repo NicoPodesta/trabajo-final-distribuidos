@@ -82,6 +82,14 @@ func (c *ResultCollector) handleResultRecord(session *clientSession, header *inn
 			}
 		}
 	case inner.Q2:
+		if header.Type == inner.MsgChunk {
+			chunkMsg, err := inner.DeserializeQ2ImageChunk(msg)
+			if err != nil {
+				return err
+			}
+			return session.sendQ2ImageChunk(&chunkMsg.Chunk)
+		}
+
 		q2Msg, err := inner.DeserializeQ2Results(msg)
 		if err != nil {
 			return err

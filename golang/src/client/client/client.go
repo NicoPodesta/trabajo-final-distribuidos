@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -115,15 +116,21 @@ func (client *Client) Run() error {
 	receiverErrorChannel := make(chan error, 1)
 
 	go func() {
-		receiverErrorChannel <- client.receiver.Receive(ctx, ackChannel)
+		recvErr := client.receiver.Receive(ctx, ackChannel)
+		receiverErrorChannel <- recvErr
+		if recvErr != nil {
+			cancel()
+			client.conn.Close()
+		}
 	}()
 
 	sendErr := client.sender.Send(ctx, ackChannel)
 	if sendErr != nil {
-		client.running.Store(false)
 		cancel()
+		client.conn.Close()
+		recvErr := <-receiverErrorChannel
 		if client.running.Load() {
-			return sendErr
+			return errors.Join(sendErr, recvErr)
 		}
 		return nil
 	}

@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -21,8 +22,10 @@ func NewReceiver(conn io.Reader, writer *ResultWriter) *Receiver {
 	}
 }
 
-func (r *Receiver) Receive(ctx context.Context, ackChannel chan<- struct{}) error {
-	defer r.writer.Close()
+func (r *Receiver) Receive(ctx context.Context, ackChannel chan<- struct{}) (receiveErr error) {
+	defer func() {
+		receiveErr = errors.Join(receiveErr, r.writer.Close())
+	}()
 
 	slog.Info("Receiver listening for results and ACKs from gateway...")
 	receivedQ1 := 0
@@ -65,6 +68,19 @@ func (r *Receiver) Receive(ctx context.Context, ackChannel chan<- struct{}) erro
 			}
 			receivedQ2++
 
+		case external.Q2ImageChunk:
+			chunk, err := r.reader.ReadQ2ImageChunk()
+			if err != nil {
+				return err
+			}
+			completed, err := r.writer.WriteQ2ImageChunk(chunk)
+			if err != nil {
+				return err
+			}
+			if completed {
+				receivedQ2++
+			}
+
 		case external.Q3Result:
 			result, err := r.reader.ReadQ3Result()
 			if err != nil {
@@ -96,6 +112,9 @@ func (r *Receiver) Receive(ctx context.Context, ackChannel chan<- struct{}) erro
 			receivedQ5++
 
 		case external.EndOfRecords:
+			if err := r.writer.CheckQ2Complete(); err != nil {
+				return err
+			}
 			slog.Info("Finished receiving results",
 				"total_q1", receivedQ1,
 				"total_q2", receivedQ2,
