@@ -22,7 +22,7 @@ func tokenizeBatch(records []inner.AbstractItem) batchResult {
 	}
 
 	for _, record := range records {
-		words := extractWords(record.Abstract, Language(record.Language))
+		words := extractWords(record.Abstract)
 		for _, word := range distinctWords(words) {
 			counts[word]++
 		}

@@ -362,17 +362,7 @@ var frenchStopWords = []string{
 	"êtes",
 }
 
-type Language string
-
-const (
-	English Language = "en"
-	French  Language = "fr"
-)
-
-var stopWordsByLanguage = map[Language]map[string]struct{}{
-	English: newStopWordsSet(englishStopWords),
-	French:  newStopWordsSet(frenchStopWords),
-}
+var stopWords = newStopWordsSet(englishStopWords, frenchStopWords)
 
 func newStopWordsSet(lists ...[]string) map[string]struct{} {
 	set := make(map[string]struct{})
