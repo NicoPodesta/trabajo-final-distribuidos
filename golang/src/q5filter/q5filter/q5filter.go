@@ -17,15 +17,6 @@ type FilterConfig struct {
 	FilterID int
 }
 
-type clientState struct {
-	pending    []inner.RecentArticleItem
-	average    uint64
-	hasAverage bool
-	recentsEOF bool
-	total      int
-	selected   int
-}
-
 type Filter struct {
 	recentArticlesQueue middleware.Middleware
 	averageExchange     middleware.Middleware
@@ -104,17 +95,12 @@ func (filter *Filter) handleRecentArticles(msg middleware.Message) error {
 	state := filter.stateOf(clientID)
 
 	if recentArticlesMsg.IsEOF() {
-		state.recentsEOF = true
+		state.markRecentsEOF()
 		filter.finishIfComplete(clientID, state)
 		return nil
 	}
 
-	state.total += len(recentArticlesMsg.Records)
-	if !state.hasAverage {
-		state.pending = append(state.pending, recentArticlesMsg.Records...)
-		return nil
-	}
-	filter.selectArticles(clientID, state, recentArticlesMsg.Records)
+	filter.logSelected(clientID, state.addArticles(recentArticlesMsg.Records))
 	return nil
 }
 
@@ -133,12 +119,9 @@ func (filter *Filter) handleAverage(msg middleware.Message) error {
 	defer filter.mutex.Unlock()
 	state := filter.stateOf(clientID)
 
-	state.average = averageMsg.Records[0]
-	state.hasAverage = true
-	slog.Info("Received average", "clientID", clientID, "average", state.average, "pending", len(state.pending))
+	slog.Info("Received average", "clientID", clientID, "average", averageMsg.Records[0], "pending", len(state.pending))
 
-	filter.selectArticles(clientID, state, state.pending)
-	state.pending = nil
+	filter.logSelected(clientID, state.setAverage(averageMsg.Records[0]))
 	filter.finishIfComplete(clientID, state)
 	return nil
 }
@@ -152,17 +135,14 @@ func (filter *Filter) stateOf(clientID string) *clientState {
 	return state
 }
 
-func (filter *Filter) selectArticles(clientID string, state *clientState, articles []inner.RecentArticleItem) {
+func (filter *Filter) logSelected(clientID string, articles []inner.RecentArticleItem) {
 	for _, article := range articles {
-		if uint64(article.WordCount) > state.average {
-			state.selected++
-			slog.Debug("Selected recent article", "clientID", clientID, "url", article.Url, "nWords", article.WordCount)
-		}
+		slog.Debug("Selected recent article", "clientID", clientID, "url", article.Url, "nWords", article.WordCount)
 	}
 }
 
 func (filter *Filter) finishIfComplete(clientID string, state *clientState) {
-	if !state.hasAverage || !state.recentsEOF {
+	if !state.isComplete() {
 		return
 	}
 	slog.Info("Filtered recent articles", "clientID", clientID, "average", state.average, "total", state.total, "selected", state.selected)
