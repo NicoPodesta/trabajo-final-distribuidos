@@ -3,6 +3,7 @@ package q5filter
 import (
 	"fmt"
 	"log/slog"
+	"sync"
 
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/common/middleware"
@@ -16,10 +17,20 @@ type FilterConfig struct {
 	FilterID int
 }
 
+type clientState struct {
+	pending    []inner.RecentArticleItem
+	average    uint64
+	hasAverage bool
+	recentsEOF bool
+	total      int
+	selected   int
+}
+
 type Filter struct {
 	recentArticlesQueue middleware.Middleware
 	averageExchange     middleware.Middleware
-	recentCountByClient map[string]int
+	mutex               sync.Mutex
+	clients             map[string]*clientState
 }
 
 func NewFilter(config FilterConfig) (*Filter, error) {
@@ -39,7 +50,7 @@ func NewFilter(config FilterConfig) (*Filter, error) {
 	return &Filter{
 		recentArticlesQueue: recentArticlesQueue,
 		averageExchange:     averageExchange,
-		recentCountByClient: make(map[string]int),
+		clients:             make(map[string]*clientState),
 	}, nil
 }
 
@@ -87,13 +98,23 @@ func (filter *Filter) handleRecentArticles(msg middleware.Message) error {
 	}
 
 	clientID := recentArticlesMsg.ClientID
+
+	filter.mutex.Lock()
+	defer filter.mutex.Unlock()
+	state := filter.stateOf(clientID)
+
 	if recentArticlesMsg.IsEOF() {
-		slog.Info("Received end of recent articles", "clientID", clientID, "articles", filter.recentCountByClient[clientID])
-		delete(filter.recentCountByClient, clientID)
+		state.recentsEOF = true
+		filter.finishIfComplete(clientID, state)
 		return nil
 	}
 
-	filter.recentCountByClient[clientID] += len(recentArticlesMsg.Records)
+	state.total += len(recentArticlesMsg.Records)
+	if !state.hasAverage {
+		state.pending = append(state.pending, recentArticlesMsg.Records...)
+		return nil
+	}
+	filter.selectArticles(clientID, state, recentArticlesMsg.Records)
 	return nil
 }
 
@@ -106,6 +127,44 @@ func (filter *Filter) handleAverage(msg middleware.Message) error {
 		return fmt.Errorf("average message of client %s has %d records, expected 1", averageMsg.ClientID, len(averageMsg.Records))
 	}
 
-	slog.Info("Received average", "clientID", averageMsg.ClientID, "average", averageMsg.Records[0])
+	clientID := averageMsg.ClientID
+
+	filter.mutex.Lock()
+	defer filter.mutex.Unlock()
+	state := filter.stateOf(clientID)
+
+	state.average = averageMsg.Records[0]
+	state.hasAverage = true
+	slog.Info("Received average", "clientID", clientID, "average", state.average, "pending", len(state.pending))
+
+	filter.selectArticles(clientID, state, state.pending)
+	state.pending = nil
+	filter.finishIfComplete(clientID, state)
 	return nil
+}
+
+func (filter *Filter) stateOf(clientID string) *clientState {
+	state := filter.clients[clientID]
+	if state == nil {
+		state = &clientState{}
+		filter.clients[clientID] = state
+	}
+	return state
+}
+
+func (filter *Filter) selectArticles(clientID string, state *clientState, articles []inner.RecentArticleItem) {
+	for _, article := range articles {
+		if uint64(article.WordCount) > state.average {
+			state.selected++
+			slog.Debug("Selected recent article", "clientID", clientID, "url", article.Url, "nWords", article.WordCount)
+		}
+	}
+}
+
+func (filter *Filter) finishIfComplete(clientID string, state *clientState) {
+	if !state.hasAverage || !state.recentsEOF {
+		return
+	}
+	slog.Info("Filtered recent articles", "clientID", clientID, "average", state.average, "total", state.total, "selected", state.selected)
+	delete(filter.clients, clientID)
 }
