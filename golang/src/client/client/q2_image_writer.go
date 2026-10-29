@@ -34,12 +34,16 @@ type q2ImageWriter struct {
 
 // TODO: consultar con el profe el formato de archivo (csv o json)
 // para relacionar nombre, URL y archivo de cada imagen.
-func newQ2ImageWriter(parentDir string) (*q2ImageWriter, error) {
+func newQ2ImageWriter(outputDir, parentDir string) (*q2ImageWriter, error) {
 	directory, err := os.MkdirTemp(parentDir, "run-")
 	if err != nil {
 		return nil, err
 	}
-	csvFile, err := os.Create(filepath.Join(directory, "q2_results.csv"))
+	if err := os.Chmod(directory, 0755); err != nil {
+		os.Remove(directory)
+		return nil, err
+	}
+	csvFile, err := os.Create(filepath.Join(outputDir, "q2_results.csv"))
 	if err != nil {
 		os.Remove(directory)
 		return nil, err
@@ -126,7 +130,11 @@ func (w *q2ImageWriter) finishImage(imageID string, partial *q2PartialImage) err
 	}
 	delete(w.partials, imageID)
 
-	return w.writeCSVRecord([]string{imageID, partial.name, partial.url, filepath.Base(finalPath)})
+	imagePath, err := filepath.Rel(filepath.Dir(w.csvFile.Name()), finalPath)
+	if err != nil {
+		return err
+	}
+	return w.writeCSVRecord([]string{imageID, partial.name, partial.url, imagePath})
 }
 
 func (w *q2ImageWriter) writeCSVRecord(record []string) error {

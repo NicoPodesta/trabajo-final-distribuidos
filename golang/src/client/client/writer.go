@@ -51,7 +51,7 @@ func NewResultWriter(outputDir string) (*ResultWriter, error) {
 		w.Close()
 		return nil, err
 	}
-	if w.q2Chunks, err = newQ2ImageWriter(q2Dir); err != nil {
+	if w.q2Chunks, err = newQ2ImageWriter(outputDir, q2Dir); err != nil {
 		w.Close()
 		return nil, err
 	}

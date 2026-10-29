@@ -41,7 +41,7 @@ services:
     - SERVER_PORT=5678
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
-    - EXPECTED_QUERIES=3 # Temporal, actualizar cuando se implementen mas queries
+    - EXPECTED_QUERIES=4 # Temporal, actualizar cuando se implementen mas queries
 
   date_filter_0:
     build:
@@ -53,6 +53,33 @@ services:
     environment:
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
+
+  q2_filter_0:
+    build:
+      context: ./src/
+      dockerfile: q2filter/Dockerfile
+    container_name: q2_filter_0
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - LOG_LEVEL=info
+
+  image_fetcher_0:
+    build:
+      context: ./src/
+      dockerfile: imagefetcher/Dockerfile
+    container_name: image_fetcher_0
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - CHUNK_SIZE=65536
+    - LOG_LEVEL=info
 
   tokenizer_0:
     build:
