@@ -7,7 +7,10 @@ import (
 	"trabajo-final-distribuidos/common/middleware"
 )
 
-const historicalCountsQueueName = "historical_counts"
+const (
+	historicalCountsQueueName = "historical_counts"
+	avgPartialsQueueName      = "avg_partials"
+)
 
 type AvgPartialConfig struct {
 	MOMHost string
@@ -21,6 +24,7 @@ type totals struct {
 
 type AvgPartial struct {
 	historicalCountsQueue middleware.Middleware
+	avgPartialsQueue      middleware.Middleware
 	totalsByClient        map[string]*totals
 }
 
@@ -30,14 +34,23 @@ func NewAvgPartial(config AvgPartialConfig) (*AvgPartial, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	avgPartialsQueue, err := middleware.CreateQueueMiddleware(avgPartialsQueueName, settings)
+	if err != nil {
+		_ = historicalCountsQueue.Close()
+		return nil, err
+	}
+
 	return &AvgPartial{
 		historicalCountsQueue: historicalCountsQueue,
+		avgPartialsQueue:      avgPartialsQueue,
 		totalsByClient:        make(map[string]*totals),
 	}, nil
 }
 
 func (partial *AvgPartial) Run() error {
 	defer partial.historicalCountsQueue.Close()
+	defer partial.avgPartialsQueue.Close()
 
 	slog.Info("Consuming historical counts from RabbitMQ...", "queue", historicalCountsQueueName)
 	return partial.historicalCountsQueue.StartConsuming(func(msg middleware.Message, ack func(), nack func()) {
@@ -55,8 +68,7 @@ func (partial *AvgPartial) handleMessage(msg middleware.Message) error {
 	}
 
 	if historicalCountsMsg.IsEOF() {
-		partial.handleEndOfInput(historicalCountsMsg.ClientID)
-		return nil
+		return partial.handleEndOfInput(historicalCountsMsg.ClientID)
 	}
 
 	partial.addCounts(historicalCountsMsg.ClientID, historicalCountsMsg.Records)
@@ -76,7 +88,7 @@ func (partial *AvgPartial) addCounts(clientID string, records []uint32) {
 	}
 }
 
-func (partial *AvgPartial) handleEndOfInput(clientID string) {
+func (partial *AvgPartial) handleEndOfInput(clientID string) error {
 	clientTotals := partial.totalsByClient[clientID]
 	delete(partial.totalsByClient, clientID)
 
@@ -84,4 +96,24 @@ func (partial *AvgPartial) handleEndOfInput(clientID string) {
 		clientTotals = &totals{}
 	}
 	slog.Info("Received end of input", "clientID", clientID, "sum", clientTotals.sum, "count", clientTotals.count)
+
+	return partial.publishPartial(clientID, *clientTotals)
+}
+
+func (partial *AvgPartial) publishPartial(clientID string, clientTotals totals) error {
+	if clientTotals.count > 0 {
+		msg, err := inner.SerializeAvgPartials(clientID, []inner.AvgPartialItem{{Sum: clientTotals.sum, Count: clientTotals.count}})
+		if err != nil {
+			return err
+		}
+		if err := partial.avgPartialsQueue.Send(*msg); err != nil {
+			return err
+		}
+	}
+
+	eofMsg, err := inner.SerializeAvgPartialsEOF(clientID)
+	if err != nil {
+		return err
+	}
+	return partial.avgPartialsQueue.Send(*eofMsg)
 }
