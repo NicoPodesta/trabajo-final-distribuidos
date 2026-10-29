@@ -18,3 +18,7 @@ func SerializeRecentArticles(clientID string, records []RecentArticleItem) (*mid
 func SerializeRecentArticlesEOF(clientID string) (*middleware.Message, error) {
 	return serializeRecordsEOF[RecentArticleItem](clientID)
 }
+
+func DeserializeRecentArticles(message *middleware.Message) (*RecentArticlesMessage, error) {
+	return deserializeRecords[RecentArticleItem](message)
+}

@@ -17,3 +17,7 @@ type AverageMessage = RecordsMessage[uint64]
 func SerializeAverage(clientID string, average uint64) (*middleware.Message, error) {
 	return serializeRecords(clientID, []uint64{average})
 }
+
+func DeserializeAverage(message *middleware.Message) (*AverageMessage, error) {
+	return deserializeRecords[uint64](message)
+}

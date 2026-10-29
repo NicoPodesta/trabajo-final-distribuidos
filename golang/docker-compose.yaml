@@ -80,6 +80,20 @@ services:
     - MOM_PORT=5672
     - LOG_LEVEL=info
 
+  q5_filter_0:
+    build:
+      context: ./src/
+      dockerfile: q5filter/Dockerfile
+    container_name: q5_filter_0
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - Q5_FILTER_ID=0
+    - LOG_LEVEL=info
+
   q5_avg_aggregator_0:
     build:
       context: ./src/
