@@ -67,6 +67,19 @@ services:
     - MOM_PORT=5672
     - LOG_LEVEL=info
 
+  q5_avg_partial_0:
+    build:
+      context: ./src/
+      dockerfile: q5avgpartial/Dockerfile
+    container_name: q5_avg_partial_0
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - LOG_LEVEL=info
+
   q4_word_counter_0:
     build:
       context: ./src/
