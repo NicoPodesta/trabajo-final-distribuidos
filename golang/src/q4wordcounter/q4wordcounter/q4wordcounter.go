@@ -26,6 +26,7 @@ type WordCounterConfig struct {
 }
 
 type WordCounter struct {
+	conns             *middleware.Connections
 	wordCountsQueue   middleware.Middleware
 	partialTop20Queue middleware.Middleware
 	countsByClient    map[string]map[string]uint32
@@ -34,20 +35,22 @@ type WordCounter struct {
 }
 
 func NewWordCounter(config WordCounterConfig) (*WordCounter, error) {
-	settings := middleware.ConnSettings{Hostname: config.MOMHost, Port: config.MOMPort}
+	conns := middleware.NewConnections(middleware.ConnSettings{Hostname: config.MOMHost, Port: config.MOMPort})
 	queueName := fmt.Sprintf("%s%d", wordCountsQueuePrefix, config.ID)
-	wordCountsQueue, err := middleware.CreateQueueMiddleware(queueName, settings)
+	wordCountsQueue, err := conns.Queue(queueName)
 	if err != nil {
+		conns.Close()
 		return nil, err
 	}
 
-	partialTop20Queue, err := middleware.CreateQueueMiddleware(partialTop20QueueName, settings)
+	partialTop20Queue, err := conns.Queue(partialTop20QueueName)
 	if err != nil {
-		_ = wordCountsQueue.Close()
+		conns.Close()
 		return nil, err
 	}
 
 	return &WordCounter{
+		conns:             conns,
 		wordCountsQueue:   wordCountsQueue,
 		partialTop20Queue: partialTop20Queue,
 		countsByClient:    make(map[string]map[string]uint32),
@@ -57,8 +60,7 @@ func NewWordCounter(config WordCounterConfig) (*WordCounter, error) {
 }
 
 func (counter *WordCounter) Run() error {
-	defer counter.wordCountsQueue.Close()
-	defer counter.partialTop20Queue.Close()
+	defer counter.conns.Close()
 
 	shutdown.OnSignal(func() { _ = counter.wordCountsQueue.StopConsuming() })
 	slog.Info("Consuming word counts from RabbitMQ...", "queue", counter.queueName)

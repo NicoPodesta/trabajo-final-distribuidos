@@ -12,7 +12,7 @@ func NewConnections(settings ConnSettings) *Connections {
 }
 
 func (conns *Connections) Queue(name string) (Middleware, error) {
-	created, err := CreateQueueMiddleware(name, conns.Settings)
+	created, err := CreateQueueWithRetry(name, conns.Settings)
 	if err != nil {
 		return nil, err
 	}

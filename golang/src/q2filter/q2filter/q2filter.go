@@ -22,35 +22,28 @@ type FilterConfig struct {
 }
 
 type Filter struct {
+	conns          *middleware.Connections
 	articlesQueue  middleware.Middleware
 	downloadsQueue middleware.Middleware
 }
 
 func NewFilter(config FilterConfig) (*Filter, error) {
-	settings := middleware.ConnSettings{Hostname: config.MOMHost, Port: config.MOMPort}
-	articlesQueue, err := middleware.CreateQueueWithRetry(articleSectionsQueueName, settings)
+	conns := middleware.NewConnections(middleware.ConnSettings{Hostname: config.MOMHost, Port: config.MOMPort})
+	articlesQueue, err := conns.Queue(articleSectionsQueueName)
 	if err != nil {
+		conns.Close()
 		return nil, err
 	}
-	downloadsQueue, err := middleware.CreateQueueWithRetry(imageDownloadsQueueName, settings)
+	downloadsQueue, err := conns.Queue(imageDownloadsQueueName)
 	if err != nil {
-		if closeErr := articlesQueue.Close(); closeErr != nil {
-			slog.Error("While closing article sections queue", "err", closeErr)
-		}
+		conns.Close()
 		return nil, err
 	}
-	return &Filter{articlesQueue: articlesQueue, downloadsQueue: downloadsQueue}, nil
+	return &Filter{conns: conns, articlesQueue: articlesQueue, downloadsQueue: downloadsQueue}, nil
 }
 
 func (filter *Filter) Run() error {
-	defer func() {
-		if err := filter.articlesQueue.Close(); err != nil {
-			slog.Error("While closing article sections queue", "err", err)
-		}
-		if err := filter.downloadsQueue.Close(); err != nil {
-			slog.Error("While closing image downloads queue", "err", err)
-		}
-	}()
+	defer filter.conns.Close()
 
 	shutdown.OnSignal(func() { _ = filter.articlesQueue.StopConsuming() })
 

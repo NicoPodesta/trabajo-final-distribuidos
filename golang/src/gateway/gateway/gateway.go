@@ -8,17 +8,14 @@ import (
 	"os/signal"
 	"sync/atomic"
 	"syscall"
-	"time"
 
 	"trabajo-final-distribuidos/common/middleware"
 )
 
 const (
-	articleDatesQueueName      = "article_dates"
-	articleSectionsQueueName   = "article_sections"
-	abstractsQueueName         = "abstracts"
-	connectionAttempts         = 15
-	connectionAttemptsDelaySec = 2
+	articleDatesQueueName    = "article_dates"
+	articleSectionsQueueName = "article_sections"
+	abstractsQueueName       = "abstracts"
 )
 
 type GatewayConfig struct {
@@ -35,27 +32,12 @@ type Gateway struct {
 	listener        net.Listener
 	handler         *ClientHandler
 	collector       *ResultCollector
+	conns           *middleware.Connections
 	running         atomic.Bool
 	shutdownChannel chan struct{}
 }
 
-func createQueueWithRetry(queueName string, settings middleware.ConnSettings) (middleware.Middleware, error) {
-	var q middleware.Middleware
-	var err error
-
-	for i := 0; i < connectionAttempts; i++ {
-		q, err = middleware.CreateQueueMiddleware(queueName, settings)
-		if err == nil {
-			return q, nil
-		}
-		slog.Warn("Retrying connection to RabbitMQ...", "queue", queueName, "attempt", i+1, "err", err)
-		time.Sleep(connectionAttemptsDelaySec * time.Second)
-	}
-
-	return nil, err
-}
-
-func NewGateway(config GatewayConfig) (*Gateway, error) {
+func NewGateway(config GatewayConfig) (gw *Gateway, err error) {
 	listener, err := net.Listen("tcp", config.ServerHost+":"+config.ServerPort)
 	if err != nil {
 		return nil, err
@@ -66,34 +48,32 @@ func NewGateway(config GatewayConfig) (*Gateway, error) {
 		Port:     config.MOMPort,
 	}
 
-	articleDatesQ, err := createQueueWithRetry(articleDatesQueueName, settings)
+	conns := middleware.NewConnections(settings)
+	defer func() {
+		if err != nil {
+			_ = listener.Close()
+			conns.Close()
+		}
+	}()
+
+	articleDatesQ, err := conns.Queue(articleDatesQueueName)
 	if err != nil {
-		_ = listener.Close()
 		return nil, err
 	}
 
-	articleSectionsQ, err := createQueueWithRetry(articleSectionsQueueName, settings)
+	articleSectionsQ, err := conns.Queue(articleSectionsQueueName)
 	if err != nil {
-		_ = listener.Close()
-		_ = articleDatesQ.Close()
 		return nil, err
 	}
 
-	abstractsQ, err := createQueueWithRetry(abstractsQueueName, settings)
+	abstractsQ, err := conns.Queue(abstractsQueueName)
 	if err != nil {
-		_ = listener.Close()
-		_ = articleDatesQ.Close()
-		_ = articleSectionsQ.Close()
 		return nil, err
 	}
 
 	resultsQueueName := fmt.Sprintf("results_%s", config.ID)
-	resultsQ, err := createQueueWithRetry(resultsQueueName, settings)
+	resultsQ, err := conns.Queue(resultsQueueName)
 	if err != nil {
-		_ = listener.Close()
-		_ = articleDatesQ.Close()
-		_ = articleSectionsQ.Close()
-		_ = abstractsQ.Close()
 		return nil, err
 	}
 
@@ -101,11 +81,12 @@ func NewGateway(config GatewayConfig) (*Gateway, error) {
 	handler := NewClientHandler(config.ID, sessionManager, articleDatesQ, articleSectionsQ, abstractsQ)
 	collector := NewResultCollector(config.ID, resultsQ, sessionManager)
 
-	gw := &Gateway{
+	gw = &Gateway{
 		config:          config,
 		listener:        listener,
 		handler:         handler,
 		collector:       collector,
+		conns:           conns,
 		shutdownChannel: make(chan struct{}),
 	}
 	gw.running.Store(true)
@@ -143,6 +124,9 @@ func (gateway *Gateway) Close() {
 	close(gateway.shutdownChannel)
 	if gateway.listener != nil {
 		_ = gateway.listener.Close()
+	}
+	if gateway.conns != nil {
+		gateway.conns.Close()
 	}
 	if gateway.handler != nil {
 		gateway.handler.Close()

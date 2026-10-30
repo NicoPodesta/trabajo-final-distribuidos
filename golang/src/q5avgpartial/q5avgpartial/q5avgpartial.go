@@ -26,6 +26,7 @@ type totals struct {
 }
 
 type AvgPartial struct {
+	conns                 *middleware.Connections
 	historicalCountsQueue middleware.Middleware
 	avgPartialsQueue      middleware.Middleware
 	totalsByClient        map[string]*totals
@@ -33,19 +34,21 @@ type AvgPartial struct {
 }
 
 func NewAvgPartial(config AvgPartialConfig) (*AvgPartial, error) {
-	settings := middleware.ConnSettings{Hostname: config.MOMHost, Port: config.MOMPort}
-	historicalCountsQueue, err := middleware.CreateQueueMiddleware(historicalCountsQueueName, settings)
+	conns := middleware.NewConnections(middleware.ConnSettings{Hostname: config.MOMHost, Port: config.MOMPort})
+	historicalCountsQueue, err := conns.Queue(historicalCountsQueueName)
 	if err != nil {
+		conns.Close()
 		return nil, err
 	}
 
-	avgPartialsQueue, err := middleware.CreateQueueMiddleware(avgPartialsQueueName, settings)
+	avgPartialsQueue, err := conns.Queue(avgPartialsQueueName)
 	if err != nil {
-		_ = historicalCountsQueue.Close()
+		conns.Close()
 		return nil, err
 	}
 
 	return &AvgPartial{
+		conns:                 conns,
 		historicalCountsQueue: historicalCountsQueue,
 		avgPartialsQueue:      avgPartialsQueue,
 		totalsByClient:        make(map[string]*totals),
@@ -54,8 +57,7 @@ func NewAvgPartial(config AvgPartialConfig) (*AvgPartial, error) {
 }
 
 func (partial *AvgPartial) Run() error {
-	defer partial.historicalCountsQueue.Close()
-	defer partial.avgPartialsQueue.Close()
+	defer partial.conns.Close()
 
 	shutdown.OnSignal(func() { _ = partial.historicalCountsQueue.StopConsuming() })
 	slog.Info("Consuming historical counts from RabbitMQ...", "queue", historicalCountsQueueName)
