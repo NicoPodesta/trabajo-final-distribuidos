@@ -152,7 +152,7 @@ YAML
   date_filter
   worker q2_filter_0 q2filter
   worker image_fetcher_0 imagefetcher CHUNK_SIZE=65536
-  worker tokenizer_0 tokenizer
+  worker tokenizer_0 tokenizer TOKENIZER_ID=0 TOKENIZER_AMOUNT=1
   worker q5_avg_partial_0 q5avgpartial
   worker q5_filter_0 q5filter Q5_FILTER_ID=0
   worker q5_avg_aggregator_0 q5avgaggregator Q5_AVG_PARTIAL_AMOUNT=1 Q5_FILTER_AMOUNT=1

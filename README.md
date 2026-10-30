@@ -34,6 +34,9 @@ cd golang && make up
 - Q4WordCounter - mensajes: Se envia a la cola de partial_top20 2 mensajes: top y EOF, asegurando de enviar un solo EOF.
 - Q5 - promedio entero: el Avg Aggregator envia el promedio como numero entero truncado, no hace falta transmitir decimales.
 - Q5 - cliente sin articulos historicos, promedio como 0 que se envia al exchange hacia el q5Filter.
+- 1er patron EOF a replicar: una cola por replica con reparto por `hash(clave) % M` y el EOF enviado a todas las colas, para estado por clave. Ej: q4Counter.
+- 2er patron EOF a replicar: cola compartida donde la replica que recibe el EOF lo reenvia a todas por un exchange de control, con un mutex para que el EOF salga despues de los datos en curso, replicas sobre una cola. Ej: tokenizer
+
 
 ## Pendientes
 

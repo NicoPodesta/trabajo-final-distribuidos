@@ -27,9 +27,31 @@ func loadConfig() (tokenizer.TokenizerConfig, error) {
 		return tokenizer.TokenizerConfig{}, fmt.Errorf("invalid MOM_PORT: %w", err)
 	}
 
+	idStr := os.Getenv("TOKENIZER_ID")
+	if idStr == "" {
+		return tokenizer.TokenizerConfig{}, errors.New("TOKENIZER_ID environment variable is required")
+	}
+
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		return tokenizer.TokenizerConfig{}, fmt.Errorf("invalid TOKENIZER_ID: %w", err)
+	}
+
+	amountStr := os.Getenv("TOKENIZER_AMOUNT")
+	if amountStr == "" {
+		return tokenizer.TokenizerConfig{}, errors.New("TOKENIZER_AMOUNT environment variable is required")
+	}
+
+	amount, err := strconv.Atoi(amountStr)
+	if err != nil {
+		return tokenizer.TokenizerConfig{}, fmt.Errorf("invalid TOKENIZER_AMOUNT: %w", err)
+	}
+
 	return tokenizer.TokenizerConfig{
-		MOMHost: momHost,
-		MOMPort: momPort,
+		MOMHost:         momHost,
+		MOMPort:         momPort,
+		TokenizerID:     id,
+		TokenizerAmount: amount,
 	}, nil
 }
 

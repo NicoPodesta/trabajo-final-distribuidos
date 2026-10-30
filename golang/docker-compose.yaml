@@ -1,3 +1,4 @@
+# GENERADO por generar-compose.sh. No editar a mano: los cambios se hacen en el generador.
 services:
   client_0:
     build:
@@ -92,6 +93,8 @@ services:
     environment:
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
+    - TOKENIZER_ID=0
+    - TOKENIZER_AMOUNT=1
     - LOG_LEVEL=info
 
   q5_avg_partial_0:
@@ -147,6 +150,7 @@ services:
     environment:
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
+    - TOKENIZER_AMOUNT=1
     - LOG_LEVEL=info
 
   q4_top20_merger_0:
