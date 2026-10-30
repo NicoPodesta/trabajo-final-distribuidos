@@ -1,5 +1,16 @@
 # Trabajo-Final-Distribuidos
 
+## Ejecucion local
+
+Los datos de cada cliente van en `input/client_N/` (archivos `.parquet`) y sus resultados quedan en `output/client_N/`.
+
+El `docker-compose.yaml` se genera con `generar-compose.sh`, que recibe el archivo de salida y la cantidad de clientes:
+
+```
+./generar-compose.sh golang/docker-compose.yaml 2
+cd golang && make up
+```
+
 ## Decisiones - estado actual
 
 - El client lee .parquet de a 100 rows, decodificando los 7 campos del articulo.
