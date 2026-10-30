@@ -8,6 +8,7 @@ import (
 
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/common/middleware"
+	"trabajo-final-distribuidos/common/shutdown"
 )
 
 const (
@@ -50,6 +51,8 @@ func (filter *Filter) Run() error {
 			slog.Error("While closing image downloads queue", "err", err)
 		}
 	}()
+
+	shutdown.OnSignal(func() { _ = filter.articlesQueue.StopConsuming() })
 
 	slog.Info("Consuming articles for Q2", "queue", articleSectionsQueueName)
 	var processingErr error
