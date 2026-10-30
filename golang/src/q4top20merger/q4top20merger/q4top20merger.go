@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"sort"
 
+	"trabajo-final-distribuidos/common/eofcounter"
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/common/middleware"
 	"trabajo-final-distribuidos/common/result"
@@ -25,9 +26,8 @@ type TopMergerConfig struct {
 type TopMerger struct {
 	partialTop20Queue   middleware.Middleware
 	resultsPublisher    *resultpublisher.Publisher
-	wordCounterAmount   int
 	partialTopsByClient map[string][]result.Q4Result
-	eofCountByClient    map[string]int
+	eofs                *eofcounter.Counter
 }
 
 func NewTopMerger(config TopMergerConfig) (*TopMerger, error) {
@@ -39,9 +39,8 @@ func NewTopMerger(config TopMergerConfig) (*TopMerger, error) {
 	return &TopMerger{
 		partialTop20Queue:   partialTop20Queue,
 		resultsPublisher:    resultpublisher.New(settings),
-		wordCounterAmount:   config.Q4WordCounterAmount,
 		partialTopsByClient: make(map[string][]result.Q4Result),
-		eofCountByClient:    make(map[string]int),
+		eofs:                eofcounter.New(config.Q4WordCounterAmount),
 	}, nil
 }
 
@@ -79,14 +78,12 @@ func (merger *TopMerger) handleMessage(msg middleware.Message) error {
 }
 
 func (merger *TopMerger) handleEndOfPartialTop(clientID string) error {
-	merger.eofCountByClient[clientID]++
-	if merger.eofCountByClient[clientID] < merger.wordCounterAmount {
+	if !merger.eofs.Add(clientID) {
 		return nil
 	}
 
 	partialTops := merger.partialTopsByClient[clientID]
 	delete(merger.partialTopsByClient, clientID)
-	delete(merger.eofCountByClient, clientID)
 
 	top := buildTop(partialTops)
 	slog.Info("Merged partial tops", "clientID", clientID, "candidates", len(partialTops))
