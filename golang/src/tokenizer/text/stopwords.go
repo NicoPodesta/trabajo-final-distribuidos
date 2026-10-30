@@ -1,4 +1,4 @@
-package tokenizer
+package text
 
 // same Stopwords of NLTK notebook
 var englishStopWords = []string{

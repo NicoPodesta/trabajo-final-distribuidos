@@ -1,4 +1,4 @@
-package tokenizer
+package text
 
 import (
 	"regexp"
@@ -8,9 +8,9 @@ import (
 var wordRegex = regexp.MustCompile(`[\p{L}\p{N}_]+`)
 var numberRegex = regexp.MustCompile(`^\p{Nd}+$`)
 
-func extractWords(text string) []string {
+func ExtractWords(content string) []string {
 	words := []string{}
-	for _, word := range wordRegex.FindAllString(strings.ToLower(text), -1) {
+	for _, word := range wordRegex.FindAllString(strings.ToLower(content), -1) {
 		if _, ok := stopWords[word]; ok || numberRegex.MatchString(word) {
 			continue
 		}
@@ -19,7 +19,7 @@ func extractWords(text string) []string {
 	return words
 }
 
-func distinctWords(words []string) []string {
+func DistinctWords(words []string) []string {
 	seen := make(map[string]struct{})
 	distinct := []string{}
 	for _, word := range words {

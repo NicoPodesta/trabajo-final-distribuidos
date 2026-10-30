@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
+	"trabajo-final-distribuidos/tokenizer/text"
 )
 
 const lastHistoricalYear = 2020
@@ -24,8 +25,8 @@ func tokenizeBatch(records []inner.AbstractItem) batchResult {
 	}
 
 	for _, record := range records {
-		words := extractWords(record.Abstract)
-		for _, word := range distinctWords(words) {
+		words := text.ExtractWords(record.Abstract)
+		for _, word := range text.DistinctWords(words) {
 			counts[word]++
 			item := inner.VocabularyItem{Word: word, Language: record.Language}
 			if _, exists := vocabulary[item]; !exists {
