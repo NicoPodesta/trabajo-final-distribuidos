@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"sync"
 
+	"trabajo-final-distribuidos/common/eofcounter"
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/common/middleware"
 	"trabajo-final-distribuidos/common/result"
@@ -15,9 +16,10 @@ import (
 const recentArticlesQueueName = "recent_articles"
 
 type FilterConfig struct {
-	MOMHost  string
-	MOMPort  int
-	FilterID int
+	MOMHost         string
+	MOMPort         int
+	FilterID        int
+	TokenizerAmount int
 }
 
 type Filter struct {
@@ -26,6 +28,7 @@ type Filter struct {
 	resultsPublisher    *resultpublisher.Publisher
 	mutex               sync.Mutex
 	clients             map[string]*clientState
+	eofs                *eofcounter.Counter
 }
 
 func NewFilter(config FilterConfig) (*Filter, error) {
@@ -47,6 +50,7 @@ func NewFilter(config FilterConfig) (*Filter, error) {
 		averageExchange:     averageExchange,
 		resultsPublisher:    resultpublisher.New(settings),
 		clients:             make(map[string]*clientState),
+		eofs:                eofcounter.New(config.TokenizerAmount),
 	}, nil
 }
 
@@ -110,6 +114,9 @@ func (filter *Filter) handleRecentArticles(msg middleware.Message) error {
 	state := filter.stateOf(clientID)
 
 	if recentArticlesMsg.IsEOF() {
+		if !filter.eofs.Add(clientID) {
+			return nil
+		}
 		state.markRecentsEOF()
 		return filter.finishIfComplete(clientID, state)
 	}

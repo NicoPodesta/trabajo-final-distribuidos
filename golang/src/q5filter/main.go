@@ -37,10 +37,21 @@ func loadConfig() (q5filter.FilterConfig, error) {
 		return q5filter.FilterConfig{}, fmt.Errorf("invalid Q5_FILTER_ID: %w", err)
 	}
 
+	tokenizerAmountStr := os.Getenv("TOKENIZER_AMOUNT")
+	if tokenizerAmountStr == "" {
+		return q5filter.FilterConfig{}, errors.New("TOKENIZER_AMOUNT environment variable is required")
+	}
+
+	tokenizerAmount, err := strconv.Atoi(tokenizerAmountStr)
+	if err != nil {
+		return q5filter.FilterConfig{}, fmt.Errorf("invalid TOKENIZER_AMOUNT: %w", err)
+	}
+
 	return q5filter.FilterConfig{
-		MOMHost:  momHost,
-		MOMPort:  momPort,
-		FilterID: filterID,
+		MOMHost:         momHost,
+		MOMPort:         momPort,
+		FilterID:        filterID,
+		TokenizerAmount: tokenizerAmount,
 	}, nil
 }
 

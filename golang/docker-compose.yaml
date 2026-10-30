@@ -123,6 +123,7 @@ services:
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
     - Q5_FILTER_ID=0
+    - TOKENIZER_AMOUNT=1
     - LOG_LEVEL=info
 
   q5_avg_aggregator_0:
