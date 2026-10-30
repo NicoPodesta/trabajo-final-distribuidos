@@ -3,6 +3,7 @@ package q5avgpartial
 import (
 	"log/slog"
 
+	"trabajo-final-distribuidos/common/eofcounter"
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/common/middleware"
 	"trabajo-final-distribuidos/common/shutdown"
@@ -14,8 +15,9 @@ const (
 )
 
 type AvgPartialConfig struct {
-	MOMHost string
-	MOMPort int
+	MOMHost         string
+	MOMPort         int
+	TokenizerAmount int
 }
 
 type totals struct {
@@ -27,6 +29,7 @@ type AvgPartial struct {
 	historicalCountsQueue middleware.Middleware
 	avgPartialsQueue      middleware.Middleware
 	totalsByClient        map[string]*totals
+	eofs                  *eofcounter.Counter
 }
 
 func NewAvgPartial(config AvgPartialConfig) (*AvgPartial, error) {
@@ -46,6 +49,7 @@ func NewAvgPartial(config AvgPartialConfig) (*AvgPartial, error) {
 		historicalCountsQueue: historicalCountsQueue,
 		avgPartialsQueue:      avgPartialsQueue,
 		totalsByClient:        make(map[string]*totals),
+		eofs:                  eofcounter.New(config.TokenizerAmount),
 	}, nil
 }
 
@@ -91,6 +95,10 @@ func (partial *AvgPartial) addCounts(clientID string, records []uint32) {
 }
 
 func (partial *AvgPartial) handleEndOfInput(clientID string) error {
+	if !partial.eofs.Add(clientID) {
+		return nil
+	}
+
 	clientTotals := partial.totalsByClient[clientID]
 	delete(partial.totalsByClient, clientID)
 

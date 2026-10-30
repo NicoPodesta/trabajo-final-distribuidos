@@ -27,9 +27,20 @@ func loadConfig() (q5avgpartial.AvgPartialConfig, error) {
 		return q5avgpartial.AvgPartialConfig{}, fmt.Errorf("invalid MOM_PORT: %w", err)
 	}
 
+	tokenizerAmountStr := os.Getenv("TOKENIZER_AMOUNT")
+	if tokenizerAmountStr == "" {
+		return q5avgpartial.AvgPartialConfig{}, errors.New("TOKENIZER_AMOUNT environment variable is required")
+	}
+
+	tokenizerAmount, err := strconv.Atoi(tokenizerAmountStr)
+	if err != nil {
+		return q5avgpartial.AvgPartialConfig{}, fmt.Errorf("invalid TOKENIZER_AMOUNT: %w", err)
+	}
+
 	return q5avgpartial.AvgPartialConfig{
-		MOMHost: momHost,
-		MOMPort: momPort,
+		MOMHost:         momHost,
+		MOMPort:         momPort,
+		TokenizerAmount: tokenizerAmount,
 	}, nil
 }
 

@@ -108,6 +108,7 @@ services:
     environment:
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
+    - TOKENIZER_AMOUNT=1
     - LOG_LEVEL=info
 
   q5_filter_0:
