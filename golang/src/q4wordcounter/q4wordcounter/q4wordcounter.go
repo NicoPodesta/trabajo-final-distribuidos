@@ -7,6 +7,7 @@ import (
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/common/middleware"
 	"trabajo-final-distribuidos/common/result"
+	"trabajo-final-distribuidos/common/shutdown"
 )
 
 const (
@@ -50,6 +51,7 @@ func (counter *WordCounter) Run() error {
 	defer counter.wordCountsQueue.Close()
 	defer counter.partialTop20Queue.Close()
 
+	shutdown.OnSignal(func() { _ = counter.wordCountsQueue.StopConsuming() })
 	slog.Info("Consuming word counts from RabbitMQ...", "queue", wordCountsQueueName)
 	return counter.wordCountsQueue.StartConsuming(func(msg middleware.Message, ack func(), nack func()) {
 		if err := counter.handleMessage(msg); err != nil {

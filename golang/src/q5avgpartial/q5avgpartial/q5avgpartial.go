@@ -5,6 +5,7 @@ import (
 
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/common/middleware"
+	"trabajo-final-distribuidos/common/shutdown"
 )
 
 const (
@@ -52,6 +53,7 @@ func (partial *AvgPartial) Run() error {
 	defer partial.historicalCountsQueue.Close()
 	defer partial.avgPartialsQueue.Close()
 
+	shutdown.OnSignal(func() { _ = partial.historicalCountsQueue.StopConsuming() })
 	slog.Info("Consuming historical counts from RabbitMQ...", "queue", historicalCountsQueueName)
 	return partial.historicalCountsQueue.StartConsuming(func(msg middleware.Message, ack func(), nack func()) {
 		if err := partial.handleMessage(msg); err != nil {

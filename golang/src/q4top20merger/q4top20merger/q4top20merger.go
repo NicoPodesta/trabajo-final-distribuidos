@@ -8,6 +8,7 @@ import (
 	"trabajo-final-distribuidos/common/middleware"
 	"trabajo-final-distribuidos/common/result"
 	"trabajo-final-distribuidos/common/resultpublisher"
+	"trabajo-final-distribuidos/common/shutdown"
 )
 
 const (
@@ -52,6 +53,7 @@ func (merger *TopMerger) Run() error {
 		}
 	}()
 
+	shutdown.OnSignal(func() { _ = merger.partialTop20Queue.StopConsuming() })
 	slog.Info("Consuming partial tops from RabbitMQ...", "queue", partialTop20QueueName)
 	return merger.partialTop20Queue.StartConsuming(func(msg middleware.Message, ack func(), nack func()) {
 		if err := merger.handleMessage(msg); err != nil {
