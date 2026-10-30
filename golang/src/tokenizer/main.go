@@ -1,60 +1,38 @@
 package main
 
 import (
-	"errors"
-	"fmt"
 	"log/slog"
 	"os"
-	"strconv"
 
+	"trabajo-final-distribuidos/common/config"
 	"trabajo-final-distribuidos/common/logger"
 	"trabajo-final-distribuidos/tokenizer/tokenizer"
 )
 
 func loadConfig() (tokenizer.TokenizerConfig, error) {
-	momHost := os.Getenv("MOM_HOST")
-	if momHost == "" {
-		return tokenizer.TokenizerConfig{}, errors.New("MOM_HOST environment variable is required")
-	}
-
-	momPortStr := os.Getenv("MOM_PORT")
-	if momPortStr == "" {
-		return tokenizer.TokenizerConfig{}, errors.New("MOM_PORT environment variable is required")
-	}
-
-	momPort, err := strconv.Atoi(momPortStr)
+	momHost, err := config.RequiredString("MOM_HOST")
 	if err != nil {
-		return tokenizer.TokenizerConfig{}, fmt.Errorf("invalid MOM_PORT: %w", err)
+		return tokenizer.TokenizerConfig{}, err
 	}
 
-	idStr := os.Getenv("TOKENIZER_ID")
-	if idStr == "" {
-		return tokenizer.TokenizerConfig{}, errors.New("TOKENIZER_ID environment variable is required")
-	}
-
-	id, err := strconv.Atoi(idStr)
+	momPort, err := config.RequiredInt("MOM_PORT")
 	if err != nil {
-		return tokenizer.TokenizerConfig{}, fmt.Errorf("invalid TOKENIZER_ID: %w", err)
+		return tokenizer.TokenizerConfig{}, err
 	}
 
-	amountStr := os.Getenv("TOKENIZER_AMOUNT")
-	if amountStr == "" {
-		return tokenizer.TokenizerConfig{}, errors.New("TOKENIZER_AMOUNT environment variable is required")
-	}
-
-	amount, err := strconv.Atoi(amountStr)
+	id, err := config.RequiredInt("TOKENIZER_ID")
 	if err != nil {
-		return tokenizer.TokenizerConfig{}, fmt.Errorf("invalid TOKENIZER_AMOUNT: %w", err)
+		return tokenizer.TokenizerConfig{}, err
 	}
 
-	wordCounterAmountStr := os.Getenv("Q4_WORD_COUNTER_AMOUNT")
-	if wordCounterAmountStr == "" {
-		return tokenizer.TokenizerConfig{}, errors.New("Q4_WORD_COUNTER_AMOUNT environment variable is required")
-	}
-
-	wordCounterAmount, err := strconv.Atoi(wordCounterAmountStr)
+	amount, err := config.RequiredInt("TOKENIZER_AMOUNT")
 	if err != nil {
-		return tokenizer.TokenizerConfig{}, fmt.Errorf("invalid Q4_WORD_COUNTER_AMOUNT: %w", err)
+		return tokenizer.TokenizerConfig{}, err
+	}
+
+	wordCounterAmount, err := config.RequiredInt("Q4_WORD_COUNTER_AMOUNT")
+	if err != nil {
+		return tokenizer.TokenizerConfig{}, err
 	}
 
 	return tokenizer.TokenizerConfig{
@@ -69,13 +47,13 @@ func loadConfig() (tokenizer.TokenizerConfig, error) {
 func run() int {
 	logger.Setup()
 
-	config, err := loadConfig()
+	workerConfig, err := loadConfig()
 	if err != nil {
 		slog.Error("While loading config", "err", err)
 		return 1
 	}
 
-	worker, err := tokenizer.NewTokenizer(config)
+	worker, err := tokenizer.NewTokenizer(workerConfig)
 	if err != nil {
 		slog.Error("While initializing tokenizer", "err", err)
 		return 1
