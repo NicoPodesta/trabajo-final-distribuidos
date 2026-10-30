@@ -1,4 +1,4 @@
-package imagefetcher
+package q2imagefetcher
 
 import (
 	"context"

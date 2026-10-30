@@ -71,11 +71,11 @@ services:
     - MOM_PORT=5672
     - LOG_LEVEL=info
 
-  image_fetcher_0:
+  q2_image_fetcher_0:
     build:
       context: ./src/
-      dockerfile: imagefetcher/Dockerfile
-    container_name: image_fetcher_0
+      dockerfile: q2imagefetcher/Dockerfile
+    container_name: q2_image_fetcher_0
     depends_on:
       rabbitmq:
         condition: service_healthy

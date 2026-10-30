@@ -6,11 +6,11 @@ COPY go.mod .
 COPY go.sum .
 COPY common ./common
 RUN go mod download
-COPY imagefetcher ./imagefetcher
-RUN CGO_ENABLED=0 GOOS=linux go build -buildvcs=false -o bin/imagefetcher ./imagefetcher
+COPY q2imagefetcher ./q2imagefetcher
+RUN CGO_ENABLED=0 GOOS=linux go build -buildvcs=false -o bin/q2imagefetcher ./q2imagefetcher
 
 FROM busybox:latest
-COPY --from=builder /build/bin/imagefetcher /imagefetcher
+COPY --from=builder /build/bin/q2imagefetcher /q2imagefetcher
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 RUN mkdir -p /tmp
-ENTRYPOINT ["./imagefetcher"]
+ENTRYPOINT ["./q2imagefetcher"]

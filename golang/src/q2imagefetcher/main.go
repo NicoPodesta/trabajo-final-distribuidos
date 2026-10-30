@@ -12,11 +12,11 @@ import (
 
 	"trabajo-final-distribuidos/common/logger"
 	"trabajo-final-distribuidos/common/result"
-	"trabajo-final-distribuidos/imagefetcher/imagefetcher"
+	"trabajo-final-distribuidos/q2imagefetcher/q2imagefetcher"
 )
 
-func loadConfig() (imagefetcher.FetcherConfig, error) {
-	config := imagefetcher.FetcherConfig{
+func loadConfig() (q2imagefetcher.FetcherConfig, error) {
+	config := q2imagefetcher.FetcherConfig{
 		MOMHost:   os.Getenv("MOM_HOST"),
 		ChunkSize: result.DefaultQ2ChunkSize,
 	}
@@ -46,7 +46,7 @@ func run() int {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
-	worker, err := imagefetcher.NewFetcher(config)
+	worker, err := q2imagefetcher.NewFetcher(config)
 	if err != nil {
 		slog.Error("While initializing Image Fetcher", "err", err)
 		return 1
