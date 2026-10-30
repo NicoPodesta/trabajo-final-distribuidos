@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"sort"
 
+	"trabajo-final-distribuidos/common/eofcounter"
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/common/middleware"
 	"trabajo-final-distribuidos/common/result"
@@ -17,14 +18,16 @@ const (
 )
 
 type WordCounterConfig struct {
-	MOMHost string
-	MOMPort int
+	MOMHost         string
+	MOMPort         int
+	TokenizerAmount int
 }
 
 type WordCounter struct {
 	wordCountsQueue   middleware.Middleware
 	partialTop20Queue middleware.Middleware
 	countsByClient    map[string]map[string]uint32
+	eofs              *eofcounter.Counter
 }
 
 func NewWordCounter(config WordCounterConfig) (*WordCounter, error) {
@@ -44,6 +47,7 @@ func NewWordCounter(config WordCounterConfig) (*WordCounter, error) {
 		wordCountsQueue:   wordCountsQueue,
 		partialTop20Queue: partialTop20Queue,
 		countsByClient:    make(map[string]map[string]uint32),
+		eofs:              eofcounter.New(config.TokenizerAmount),
 	}, nil
 }
 
@@ -88,6 +92,10 @@ func (counter *WordCounter) addCounts(clientID string, records []inner.WordCount
 }
 
 func (counter *WordCounter) handleEndOfInput(clientID string) error {
+	if !counter.eofs.Add(clientID) {
+		return nil
+	}
+
 	counts := counter.countsByClient[clientID]
 	delete(counter.countsByClient, clientID)
 
