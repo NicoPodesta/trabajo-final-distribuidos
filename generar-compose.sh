@@ -1,24 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -lt 2 || $# -gt 3 ]]; then
-  echo "Uso: $0 <archivo-salida> <cantidad-clientes> [cantidad-tokenizers]" >&2
+if [[ $# -lt 2 || $# -gt 5 ]]; then
+  echo "Uso: $0 <archivo-salida> <cantidad-clientes> [cantidad-gateways] [cantidad-tokenizers] [cantidad-q4-wordcounters]" >&2
   exit 1
 fi
 
 output_file="$1"
 client_count="$2"
-tokenizer_count="${3:-1}"
+gateway_count="${3:-1}"
+tokenizer_count="${4:-1}"
+q4_counter_count="${5:-1}"
 
-if ! [[ "$client_count" =~ ^[0-9]+$ ]]; then
-  echo "Error: la cantidad de clientes debe ser un entero no negativo" >&2
-  exit 1
-fi
-
-if ! [[ "$tokenizer_count" =~ ^[0-9]+$ ]] || [[ "$tokenizer_count" -lt 1 ]]; then
-  echo "Error: la cantidad de tokenizers debe ser un entero positivo" >&2
-  exit 1
-fi
+for val in "$client_count" "$gateway_count" "$tokenizer_count" "$q4_counter_count"; do
+  if ! [[ "$val" =~ ^[0-9]+$ ]] || [[ "$val" -lt 1 ]]; then
+    echo "Error: los conteos deben ser enteros positivos" >&2
+    exit 1
+  fi
+done
 
 root_dir="$(cd "$(dirname "$0")" && pwd)"
 
@@ -49,35 +48,50 @@ YAML
 }
 
 load_balancer() {
-  cat <<'YAML'
+  local count=$1
+  local gateways_list=""
+  for id in $(seq 0 $((count - 1))); do
+    if [[ -n "$gateways_list" ]]; then
+      gateways_list="${gateways_list},gateway_${id}:5678"
+    else
+      gateways_list="gateway_${id}:5678"
+    fi
+  done
+
+  cat <<YAML
   load_balancer:
     build:
       context: ./src/
       dockerfile: loadbalancer/Dockerfile
     container_name: load_balancer
     depends_on:
-    - gateway_0
+YAML
+  for id in $(seq 0 $((count - 1))); do
+    echo "    - gateway_${id}"
+  done
+  cat <<YAML
     environment:
     - SERVER_HOST=load_balancer
     - SERVER_PORT=5000
-    - GATEWAYS=gateway_0:5678
+    - GATEWAYS=${gateways_list}
 
 YAML
 }
 
 gateway() {
-  cat <<'YAML'
-  gateway_0:
+  local id=$1
+  cat <<YAML
+  gateway_${id}:
     build:
       context: ./src/
       dockerfile: gateway/Dockerfile
-    container_name: gateway_0
+    container_name: gateway_${id}
     depends_on:
       rabbitmq:
         condition: service_healthy
     environment:
-    - ID=0
-    - SERVER_HOST=gateway_0
+    - ID=${id}
+    - SERVER_HOST=gateway_${id}
     - SERVER_PORT=5678
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
@@ -154,21 +168,31 @@ YAML
     cliente "$id"
   done
 
-  load_balancer
-  gateway
+  load_balancer "$gateway_count"
+
+  for id in $(seq 0 $((gateway_count - 1))); do
+    gateway "$id"
+  done
+
   date_filter
   worker q2_filter_0 q2filter
   worker image_fetcher_0 imagefetcher CHUNK_SIZE=65536
+
   for id in $(seq 0 $((tokenizer_count - 1))); do
-    worker "tokenizer_${id}" tokenizer "TOKENIZER_ID=${id}" "TOKENIZER_AMOUNT=${tokenizer_count}" Q4_WORD_COUNTER_AMOUNT=1
+    worker "tokenizer_${id}" tokenizer "TOKENIZER_ID=${id}" "TOKENIZER_AMOUNT=${tokenizer_count}" "Q4_WORD_COUNTER_AMOUNT=${q4_counter_count}"
   done
+
   worker q3_vocabulary_join_0 q3vocabularyjoin "TOKENIZER_AMOUNT=${tokenizer_count}"
   worker q5_avg_partial_0 q5avgpartial "TOKENIZER_AMOUNT=${tokenizer_count}"
   worker q5_filter_0 q5filter Q5_FILTER_ID=0 "TOKENIZER_AMOUNT=${tokenizer_count}"
   worker q5_avg_aggregator_0 q5avgaggregator Q5_AVG_PARTIAL_AMOUNT=1 Q5_FILTER_AMOUNT=1
-  worker q4_word_counter_0 q4wordcounter "TOKENIZER_AMOUNT=${tokenizer_count}"
-  worker q4_top20_merger_0 q4top20merger Q4_WORD_COUNTER_AMOUNT=1
+
+  for id in $(seq 0 $((q4_counter_count - 1))); do
+    worker "q4_word_counter_${id}" q4wordcounter "ID=${id}" "TOKENIZER_AMOUNT=${tokenizer_count}"
+  done
+
+  worker q4_top20_merger_0 q4top20merger "Q4_WORD_COUNTER_AMOUNT=${q4_counter_count}"
   rabbitmq
 } > "$output_file"
 
-echo "Docker Compose generado en $output_file con $client_count cliente(s) y $tokenizer_count tokenizer(s)."
+echo "Docker Compose generado en $output_file con $client_count cliente(s), $gateway_count gateway(s), $tokenizer_count tokenizer(s) y $q4_counter_count q4-counter(s)."

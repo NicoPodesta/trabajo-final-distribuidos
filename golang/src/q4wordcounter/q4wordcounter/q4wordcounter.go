@@ -1,6 +1,7 @@
 package q4wordcounter
 
 import (
+	"fmt"
 	"log/slog"
 	"sort"
 
@@ -12,7 +13,7 @@ import (
 )
 
 const (
-	wordCountsQueueName   = "word_counts_0"
+	wordCountsQueuePrefix = "word_counts_"
 	partialTop20QueueName = "partial_top20"
 	topSize               = 20
 )
@@ -20,6 +21,7 @@ const (
 type WordCounterConfig struct {
 	MOMHost         string
 	MOMPort         int
+	ID              int
 	TokenizerAmount int
 }
 
@@ -28,11 +30,13 @@ type WordCounter struct {
 	partialTop20Queue middleware.Middleware
 	countsByClient    map[string]map[string]uint32
 	eofs              *eofcounter.Counter
+	queueName         string
 }
 
 func NewWordCounter(config WordCounterConfig) (*WordCounter, error) {
 	settings := middleware.ConnSettings{Hostname: config.MOMHost, Port: config.MOMPort}
-	wordCountsQueue, err := middleware.CreateQueueMiddleware(wordCountsQueueName, settings)
+	queueName := fmt.Sprintf("%s%d", wordCountsQueuePrefix, config.ID)
+	wordCountsQueue, err := middleware.CreateQueueMiddleware(queueName, settings)
 	if err != nil {
 		return nil, err
 	}
@@ -48,6 +52,7 @@ func NewWordCounter(config WordCounterConfig) (*WordCounter, error) {
 		partialTop20Queue: partialTop20Queue,
 		countsByClient:    make(map[string]map[string]uint32),
 		eofs:              eofcounter.New(config.TokenizerAmount),
+		queueName:         queueName,
 	}, nil
 }
 
@@ -56,7 +61,7 @@ func (counter *WordCounter) Run() error {
 	defer counter.partialTop20Queue.Close()
 
 	shutdown.OnSignal(func() { _ = counter.wordCountsQueue.StopConsuming() })
-	slog.Info("Consuming word counts from RabbitMQ...", "queue", wordCountsQueueName)
+	slog.Info("Consuming word counts from RabbitMQ...", "queue", counter.queueName)
 	return counter.wordCountsQueue.StartConsuming(func(msg middleware.Message, ack func(), nack func()) {
 		if err := counter.handleMessage(msg); err != nil {
 			slog.Error("While handling word counts message", "err", err)
