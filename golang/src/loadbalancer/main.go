@@ -6,23 +6,24 @@ import (
 	"os"
 	"strings"
 
+	"trabajo-final-distribuidos/common/config"
 	"trabajo-final-distribuidos/loadbalancer/loadbalancer"
 )
 
 func loadConfig() (loadbalancer.LoadBalancerConfig, error) {
-	serverHost := os.Getenv("SERVER_HOST")
-	if serverHost == "" {
-		return loadbalancer.LoadBalancerConfig{}, errors.New("SERVER_HOST environment variable is required")
+	serverHost, err := config.RequiredString("SERVER_HOST")
+	if err != nil {
+		return loadbalancer.LoadBalancerConfig{}, err
 	}
 
-	serverPort := os.Getenv("SERVER_PORT")
-	if serverPort == "" {
-		return loadbalancer.LoadBalancerConfig{}, errors.New("SERVER_PORT environment variable is required")
+	serverPort, err := config.RequiredString("SERVER_PORT")
+	if err != nil {
+		return loadbalancer.LoadBalancerConfig{}, err
 	}
 
-	gatewaysStr := os.Getenv("GATEWAYS")
-	if gatewaysStr == "" {
-		return loadbalancer.LoadBalancerConfig{}, errors.New("GATEWAYS environment variable is required")
+	gatewaysStr, err := config.RequiredString("GATEWAYS")
+	if err != nil {
+		return loadbalancer.LoadBalancerConfig{}, err
 	}
 
 	var gateways []string
@@ -45,23 +46,22 @@ func loadConfig() (loadbalancer.LoadBalancerConfig, error) {
 }
 
 func run() int {
-	config, err := loadConfig()
+	workerConfig, err := loadConfig()
 	if err != nil {
 		slog.Error("While loading load balancer config", "err", err)
 		return 1
 	}
 
-	server, err := loadbalancer.NewLoadBalancer(config)
+	lb, err := loadbalancer.NewLoadBalancer(workerConfig)
 	if err != nil {
 		slog.Error("While initializing load balancer", "err", err)
 		return 1
 	}
 
-	if err := server.Run(); err != nil {
+	if err := lb.Run(); err != nil {
 		slog.Error("Load balancer stopped with error", "err", err)
 		return 1
 	}
-
 	return 0
 }
 
