@@ -99,7 +99,8 @@ func (filter *Filter) handleArticlesMessage(articleMsg *inner.Q2ArticlesMessage)
 			continue
 		}
 		if strings.TrimSpace(article.Image) == "" {
-			return fmt.Errorf("empty image reference for client %q, article %q", articleMsg.ClientID, article.Url)
+			slog.Debug("Skipping Q2 article without image", "clientID", articleMsg.ClientID, "url", article.Url)
+			continue
 		}
 		msg, err := inner.SerializeImageDownload(articleMsg.ClientID, inner.ImageDownloadRequest{
 			Name:     article.Name,
