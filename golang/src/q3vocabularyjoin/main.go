@@ -24,6 +24,10 @@ func loadConfig() (q3vocabularyjoin.VocabularyJoinConfig, error) {
 	if err != nil || config.MOMPort < 1 || config.MOMPort > 65535 {
 		return config, fmt.Errorf("MOM_PORT must be an integer between 1 and 65535")
 	}
+	config.TokenizerAmount, err = strconv.Atoi(os.Getenv("TOKENIZER_AMOUNT"))
+	if err != nil || config.TokenizerAmount < 1 {
+		return config, fmt.Errorf("TOKENIZER_AMOUNT must be a positive integer")
+	}
 	return config, nil
 }
 

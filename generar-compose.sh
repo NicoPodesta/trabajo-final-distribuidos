@@ -33,6 +33,7 @@ cliente() {
       context: ./src/
       dockerfile: client/Dockerfile
     container_name: client_${id}
+    user: "$(id -u):$(id -g)"
     depends_on:
     - load_balancer
     environment:
@@ -80,7 +81,7 @@ gateway() {
     - SERVER_PORT=5678
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
-    - EXPECTED_QUERIES=4 # Temporal, actualizar cuando se implementen mas queries
+    - EXPECTED_QUERIES=5
 
 YAML
 }
@@ -161,6 +162,7 @@ YAML
   for id in $(seq 0 $((tokenizer_count - 1))); do
     worker "tokenizer_${id}" tokenizer "TOKENIZER_ID=${id}" "TOKENIZER_AMOUNT=${tokenizer_count}" Q4_WORD_COUNTER_AMOUNT=1
   done
+  worker q3_vocabulary_join_0 q3vocabularyjoin "TOKENIZER_AMOUNT=${tokenizer_count}"
   worker q5_avg_partial_0 q5avgpartial "TOKENIZER_AMOUNT=${tokenizer_count}"
   worker q5_filter_0 q5filter Q5_FILTER_ID=0 "TOKENIZER_AMOUNT=${tokenizer_count}"
   worker q5_avg_aggregator_0 q5avgaggregator Q5_AVG_PARTIAL_AMOUNT=1 Q5_FILTER_AMOUNT=1

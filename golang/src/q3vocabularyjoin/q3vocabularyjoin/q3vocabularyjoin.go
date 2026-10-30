@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"trabajo-final-distribuidos/common/eofcounter"
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/common/middleware"
 	"trabajo-final-distribuidos/common/result"
@@ -14,8 +15,9 @@ import (
 const vocabularyQueueName = "vocabulary_0"
 
 type VocabularyJoinConfig struct {
-	MOMHost string
-	MOMPort int
+	MOMHost         string
+	MOMPort         int
+	TokenizerAmount int
 }
 
 type wordPresence struct {
@@ -28,6 +30,7 @@ type VocabularyJoin struct {
 	vocabularyQueue  middleware.Middleware
 	resultsPublisher *resultpublisher.Publisher
 	wordsByClient    map[string]map[string]*wordPresence
+	eofs             *eofcounter.Counter
 }
 
 func NewVocabularyJoin(config VocabularyJoinConfig) (*VocabularyJoin, error) {
@@ -40,6 +43,7 @@ func NewVocabularyJoin(config VocabularyJoinConfig) (*VocabularyJoin, error) {
 		vocabularyQueue:  queue,
 		resultsPublisher: resultpublisher.New(settings),
 		wordsByClient:    make(map[string]map[string]*wordPresence),
+		eofs:             eofcounter.New(config.TokenizerAmount),
 	}, nil
 }
 
@@ -103,6 +107,10 @@ func (join *VocabularyJoin) addVocabulary(clientID string, records []inner.Vocab
 }
 
 func (join *VocabularyJoin) handleEndOfInput(clientID string) error {
+	if !join.eofs.Add(clientID) {
+		return nil
+	}
+
 	msg, err := inner.SerializeQ3ResultsEOF(clientID)
 	if err != nil {
 		return err

@@ -5,6 +5,7 @@ services:
       context: ./src/
       dockerfile: client/Dockerfile
     container_name: client_0
+    user: "1000:1000"
     depends_on:
     - load_balancer
     environment:
@@ -42,7 +43,7 @@ services:
     - SERVER_PORT=5678
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
-    - EXPECTED_QUERIES=4 # Temporal, actualizar cuando se implementen mas queries
+    - EXPECTED_QUERIES=5
 
   date_filter_0:
     build:
@@ -96,6 +97,20 @@ services:
     - TOKENIZER_ID=0
     - TOKENIZER_AMOUNT=1
     - Q4_WORD_COUNTER_AMOUNT=1
+    - LOG_LEVEL=info
+
+  q3_vocabulary_join_0:
+    build:
+      context: ./src/
+      dockerfile: q3vocabularyjoin/Dockerfile
+    container_name: q3_vocabulary_join_0
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - TOKENIZER_AMOUNT=1
     - LOG_LEVEL=info
 
   q5_avg_partial_0:
