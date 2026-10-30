@@ -1,7 +1,6 @@
 package tokenizer
 
 import (
-	"fmt"
 	"log/slog"
 	"sync"
 
@@ -29,6 +28,7 @@ type TokenizerConfig struct {
 }
 
 type Tokenizer struct {
+	conns                 *connections
 	abstractsQueue        middleware.Middleware
 	wordCountsQueues      []middleware.Middleware
 	vocabularyQueue       middleware.Middleware
@@ -40,107 +40,68 @@ type Tokenizer struct {
 	received              int
 }
 
-func NewTokenizer(config TokenizerConfig) (*Tokenizer, error) {
-	settings := middleware.ConnSettings{Hostname: config.MOMHost, Port: config.MOMPort}
-	abstractsQueue, err := middleware.CreateQueueMiddleware(abstractsQueueName, settings)
-	if err != nil {
-		return nil, err
-	}
-
-	wordCountsQueues, err := createWordCountsQueues(config.WordCounterAmount, settings)
-	if err != nil {
-		_ = abstractsQueue.Close()
-		return nil, err
-	}
-
-	vocabularyQueue, err := middleware.CreateQueueMiddleware(vocabularyQueueName, settings)
-	if err != nil {
-		_ = abstractsQueue.Close()
-		closeAll(wordCountsQueues)
-		return nil, err
-	}
-
-	historicalCountsQueue, err := middleware.CreateQueueMiddleware(historicalCountsQueueName, settings)
-	if err != nil {
-		_ = abstractsQueue.Close()
-		closeAll(wordCountsQueues)
-		_ = vocabularyQueue.Close()
-		return nil, err
-	}
-
-	recentArticlesQueue, err := middleware.CreateQueueMiddleware(recentArticlesQueueName, settings)
-	if err != nil {
-		_ = abstractsQueue.Close()
-		closeAll(wordCountsQueues)
-		_ = vocabularyQueue.Close()
-		_ = historicalCountsQueue.Close()
-		return nil, err
-	}
+func NewTokenizer(config TokenizerConfig) (tokenizer *Tokenizer, err error) {
+	conns := &connections{settings: middleware.ConnSettings{Hostname: config.MOMHost, Port: config.MOMPort}}
+	defer func() {
+		if err != nil {
+			conns.close()
+		}
+	}()
 
 	controlKeys := make([]string, config.TokenizerAmount)
 	for id := range controlKeys {
 		controlKeys[id] = controlKey(id)
 	}
 
-	controlOutput, err := middleware.CreateExchangeMiddleware(controlExchangeName, controlKeys, settings)
+	abstractsQueue, err := conns.queue(abstractsQueueName)
 	if err != nil {
-		_ = abstractsQueue.Close()
-		closeAll(wordCountsQueues)
-		_ = vocabularyQueue.Close()
-		_ = historicalCountsQueue.Close()
-		_ = recentArticlesQueue.Close()
 		return nil, err
 	}
 
-	controlInput, err := middleware.CreateExchangeMiddleware(controlExchangeName, []string{controlKey(config.TokenizerID)}, settings)
+	wordCountsQueues, err := conns.queues(wordCountsQueuePrefix, config.WordCounterAmount)
 	if err != nil {
-		_ = abstractsQueue.Close()
-		closeAll(wordCountsQueues)
-		_ = vocabularyQueue.Close()
-		_ = historicalCountsQueue.Close()
-		_ = recentArticlesQueue.Close()
-		_ = controlOutput.Close()
+		return nil, err
+	}
+
+	vocabularyQueue, err := conns.queue(vocabularyQueueName)
+	if err != nil {
+		return nil, err
+	}
+
+	historicalCountsQueue, err := conns.queue(historicalCountsQueueName)
+	if err != nil {
+		return nil, err
+	}
+
+	recentArticlesQueue, err := conns.queue(recentArticlesQueueName)
+	if err != nil {
+		return nil, err
+	}
+
+	controlOutput, err := conns.exchange(controlExchangeName, controlKeys)
+	if err != nil {
+		return nil, err
+	}
+
+	controlInput, err := conns.exchange(controlExchangeName, []string{controlKey(config.TokenizerID)})
+	if err != nil {
 		return nil, err
 	}
 
 	return &Tokenizer{
+		conns:                 conns,
 		abstractsQueue:        abstractsQueue,
 		wordCountsQueues:      wordCountsQueues,
 		vocabularyQueue:       vocabularyQueue,
 		historicalCountsQueue: historicalCountsQueue,
 		recentArticlesQueue:   recentArticlesQueue,
-		controlInput:          controlInput,
 		controlOutput:         controlOutput,
+		controlInput:          controlInput,
 	}, nil
 }
 
-func createWordCountsQueues(amount int, settings middleware.ConnSettings) ([]middleware.Middleware, error) {
-	queues := make([]middleware.Middleware, 0, amount)
-	for shard := 0; shard < amount; shard++ {
-		queue, err := middleware.CreateQueueMiddleware(fmt.Sprintf("%s%d", wordCountsQueuePrefix, shard), settings)
-		if err != nil {
-			closeAll(queues)
-			return nil, err
-		}
-		queues = append(queues, queue)
-	}
-	return queues, nil
-}
-
-func closeAll(queues []middleware.Middleware) {
-	for _, queue := range queues {
-		_ = queue.Close()
-	}
-}
-
 func (tokenizer *Tokenizer) Run() error {
-	defer tokenizer.abstractsQueue.Close()
-	defer closeAll(tokenizer.wordCountsQueues)
-	defer tokenizer.vocabularyQueue.Close()
-	defer tokenizer.historicalCountsQueue.Close()
-	defer tokenizer.recentArticlesQueue.Close()
-	defer tokenizer.controlOutput.Close()
-	defer tokenizer.controlInput.Close()
+	defer tokenizer.conns.close()
 
 	shutdown.OnSignal(func() {
 		_ = tokenizer.abstractsQueue.StopConsuming()
