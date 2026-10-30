@@ -7,46 +7,48 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"strconv"
 	"syscall"
 
+	"trabajo-final-distribuidos/common/config"
 	"trabajo-final-distribuidos/common/logger"
 	"trabajo-final-distribuidos/common/result"
 	"trabajo-final-distribuidos/q2imagefetcher/q2imagefetcher"
 )
 
 func loadConfig() (q2imagefetcher.FetcherConfig, error) {
-	config := q2imagefetcher.FetcherConfig{
-		MOMHost:   os.Getenv("MOM_HOST"),
-		ChunkSize: result.DefaultQ2ChunkSize,
+	momHost, err := config.RequiredString("MOM_HOST")
+	if err != nil {
+		return q2imagefetcher.FetcherConfig{}, err
 	}
-	if config.MOMHost == "" {
-		return config, fmt.Errorf("MOM_HOST environment variable is required")
+	momPort, err := config.RequiredInt("MOM_PORT")
+	if err != nil {
+		return q2imagefetcher.FetcherConfig{}, err
 	}
-	var err error
-	config.MOMPort, err = strconv.Atoi(os.Getenv("MOM_PORT"))
-	if err != nil || config.MOMPort < 1 || config.MOMPort > 65535 {
-		return config, fmt.Errorf("MOM_PORT must be an integer between 1 and 65535")
+	if momPort < 1 || momPort > 65535 {
+		return q2imagefetcher.FetcherConfig{}, fmt.Errorf("MOM_PORT must be between 1 and 65535: %d", momPort)
 	}
-	if value := os.Getenv("CHUNK_SIZE"); value != "" {
-		config.ChunkSize, err = strconv.Atoi(value)
-		if err != nil {
-			return config, fmt.Errorf("invalid CHUNK_SIZE: %w", err)
-		}
+	chunkSize, err := config.OptionalInt("CHUNK_SIZE", result.DefaultQ2ChunkSize)
+	if err != nil {
+		return q2imagefetcher.FetcherConfig{}, err
 	}
-	return config, nil
+
+	return q2imagefetcher.FetcherConfig{
+		MOMHost:   momHost,
+		MOMPort:   momPort,
+		ChunkSize: chunkSize,
+	}, nil
 }
 
 func run() int {
 	logger.Setup()
-	config, err := loadConfig()
+	workerConfig, err := loadConfig()
 	if err != nil {
 		slog.Error("While loading Image Fetcher config", "err", err)
 		return 1
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
-	worker, err := q2imagefetcher.NewFetcher(config)
+	worker, err := q2imagefetcher.NewFetcher(workerConfig)
 	if err != nil {
 		slog.Error("While initializing Image Fetcher", "err", err)
 		return 1

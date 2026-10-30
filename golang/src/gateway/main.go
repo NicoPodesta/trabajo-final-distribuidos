@@ -1,51 +1,42 @@
 package main
 
 import (
-	"errors"
-	"fmt"
 	"log/slog"
 	"os"
-	"strconv"
 
+	"trabajo-final-distribuidos/common/config"
 	"trabajo-final-distribuidos/gateway/gateway"
 )
 
 func loadConfig() (gateway.GatewayConfig, error) {
-	id := os.Getenv("ID")
-	if id == "" {
-		return gateway.GatewayConfig{}, errors.New("ID environment variable is required")
-	}
-
-	serverHost := os.Getenv("SERVER_HOST")
-	if serverHost == "" {
-		return gateway.GatewayConfig{}, errors.New("SERVER_HOST environment variable is required")
-	}
-
-	serverPort := os.Getenv("SERVER_PORT")
-	if serverPort == "" {
-		return gateway.GatewayConfig{}, errors.New("SERVER_PORT environment variable is required")
-	}
-
-	momHost := os.Getenv("MOM_HOST")
-	if momHost == "" {
-		return gateway.GatewayConfig{}, errors.New("MOM_HOST environment variable is required")
-	}
-
-	momPortStr := os.Getenv("MOM_PORT")
-	if momPortStr == "" {
-		return gateway.GatewayConfig{}, errors.New("MOM_PORT environment variable is required")
-	}
-
-	momPort, err := strconv.Atoi(momPortStr)
+	id, err := config.RequiredString("ID")
 	if err != nil {
-		return gateway.GatewayConfig{}, fmt.Errorf("invalid MOM_PORT: %w", err)
+		return gateway.GatewayConfig{}, err
 	}
 
-	expectedQueries := 5
-	if expectedQueriesStr := os.Getenv("EXPECTED_QUERIES"); expectedQueriesStr != "" {
-		if val, err := strconv.Atoi(expectedQueriesStr); err == nil && val > 0 {
-			expectedQueries = val
-		}
+	serverHost, err := config.RequiredString("SERVER_HOST")
+	if err != nil {
+		return gateway.GatewayConfig{}, err
+	}
+
+	serverPort, err := config.RequiredString("SERVER_PORT")
+	if err != nil {
+		return gateway.GatewayConfig{}, err
+	}
+
+	momHost, err := config.RequiredString("MOM_HOST")
+	if err != nil {
+		return gateway.GatewayConfig{}, err
+	}
+
+	momPort, err := config.RequiredInt("MOM_PORT")
+	if err != nil {
+		return gateway.GatewayConfig{}, err
+	}
+
+	expectedQueries, err := config.OptionalInt("EXPECTED_QUERIES", 5)
+	if err != nil {
+		return gateway.GatewayConfig{}, err
 	}
 
 	return gateway.GatewayConfig{
@@ -59,13 +50,13 @@ func loadConfig() (gateway.GatewayConfig, error) {
 }
 
 func run() int {
-	config, err := loadConfig()
+	workerConfig, err := loadConfig()
 	if err != nil {
-		slog.Error("While loading config", "err", err)
+		slog.Error("While loading gateway config", "err", err)
 		return 1
 	}
 
-	server, err := gateway.NewGateway(config)
+	server, err := gateway.NewGateway(workerConfig)
 	if err != nil {
 		slog.Error("While initializing gateway", "err", err)
 		return 1

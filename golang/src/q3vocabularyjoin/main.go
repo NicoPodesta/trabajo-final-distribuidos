@@ -7,40 +7,49 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"strconv"
 	"syscall"
 
+	"trabajo-final-distribuidos/common/config"
 	"trabajo-final-distribuidos/common/logger"
 	"trabajo-final-distribuidos/q3vocabularyjoin/q3vocabularyjoin"
 )
 
 func loadConfig() (q3vocabularyjoin.VocabularyJoinConfig, error) {
-	config := q3vocabularyjoin.VocabularyJoinConfig{MOMHost: os.Getenv("MOM_HOST")}
-	if config.MOMHost == "" {
-		return config, fmt.Errorf("MOM_HOST environment variable is required")
+	momHost, err := config.RequiredString("MOM_HOST")
+	if err != nil {
+		return q3vocabularyjoin.VocabularyJoinConfig{}, err
 	}
-	var err error
-	config.MOMPort, err = strconv.Atoi(os.Getenv("MOM_PORT"))
-	if err != nil || config.MOMPort < 1 || config.MOMPort > 65535 {
-		return config, fmt.Errorf("MOM_PORT must be an integer between 1 and 65535")
+	momPort, err := config.RequiredInt("MOM_PORT")
+	if err != nil {
+		return q3vocabularyjoin.VocabularyJoinConfig{}, err
 	}
-	config.TokenizerAmount, err = strconv.Atoi(os.Getenv("TOKENIZER_AMOUNT"))
-	if err != nil || config.TokenizerAmount < 1 {
-		return config, fmt.Errorf("TOKENIZER_AMOUNT must be a positive integer")
+	if momPort < 1 || momPort > 65535 {
+		return q3vocabularyjoin.VocabularyJoinConfig{}, fmt.Errorf("MOM_PORT must be between 1 and 65535: %d", momPort)
 	}
-	return config, nil
+	tokenizerAmount, err := config.RequiredInt("TOKENIZER_AMOUNT")
+	if err != nil {
+		return q3vocabularyjoin.VocabularyJoinConfig{}, err
+	}
+	if tokenizerAmount < 1 {
+		return q3vocabularyjoin.VocabularyJoinConfig{}, fmt.Errorf("TOKENIZER_AMOUNT must be a positive integer")
+	}
+	return q3vocabularyjoin.VocabularyJoinConfig{
+		MOMHost:         momHost,
+		MOMPort:         momPort,
+		TokenizerAmount: tokenizerAmount,
+	}, nil
 }
 
 func run() int {
 	logger.Setup()
-	config, err := loadConfig()
+	workerConfig, err := loadConfig()
 	if err != nil {
 		slog.Error("While loading Q3 vocabulary join config", "err", err)
 		return 1
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
-	worker, err := q3vocabularyjoin.NewVocabularyJoin(config)
+	worker, err := q3vocabularyjoin.NewVocabularyJoin(workerConfig)
 	if err != nil {
 		slog.Error("While initializing Q3 vocabulary join", "err", err)
 		return 1

@@ -1,40 +1,28 @@
 package main
 
 import (
-	"errors"
-	"fmt"
 	"log/slog"
 	"os"
-	"strconv"
 
+	"trabajo-final-distribuidos/common/config"
 	"trabajo-final-distribuidos/common/logger"
 	"trabajo-final-distribuidos/q5avgpartial/q5avgpartial"
 )
 
 func loadConfig() (q5avgpartial.AvgPartialConfig, error) {
-	momHost := os.Getenv("MOM_HOST")
-	if momHost == "" {
-		return q5avgpartial.AvgPartialConfig{}, errors.New("MOM_HOST environment variable is required")
-	}
-
-	momPortStr := os.Getenv("MOM_PORT")
-	if momPortStr == "" {
-		return q5avgpartial.AvgPartialConfig{}, errors.New("MOM_PORT environment variable is required")
-	}
-
-	momPort, err := strconv.Atoi(momPortStr)
+	momHost, err := config.RequiredString("MOM_HOST")
 	if err != nil {
-		return q5avgpartial.AvgPartialConfig{}, fmt.Errorf("invalid MOM_PORT: %w", err)
+		return q5avgpartial.AvgPartialConfig{}, err
 	}
 
-	tokenizerAmountStr := os.Getenv("TOKENIZER_AMOUNT")
-	if tokenizerAmountStr == "" {
-		return q5avgpartial.AvgPartialConfig{}, errors.New("TOKENIZER_AMOUNT environment variable is required")
-	}
-
-	tokenizerAmount, err := strconv.Atoi(tokenizerAmountStr)
+	momPort, err := config.RequiredInt("MOM_PORT")
 	if err != nil {
-		return q5avgpartial.AvgPartialConfig{}, fmt.Errorf("invalid TOKENIZER_AMOUNT: %w", err)
+		return q5avgpartial.AvgPartialConfig{}, err
+	}
+
+	tokenizerAmount, err := config.RequiredInt("TOKENIZER_AMOUNT")
+	if err != nil {
+		return q5avgpartial.AvgPartialConfig{}, err
 	}
 
 	return q5avgpartial.AvgPartialConfig{
@@ -47,20 +35,20 @@ func loadConfig() (q5avgpartial.AvgPartialConfig, error) {
 func run() int {
 	logger.Setup()
 
-	config, err := loadConfig()
+	workerConfig, err := loadConfig()
 	if err != nil {
-		slog.Error("While loading config", "err", err)
+		slog.Error("While loading avg partial config", "err", err)
 		return 1
 	}
 
-	worker, err := q5avgpartial.NewAvgPartial(config)
+	partial, err := q5avgpartial.NewAvgPartial(workerConfig)
 	if err != nil {
-		slog.Error("While initializing Q5 avg partial", "err", err)
+		slog.Error("While initializing avg partial", "err", err)
 		return 1
 	}
 
-	if err := worker.Run(); err != nil {
-		slog.Error("Q5 avg partial stopped with error", "err", err)
+	if err := partial.Run(); err != nil {
+		slog.Error("Avg partial stopped with error", "err", err)
 		return 1
 	}
 	return 0

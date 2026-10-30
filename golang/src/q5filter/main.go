@@ -1,50 +1,33 @@
 package main
 
 import (
-	"errors"
-	"fmt"
 	"log/slog"
 	"os"
-	"strconv"
 
+	"trabajo-final-distribuidos/common/config"
 	"trabajo-final-distribuidos/common/logger"
 	"trabajo-final-distribuidos/q5filter/q5filter"
 )
 
 func loadConfig() (q5filter.FilterConfig, error) {
-	momHost := os.Getenv("MOM_HOST")
-	if momHost == "" {
-		return q5filter.FilterConfig{}, errors.New("MOM_HOST environment variable is required")
-	}
-
-	momPortStr := os.Getenv("MOM_PORT")
-	if momPortStr == "" {
-		return q5filter.FilterConfig{}, errors.New("MOM_PORT environment variable is required")
-	}
-
-	momPort, err := strconv.Atoi(momPortStr)
+	momHost, err := config.RequiredString("MOM_HOST")
 	if err != nil {
-		return q5filter.FilterConfig{}, fmt.Errorf("invalid MOM_PORT: %w", err)
+		return q5filter.FilterConfig{}, err
 	}
 
-	idStr := os.Getenv("ID")
-	if idStr == "" {
-		return q5filter.FilterConfig{}, errors.New("ID environment variable is required")
-	}
-
-	filterID, err := strconv.Atoi(idStr)
+	momPort, err := config.RequiredInt("MOM_PORT")
 	if err != nil {
-		return q5filter.FilterConfig{}, fmt.Errorf("invalid ID: %w", err)
+		return q5filter.FilterConfig{}, err
 	}
 
-	tokenizerAmountStr := os.Getenv("TOKENIZER_AMOUNT")
-	if tokenizerAmountStr == "" {
-		return q5filter.FilterConfig{}, errors.New("TOKENIZER_AMOUNT environment variable is required")
-	}
-
-	tokenizerAmount, err := strconv.Atoi(tokenizerAmountStr)
+	filterID, err := config.RequiredInt("ID")
 	if err != nil {
-		return q5filter.FilterConfig{}, fmt.Errorf("invalid TOKENIZER_AMOUNT: %w", err)
+		return q5filter.FilterConfig{}, err
+	}
+
+	tokenizerAmount, err := config.RequiredInt("TOKENIZER_AMOUNT")
+	if err != nil {
+		return q5filter.FilterConfig{}, err
 	}
 
 	return q5filter.FilterConfig{
@@ -58,20 +41,20 @@ func loadConfig() (q5filter.FilterConfig, error) {
 func run() int {
 	logger.Setup()
 
-	config, err := loadConfig()
+	workerConfig, err := loadConfig()
 	if err != nil {
 		slog.Error("While loading config", "err", err)
 		return 1
 	}
 
-	worker, err := q5filter.NewFilter(config)
+	worker, err := q5filter.NewFilter(workerConfig)
 	if err != nil {
-		slog.Error("While initializing Q5 filter", "err", err)
+		slog.Error("While initializing filter", "err", err)
 		return 1
 	}
 
 	if err := worker.Run(); err != nil {
-		slog.Error("Q5 filter stopped with error", "err", err)
+		slog.Error("Filter stopped with error", "err", err)
 		return 1
 	}
 	return 0

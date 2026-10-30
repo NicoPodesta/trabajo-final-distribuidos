@@ -1,32 +1,30 @@
 package main
 
 import (
-	"errors"
 	"log/slog"
 	"os"
+
 	"trabajo-final-distribuidos/client/client"
+	"trabajo-final-distribuidos/common/config"
 )
 
 func loadConfig() (client.ClientConfig, error) {
-	serverHost := os.Getenv("SERVER_HOST")
-	if serverHost == "" {
-		return client.ClientConfig{}, errors.New("SERVER_HOST environment variable is required")
+	serverHost, err := config.RequiredString("SERVER_HOST")
+	if err != nil {
+		return client.ClientConfig{}, err
 	}
 
-	serverPort := os.Getenv("SERVER_PORT")
-	if serverPort == "" {
-		return client.ClientConfig{}, errors.New("SERVER_PORT environment variable is required")
+	serverPort, err := config.RequiredString("SERVER_PORT")
+	if err != nil {
+		return client.ClientConfig{}, err
 	}
 
-	inputDir := os.Getenv("INPUT_DIR")
-	if inputDir == "" {
-		return client.ClientConfig{}, errors.New("INPUT_DIR environment variable is required")
+	inputDir, err := config.RequiredString("INPUT_DIR")
+	if err != nil {
+		return client.ClientConfig{}, err
 	}
 
-	outputDir := os.Getenv("OUTPUT_DIR")
-	if outputDir == "" {
-		outputDir = "."
-	}
+	outputDir := config.OptionalString("OUTPUT_DIR", ".")
 
 	return client.ClientConfig{
 		ServerHost: serverHost,
@@ -37,13 +35,13 @@ func loadConfig() (client.ClientConfig, error) {
 }
 
 func run() int {
-	config, err := loadConfig()
+	workerConfig, err := loadConfig()
 	if err != nil {
 		slog.Error("While loading config", "err", err)
 		return 1
 	}
 
-	server, err := client.NewClient(config)
+	server, err := client.NewClient(workerConfig)
 	if err != nil {
 		slog.Error("While connecting to server", "err", err)
 		return 1
