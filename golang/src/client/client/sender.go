@@ -116,17 +116,21 @@ func (s *Sender) sendFile(ctx context.Context, path string, ackChannel <-chan st
 	rows := make([]articleRow, readBatchSize)
 	for {
 		nread, err := reader.Read(rows)
-		for _, row := range rows[:nread] {
-			articleRecord := article.Article{
-				Language:     row.InLanguage.Identifier,
-				Name:         row.Name,
-				Url:          row.Url,
-				DateModified: uint32(row.DateModified.Unix()),
-				Image:        row.Image.ContentUrl,
-				Sections:     parseSectionNames(row.Sections),
-				Abstract:     row.Abstract,
+		if nread > 0 {
+			batch := make([]article.Article, nread)
+			for i, row := range rows[:nread] {
+				batch[i] = article.Article{
+					Language:     row.InLanguage.Identifier,
+					Name:         row.Name,
+					Url:          row.Url,
+					DateModified: uint32(row.DateModified.Unix()),
+					Image:        row.Image.ContentUrl,
+					Sections:     parseSectionNames(row.Sections),
+					Abstract:     row.Abstract,
+				}
 			}
-			if err := s.writer.WriteArticleRecord(&articleRecord); err != nil {
+
+			if err := s.writer.WriteArticleBatch(batch); err != nil {
 				return sent, err
 			}
 
@@ -135,7 +139,7 @@ func (s *Sender) sendFile(ctx context.Context, path string, ackChannel <-chan st
 			case <-ctx.Done():
 				return sent, ctx.Err()
 			}
-			sent++
+			sent += nread
 		}
 
 		if err == io.EOF {

@@ -59,12 +59,13 @@ func (h *ClientHandler) Handle(conn net.Conn, shutdownChannel <-chan struct{}) {
 		}
 
 		switch msgType {
-		case external.ArticleRecord:
-			if err := h.handleArticleRecord(session, reader, clientID); err != nil {
-				slog.Error("While handling article record message", "clientID", clientID, "err", err)
+		case external.ArticleBatch:
+			count, err := h.handleArticleBatch(session, reader, clientID)
+			if err != nil {
+				slog.Error("While handling article batch message", "clientID", clientID, "err", err)
 				return
 			}
-			received++
+			received += count
 
 		case external.EndOfRecords:
 			if err := h.handleEndOfRecords(session, clientID, received); err != nil {
@@ -87,41 +88,52 @@ func (h *ClientHandler) Handle(conn net.Conn, shutdownChannel <-chan struct{}) {
 	}
 }
 
-func (h *ClientHandler) handleArticleRecord(session *clientSession, reader *external.Reader, clientID string) error {
-	articleRecord, err := reader.ReadArticleRecord()
+func (h *ClientHandler) handleArticleBatch(session *clientSession, reader *external.Reader, clientID string) (int, error) {
+	records, err := reader.ReadArticleBatch()
 	if err != nil {
-		return err
+		return 0, err
+	}
+	if len(records) == 0 {
+		return 0, session.sendAck()
 	}
 
-	if err := h.sendQ1Articles(clientID, []inner.Q1ArticleItem{{
-		Language:     articleRecord.Language,
-		Url:          articleRecord.Url,
-		DateModified: articleRecord.DateModified,
-	}}); err != nil {
-		return err
+	q1Items := make([]inner.Q1ArticleItem, len(records))
+	q2Items := make([]inner.Q2ArticleItem, len(records))
+	abstractItems := make([]inner.AbstractItem, len(records))
+
+	for i, r := range records {
+		q1Items[i] = inner.Q1ArticleItem{
+			Language:     r.Language,
+			Url:          r.Url,
+			DateModified: r.DateModified,
+		}
+		q2Items[i] = inner.Q2ArticleItem{
+			Language:     r.Language,
+			Name:         r.Name,
+			Url:          r.Url,
+			DateModified: r.DateModified,
+			Image:        r.Image,
+			Sections:     r.Sections,
+		}
+		abstractItems[i] = inner.AbstractItem{
+			Language:     r.Language,
+			Url:          r.Url,
+			DateModified: r.DateModified,
+			Abstract:     r.Abstract,
+		}
 	}
 
-	if err := h.sendQ2Articles(clientID, []inner.Q2ArticleItem{{
-		Language:     articleRecord.Language,
-		Name:         articleRecord.Name,
-		Url:          articleRecord.Url,
-		DateModified: articleRecord.DateModified,
-		Image:        articleRecord.Image,
-		Sections:     articleRecord.Sections,
-	}}); err != nil {
-		return err
+	if err := h.sendQ1Articles(clientID, q1Items); err != nil {
+		return 0, err
+	}
+	if err := h.sendQ2Articles(clientID, q2Items); err != nil {
+		return 0, err
+	}
+	if err := h.sendAbstracts(clientID, abstractItems); err != nil {
+		return 0, err
 	}
 
-	if err := h.sendAbstracts(clientID, []inner.AbstractItem{{
-		Language:     articleRecord.Language,
-		Url:          articleRecord.Url,
-		DateModified: articleRecord.DateModified,
-		Abstract:     articleRecord.Abstract,
-	}}); err != nil {
-		return err
-	}
-
-	return session.sendAck()
+	return len(records), session.sendAck()
 }
 
 func (h *ClientHandler) handleEndOfRecords(session *clientSession, clientID string, received int) error {

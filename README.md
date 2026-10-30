@@ -15,7 +15,8 @@ cd golang && make up
 
 ## Decisiones - estado actual
 
-- El client lee .parquet de a 100 rows, decodificando los 7 campos del articulo.
+- El client lee .parquet de a 100 rows y envía los artículos en batchs (`ArticleBatch`) por TCP al Gateway, esperando un ACK por batch.
+- Gateway proyecta cada batch hacia las colas de RabbitMQ (`article_dates`, `article_sections`, `abstracts`) en un único mensaje por cola conteniendo el batch completo.
 - Ejecucion con 1 client, 1 gateway, el load balancer y una instancia por componente de Q1, Q2, Q4 y Q5.
 - Load balancer asigna gateways a clientes por Round-Robin.
 - Cliente envia articulos y recibe resultados concurrentemente por TCP (full duplex).
@@ -79,6 +80,6 @@ Esta prueba verifica el flujo secuencial con un origen HTTPS controlado; no mide
 
 - Se puede utilizar la libreria externa parquet-go?
 - Se puede utilizar la libreria externa `github.com/bbalet/stopwords` para las stopwords?
-- Es necesario mandar los acks por aplicación en la ida?
+- Es necesario mandar los acks por aplicación en la ida? (Se adoptó envío y ack por batches de 100 artículos).
 - Consultar al profe el tamaño de los chunks Q2: por defecto, 64 KiB de contenido (`DefaultQ2ChunkSize`).
 - Consultar al profe la salida Q2 prevista: un archivo por imagen y CSV con `image_id,name,url,file`.

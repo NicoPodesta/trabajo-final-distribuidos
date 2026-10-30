@@ -83,7 +83,7 @@ func (r *Reader) ReadGatewayAssignment() (string, error) {
 	return r.readString()
 }
 
-func (r *Reader) ReadArticleRecord() (*article.Article, error) {
+func (r *Reader) readArticleFields() (*article.Article, error) {
 	language, err := r.readString()
 	if err != nil {
 		return nil, err
@@ -137,6 +137,22 @@ func (r *Reader) ReadArticleRecord() (*article.Article, error) {
 		Sections:     sections,
 		Abstract:     abstract,
 	}, nil
+}
+
+func (r *Reader) ReadArticleBatch() ([]article.Article, error) {
+	count, err := r.readUint32()
+	if err != nil {
+		return nil, err
+	}
+	records := make([]article.Article, count)
+	for i := range count {
+		rec, err := r.readArticleFields()
+		if err != nil {
+			return nil, err
+		}
+		records[i] = *rec
+	}
+	return records, nil
 }
 
 func (r *Reader) ReadQ1Result() (*result.Q1Result, error) {

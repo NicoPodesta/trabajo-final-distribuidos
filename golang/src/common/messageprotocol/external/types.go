@@ -3,7 +3,7 @@ package external
 type MsgType uint32
 
 const (
-	ArticleRecord MsgType = iota + 1
+	ArticleBatch MsgType = iota + 1
 	Ack
 	EndOfRecords
 	GatewayAssignment

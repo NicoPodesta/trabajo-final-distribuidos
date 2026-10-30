@@ -36,8 +36,8 @@ func (w *Writer) WriteGatewayAssignment(gatewayAddr string) error {
 	return safeio.WriteAll(w.w, msg)
 }
 
-func (w *Writer) WriteArticleRecord(articleRecord *article.Article) error {
-	msg := serializer.SerializeUint32(uint32(ArticleRecord))
+func serializeArticleFields(articleRecord *article.Article) []byte {
+	var msg []byte
 	msg = append(msg, serializer.SerializeString(articleRecord.Language)...)
 	msg = append(msg, serializer.SerializeString(articleRecord.Name)...)
 	msg = append(msg, serializer.SerializeString(articleRecord.Url)...)
@@ -48,6 +48,15 @@ func (w *Writer) WriteArticleRecord(articleRecord *article.Article) error {
 		msg = append(msg, serializer.SerializeString(sec)...)
 	}
 	msg = append(msg, serializer.SerializeString(articleRecord.Abstract)...)
+	return msg
+}
+
+func (w *Writer) WriteArticleBatch(records []article.Article) error {
+	msg := serializer.SerializeUint32(uint32(ArticleBatch))
+	msg = append(msg, serializer.SerializeUint32(uint32(len(records)))...)
+	for i := range records {
+		msg = append(msg, serializeArticleFields(&records[i])...)
+	}
 	return safeio.WriteAll(w.w, msg)
 }
 

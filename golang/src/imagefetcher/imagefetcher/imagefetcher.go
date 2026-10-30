@@ -73,7 +73,8 @@ func (f *Fetcher) handleMessage(ctx context.Context, msg middleware.Message) err
 		f.nextImage++
 		imageID := strconv.FormatUint(f.nextImage, 10)
 		if err := f.sendImage(ctx, request.ClientID, imageID, *request.Request); err != nil {
-			return fmt.Errorf("image %s for client %q: %w", imageID, request.ClientID, err)
+			slog.Warn("Failed to download image from source, skipping", "clientID", request.ClientID, "imageID", imageID, "url", request.Request.ImageRef, "err", err)
+			return nil
 		}
 		slog.Debug("Published complete image", "clientID", request.ClientID, "imageID", imageID)
 		return nil
