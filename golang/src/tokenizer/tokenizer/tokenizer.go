@@ -29,7 +29,7 @@ type TokenizerConfig struct {
 }
 
 type Tokenizer struct {
-	conns                 *connections
+	conns                 *middleware.Connections
 	abstractsQueue        middleware.Middleware
 	wordCountsQueues      []middleware.Middleware
 	vocabularyQueue       middleware.Middleware
@@ -41,39 +41,39 @@ type Tokenizer struct {
 }
 
 func NewTokenizer(config TokenizerConfig) (tokenizer *Tokenizer, err error) {
-	conns := &connections{settings: middleware.ConnSettings{Hostname: config.MOMHost, Port: config.MOMPort}}
+	conns := middleware.NewConnections(middleware.ConnSettings{Hostname: config.MOMHost, Port: config.MOMPort})
 	defer func() {
 		if err != nil {
-			conns.close()
+			conns.Close()
 		}
 	}()
 
-	abstractsQueue, err := conns.queue(abstractsQueueName)
+	abstractsQueue, err := conns.Queue(abstractsQueueName)
 	if err != nil {
 		return nil, err
 	}
 
-	wordCountsQueues, err := conns.queues(wordCountsQueuePrefix, config.WordCounterAmount)
+	wordCountsQueues, err := conns.Queues(wordCountsQueuePrefix, config.WordCounterAmount)
 	if err != nil {
 		return nil, err
 	}
 
-	vocabularyQueue, err := conns.queue(vocabularyQueueName)
+	vocabularyQueue, err := conns.Queue(vocabularyQueueName)
 	if err != nil {
 		return nil, err
 	}
 
-	historicalCountsQueue, err := conns.queue(historicalCountsQueueName)
+	historicalCountsQueue, err := conns.Queue(historicalCountsQueueName)
 	if err != nil {
 		return nil, err
 	}
 
-	recentArticlesQueue, err := conns.queue(recentArticlesQueueName)
+	recentArticlesQueue, err := conns.Queue(recentArticlesQueueName)
 	if err != nil {
 		return nil, err
 	}
 
-	broadcaster, err := eofbroadcaster.New(controlExchangeName, config.TokenizerID, config.TokenizerAmount, conns.settings)
+	broadcaster, err := eofbroadcaster.New(controlExchangeName, config.TokenizerID, config.TokenizerAmount, conns.Settings)
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +90,7 @@ func NewTokenizer(config TokenizerConfig) (tokenizer *Tokenizer, err error) {
 }
 
 func (tokenizer *Tokenizer) Run() error {
-	defer tokenizer.conns.close()
+	defer tokenizer.conns.Close()
 	defer tokenizer.broadcaster.Close()
 
 	shutdown.OnSignal(func() {
