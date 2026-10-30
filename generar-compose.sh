@@ -1,16 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -ne 2 ]]; then
-  echo "Uso: $0 <archivo-salida> <cantidad-clientes>" >&2
+if [[ $# -lt 2 || $# -gt 3 ]]; then
+  echo "Uso: $0 <archivo-salida> <cantidad-clientes> [cantidad-tokenizers]" >&2
   exit 1
 fi
 
 output_file="$1"
 client_count="$2"
+tokenizer_count="${3:-1}"
 
 if ! [[ "$client_count" =~ ^[0-9]+$ ]]; then
   echo "Error: la cantidad de clientes debe ser un entero no negativo" >&2
+  exit 1
+fi
+
+if ! [[ "$tokenizer_count" =~ ^[0-9]+$ ]] || [[ "$tokenizer_count" -lt 1 ]]; then
+  echo "Error: la cantidad de tokenizers debe ser un entero positivo" >&2
   exit 1
 fi
 
@@ -152,13 +158,15 @@ YAML
   date_filter
   worker q2_filter_0 q2filter
   worker image_fetcher_0 imagefetcher CHUNK_SIZE=65536
-  worker tokenizer_0 tokenizer TOKENIZER_ID=0 TOKENIZER_AMOUNT=1
-  worker q5_avg_partial_0 q5avgpartial TOKENIZER_AMOUNT=1
-  worker q5_filter_0 q5filter Q5_FILTER_ID=0 TOKENIZER_AMOUNT=1
+  for id in $(seq 0 $((tokenizer_count - 1))); do
+    worker "tokenizer_${id}" tokenizer "TOKENIZER_ID=${id}" "TOKENIZER_AMOUNT=${tokenizer_count}"
+  done
+  worker q5_avg_partial_0 q5avgpartial "TOKENIZER_AMOUNT=${tokenizer_count}"
+  worker q5_filter_0 q5filter Q5_FILTER_ID=0 "TOKENIZER_AMOUNT=${tokenizer_count}"
   worker q5_avg_aggregator_0 q5avgaggregator Q5_AVG_PARTIAL_AMOUNT=1 Q5_FILTER_AMOUNT=1
-  worker q4_word_counter_0 q4wordcounter TOKENIZER_AMOUNT=1
+  worker q4_word_counter_0 q4wordcounter "TOKENIZER_AMOUNT=${tokenizer_count}"
   worker q4_top20_merger_0 q4top20merger Q4_WORD_COUNTER_AMOUNT=1
   rabbitmq
 } > "$output_file"
 
-echo "Docker Compose generado en $output_file con $client_count cliente(s)."
+echo "Docker Compose generado en $output_file con $client_count cliente(s) y $tokenizer_count tokenizer(s)."

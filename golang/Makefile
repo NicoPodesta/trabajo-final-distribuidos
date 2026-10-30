@@ -19,10 +19,14 @@ switch:
 	@echo Escenarios de prueba:
 	@echo "1) Un cliente"
 	@echo "2) Dos clientes"
-	@read -p "Selecciona uno [1-2]: " option; \
+	@echo "3) Un cliente, tres tokenizers"
+	@echo "4) Dos clientes, tres tokenizers"
+	@read -p "Selecciona uno [1-4]: " option; \
 	case $$option in \
 		1) ../generar-compose.sh docker-compose.yaml 1 ;; \
 		2) ../generar-compose.sh docker-compose.yaml 2 ;; \
+		3) ../generar-compose.sh docker-compose.yaml 1 3 ;; \
+		4) ../generar-compose.sh docker-compose.yaml 2 3 ;; \
 		*) echo "Opcion invalida"; exit 1 ;; \
 	esac
 .PHONY: switch

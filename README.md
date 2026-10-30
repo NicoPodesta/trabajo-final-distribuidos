@@ -4,12 +4,14 @@
 
 Los datos de cada cliente van en `input/client_N/` (archivos `.parquet`) y sus resultados quedan en `output/client_N/`.
 
-El `docker-compose.yaml` se genera con `generar-compose.sh`, que recibe el archivo de salida y la cantidad de clientes:
+El `docker-compose.yaml` se genera con `generar-compose.sh`, que recibe el archivo de salida, la cantidad de clientes y, opcionalmente, la cantidad de tokenizers (por defecto 1):
 
 ```
-./generar-compose.sh golang/docker-compose.yaml 2
+./generar-compose.sh golang/docker-compose.yaml 2 3
 cd golang && make up
 ```
+
+`cd golang && make switch` ofrece escenarios fijos: 1 o 2 clientes, con 1 o 3 tokenizers.
 
 ## Decisiones - estado actual
 
