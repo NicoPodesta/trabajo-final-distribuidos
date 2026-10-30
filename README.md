@@ -38,6 +38,7 @@ cd golang && make up
 - Q5 - cliente sin articulos historicos, promedio como 0 que se envia al exchange hacia el q5Filter.
 - 1er patron EOF a replicar: una cola por replica con reparto por `hash(clave) % M` y el EOF enviado a todas las colas, para estado por clave. Ej: q4Counter.
 - 2er patron EOF a replicar: cola compartida donde la replica que recibe el EOF lo reenvia a todas por un exchange de control, con un mutex para que el EOF salga despues de los datos en curso, replicas sobre una cola. Ej: tokenizer
+- Tokenizer -> Q4WordCount sharding: se calcula el hash con`fnv32a(palabra) % K` (K = `Q4_WORD_COUNTER_AMOUNT`) y manda un mensaje a cada cola `word_counts_<k>` que tenga palabras.
 
 
 ## Pendientes

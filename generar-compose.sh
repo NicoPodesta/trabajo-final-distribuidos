@@ -159,7 +159,7 @@ YAML
   worker q2_filter_0 q2filter
   worker image_fetcher_0 imagefetcher CHUNK_SIZE=65536
   for id in $(seq 0 $((tokenizer_count - 1))); do
-    worker "tokenizer_${id}" tokenizer "TOKENIZER_ID=${id}" "TOKENIZER_AMOUNT=${tokenizer_count}"
+    worker "tokenizer_${id}" tokenizer "TOKENIZER_ID=${id}" "TOKENIZER_AMOUNT=${tokenizer_count}" Q4_WORD_COUNTER_AMOUNT=1
   done
   worker q5_avg_partial_0 q5avgpartial "TOKENIZER_AMOUNT=${tokenizer_count}"
   worker q5_filter_0 q5filter Q5_FILTER_ID=0 "TOKENIZER_AMOUNT=${tokenizer_count}"

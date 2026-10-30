@@ -95,6 +95,7 @@ services:
     - MOM_PORT=5672
     - TOKENIZER_ID=0
     - TOKENIZER_AMOUNT=1
+    - Q4_WORD_COUNTER_AMOUNT=1
     - LOG_LEVEL=info
 
   q5_avg_partial_0:

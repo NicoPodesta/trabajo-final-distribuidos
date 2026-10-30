@@ -2,6 +2,7 @@ package tokenizer
 
 import (
 	"fmt"
+	"hash/fnv"
 	"log/slog"
 	"sync"
 
@@ -12,7 +13,7 @@ import (
 
 const (
 	abstractsQueueName        = "abstracts"
-	wordCountsQueueName       = "word_counts_0"
+	wordCountsQueuePrefix     = "word_counts_"
 	vocabularyQueueName       = "vocabulary_0"
 	historicalCountsQueueName = "historical_counts"
 	recentArticlesQueueName   = "recent_articles"
@@ -21,15 +22,16 @@ const (
 )
 
 type TokenizerConfig struct {
-	MOMHost         string
-	MOMPort         int
-	TokenizerID     int
-	TokenizerAmount int
+	MOMHost           string
+	MOMPort           int
+	TokenizerID       int
+	TokenizerAmount   int
+	WordCounterAmount int
 }
 
 type Tokenizer struct {
 	abstractsQueue        middleware.Middleware
-	wordCountsQueue       middleware.Middleware
+	wordCountsQueues      []middleware.Middleware
 	vocabularyQueue       middleware.Middleware
 	historicalCountsQueue middleware.Middleware
 	recentArticlesQueue   middleware.Middleware
@@ -46,7 +48,7 @@ func NewTokenizer(config TokenizerConfig) (*Tokenizer, error) {
 		return nil, err
 	}
 
-	wordCountsQueue, err := middleware.CreateQueueMiddleware(wordCountsQueueName, settings)
+	wordCountsQueues, err := createWordCountsQueues(config.WordCounterAmount, settings)
 	if err != nil {
 		_ = abstractsQueue.Close()
 		return nil, err
@@ -55,14 +57,14 @@ func NewTokenizer(config TokenizerConfig) (*Tokenizer, error) {
 	vocabularyQueue, err := middleware.CreateQueueMiddleware(vocabularyQueueName, settings)
 	if err != nil {
 		_ = abstractsQueue.Close()
-		_ = wordCountsQueue.Close()
+		closeAll(wordCountsQueues)
 		return nil, err
 	}
 
 	historicalCountsQueue, err := middleware.CreateQueueMiddleware(historicalCountsQueueName, settings)
 	if err != nil {
 		_ = abstractsQueue.Close()
-		_ = wordCountsQueue.Close()
+		closeAll(wordCountsQueues)
 		_ = vocabularyQueue.Close()
 		return nil, err
 	}
@@ -70,7 +72,7 @@ func NewTokenizer(config TokenizerConfig) (*Tokenizer, error) {
 	recentArticlesQueue, err := middleware.CreateQueueMiddleware(recentArticlesQueueName, settings)
 	if err != nil {
 		_ = abstractsQueue.Close()
-		_ = wordCountsQueue.Close()
+		closeAll(wordCountsQueues)
 		_ = vocabularyQueue.Close()
 		_ = historicalCountsQueue.Close()
 		return nil, err
@@ -84,7 +86,7 @@ func NewTokenizer(config TokenizerConfig) (*Tokenizer, error) {
 	controlOutput, err := middleware.CreateExchangeMiddleware(controlExchangeName, controlKeys, settings)
 	if err != nil {
 		_ = abstractsQueue.Close()
-		_ = wordCountsQueue.Close()
+		closeAll(wordCountsQueues)
 		_ = vocabularyQueue.Close()
 		_ = historicalCountsQueue.Close()
 		_ = recentArticlesQueue.Close()
@@ -94,7 +96,7 @@ func NewTokenizer(config TokenizerConfig) (*Tokenizer, error) {
 	controlInput, err := middleware.CreateExchangeMiddleware(controlExchangeName, []string{controlKey(config.TokenizerID)}, settings)
 	if err != nil {
 		_ = abstractsQueue.Close()
-		_ = wordCountsQueue.Close()
+		closeAll(wordCountsQueues)
 		_ = vocabularyQueue.Close()
 		_ = historicalCountsQueue.Close()
 		_ = recentArticlesQueue.Close()
@@ -104,7 +106,7 @@ func NewTokenizer(config TokenizerConfig) (*Tokenizer, error) {
 
 	return &Tokenizer{
 		abstractsQueue:        abstractsQueue,
-		wordCountsQueue:       wordCountsQueue,
+		wordCountsQueues:      wordCountsQueues,
 		vocabularyQueue:       vocabularyQueue,
 		historicalCountsQueue: historicalCountsQueue,
 		recentArticlesQueue:   recentArticlesQueue,
@@ -113,13 +115,38 @@ func NewTokenizer(config TokenizerConfig) (*Tokenizer, error) {
 	}, nil
 }
 
+func createWordCountsQueues(amount int, settings middleware.ConnSettings) ([]middleware.Middleware, error) {
+	queues := make([]middleware.Middleware, 0, amount)
+	for shard := 0; shard < amount; shard++ {
+		queue, err := middleware.CreateQueueMiddleware(fmt.Sprintf("%s%d", wordCountsQueuePrefix, shard), settings)
+		if err != nil {
+			closeAll(queues)
+			return nil, err
+		}
+		queues = append(queues, queue)
+	}
+	return queues, nil
+}
+
+func closeAll(queues []middleware.Middleware) {
+	for _, queue := range queues {
+		_ = queue.Close()
+	}
+}
+
+func wordShard(word string, amount int) int {
+	hasher := fnv.New32a()
+	_, _ = hasher.Write([]byte(word))
+	return int(hasher.Sum32() % uint32(amount))
+}
+
 func controlKey(id int) string {
 	return fmt.Sprintf("tokenizer_%d", id)
 }
 
 func (tokenizer *Tokenizer) Run() error {
 	defer tokenizer.abstractsQueue.Close()
-	defer tokenizer.wordCountsQueue.Close()
+	defer closeAll(tokenizer.wordCountsQueues)
 	defer tokenizer.vocabularyQueue.Close()
 	defer tokenizer.historicalCountsQueue.Close()
 	defer tokenizer.recentArticlesQueue.Close()
@@ -201,11 +228,8 @@ func (tokenizer *Tokenizer) publish(clientID string, result batchResult) error {
 			return err
 		}
 	}
-	if len(result.wordCounts) > 0 {
-		msg, err := inner.SerializeWordCounts(clientID, result.wordCounts)
-		if err := send(tokenizer.wordCountsQueue, msg, err); err != nil {
-			return err
-		}
+	if err := tokenizer.publishWordCounts(clientID, result.wordCounts); err != nil {
+		return err
 	}
 	if len(result.historicalCounts) > 0 {
 		msg, err := inner.SerializeHistoricalCounts(clientID, result.historicalCounts)
@@ -220,15 +244,36 @@ func (tokenizer *Tokenizer) publish(clientID string, result batchResult) error {
 	return nil
 }
 
+func (tokenizer *Tokenizer) publishWordCounts(clientID string, wordCounts []inner.WordCountItem) error {
+	byShard := make([][]inner.WordCountItem, len(tokenizer.wordCountsQueues))
+	for _, item := range wordCounts {
+		shard := wordShard(item.Word, len(byShard))
+		byShard[shard] = append(byShard[shard], item)
+	}
+
+	for shard, items := range byShard {
+		if len(items) == 0 {
+			continue
+		}
+		msg, err := inner.SerializeWordCounts(clientID, items)
+		if err := send(tokenizer.wordCountsQueues[shard], msg, err); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (tokenizer *Tokenizer) publishEOF(clientID string) error {
 	msg, err := inner.SerializeVocabularyEOF(clientID)
 	if err := send(tokenizer.vocabularyQueue, msg, err); err != nil {
 		return err
 	}
 
-	msg, err = inner.SerializeWordCountsEOF(clientID)
-	if err := send(tokenizer.wordCountsQueue, msg, err); err != nil {
-		return err
+	for _, queue := range tokenizer.wordCountsQueues {
+		msg, err = inner.SerializeWordCountsEOF(clientID)
+		if err := send(queue, msg, err); err != nil {
+			return err
+		}
 	}
 
 	msg, err = inner.SerializeHistoricalCountsEOF(clientID)
