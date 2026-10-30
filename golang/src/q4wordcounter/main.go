@@ -27,14 +27,14 @@ func loadConfig() (q4wordcounter.WordCounterConfig, error) {
 		return q4wordcounter.WordCounterConfig{}, fmt.Errorf("invalid MOM_PORT: %w", err)
 	}
 
-	idStr := os.Getenv("ID")
+	idStr := os.Getenv("Q4_WORD_COUNTER_ID")
 	if idStr == "" {
-		return q4wordcounter.WordCounterConfig{}, errors.New("ID environment variable is required")
+		return q4wordcounter.WordCounterConfig{}, errors.New("Q4_WORD_COUNTER_ID environment variable is required")
 	}
 
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
-		return q4wordcounter.WordCounterConfig{}, fmt.Errorf("invalid ID: %w", err)
+		return q4wordcounter.WordCounterConfig{}, fmt.Errorf("invalid Q4_WORD_COUNTER_ID: %w", err)
 	}
 
 	tokenizerAmountStr := os.Getenv("TOKENIZER_AMOUNT")

@@ -172,7 +172,7 @@ YAML
   worker q5_avg_aggregator_0 q5avgaggregator Q5_AVG_PARTIAL_AMOUNT=1 Q5_FILTER_AMOUNT=1
 
   for id in $(seq 0 $((q4_counter_count - 1))); do
-    worker "q4_word_counter_${id}" q4wordcounter "ID=${id}" "TOKENIZER_AMOUNT=${tokenizer_count}"
+    worker "q4_word_counter_${id}" q4wordcounter "Q4_WORD_COUNTER_ID=${id}" "TOKENIZER_AMOUNT=${tokenizer_count}"
   done
 
   worker q4_top20_merger_0 q4top20merger "Q4_WORD_COUNTER_AMOUNT=${q4_counter_count}"
