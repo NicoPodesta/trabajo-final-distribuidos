@@ -32,15 +32,6 @@ func (conns *connections) queues(prefix string, amount int) ([]middleware.Middle
 	return queues, nil
 }
 
-func (conns *connections) exchange(name string, keys []string) (middleware.Middleware, error) {
-	created, err := middleware.CreateExchangeMiddleware(name, keys, conns.settings)
-	if err != nil {
-		return nil, err
-	}
-	conns.opened = append(conns.opened, created)
-	return created, nil
-}
-
 func (conns *connections) close() {
 	for i := len(conns.opened) - 1; i >= 0; i-- {
 		_ = conns.opened[i].Close()

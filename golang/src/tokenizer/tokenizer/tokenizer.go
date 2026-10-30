@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"sync"
 
+	"trabajo-final-distribuidos/common/eofbroadcaster"
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/common/middleware"
 	"trabajo-final-distribuidos/common/shutdown"
@@ -34,8 +35,7 @@ type Tokenizer struct {
 	vocabularyQueue       middleware.Middleware
 	historicalCountsQueue middleware.Middleware
 	recentArticlesQueue   middleware.Middleware
-	controlInput          middleware.Middleware
-	controlOutput         middleware.Middleware
+	broadcaster           *eofbroadcaster.Broadcaster
 	mu                    sync.Mutex
 	received              int
 }
@@ -47,11 +47,6 @@ func NewTokenizer(config TokenizerConfig) (tokenizer *Tokenizer, err error) {
 			conns.close()
 		}
 	}()
-
-	controlKeys := make([]string, config.TokenizerAmount)
-	for id := range controlKeys {
-		controlKeys[id] = controlKey(id)
-	}
 
 	abstractsQueue, err := conns.queue(abstractsQueueName)
 	if err != nil {
@@ -78,12 +73,7 @@ func NewTokenizer(config TokenizerConfig) (tokenizer *Tokenizer, err error) {
 		return nil, err
 	}
 
-	controlOutput, err := conns.exchange(controlExchangeName, controlKeys)
-	if err != nil {
-		return nil, err
-	}
-
-	controlInput, err := conns.exchange(controlExchangeName, []string{controlKey(config.TokenizerID)})
+	broadcaster, err := eofbroadcaster.New(controlExchangeName, config.TokenizerID, config.TokenizerAmount, conns.settings)
 	if err != nil {
 		return nil, err
 	}
@@ -95,19 +85,29 @@ func NewTokenizer(config TokenizerConfig) (tokenizer *Tokenizer, err error) {
 		vocabularyQueue:       vocabularyQueue,
 		historicalCountsQueue: historicalCountsQueue,
 		recentArticlesQueue:   recentArticlesQueue,
-		controlOutput:         controlOutput,
-		controlInput:          controlInput,
+		broadcaster:           broadcaster,
 	}, nil
 }
 
 func (tokenizer *Tokenizer) Run() error {
 	defer tokenizer.conns.close()
+	defer tokenizer.broadcaster.Close()
 
 	shutdown.OnSignal(func() {
 		_ = tokenizer.abstractsQueue.StopConsuming()
-		_ = tokenizer.controlInput.StopConsuming()
+		_ = tokenizer.broadcaster.Stop()
 	})
-	go tokenizer.consumeControl()
+
+	go func() {
+		if err := tokenizer.broadcaster.Start(func(clientID string) error {
+			tokenizer.mu.Lock()
+			defer tokenizer.mu.Unlock()
+			return tokenizer.publishEOF(clientID)
+		}); err != nil {
+			slog.Error("Control consumer stopped with error", "err", err)
+		}
+	}()
+
 	slog.Info("Consuming abstracts from RabbitMQ...", "queue", abstractsQueueName)
 	return tokenizer.abstractsQueue.StartConsuming(func(msg middleware.Message, ack func(), nack func()) {
 		if err := tokenizer.handleGatewayMessage(msg); err != nil {
@@ -125,7 +125,7 @@ func (tokenizer *Tokenizer) handleGatewayMessage(msg middleware.Message) error {
 
 	if abstractMsg.IsEOF() {
 		slog.Info("Received end of input", "clientID", abstractMsg.ClientID)
-		return tokenizer.broadcastEOF(abstractMsg.ClientID)
+		return tokenizer.broadcaster.Broadcast(abstractMsg.ClientID)
 	}
 
 	tokenizer.mu.Lock()
