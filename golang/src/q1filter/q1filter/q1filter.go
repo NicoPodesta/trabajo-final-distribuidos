@@ -1,17 +1,15 @@
-package filters
+package q1filter
 
 import (
 	"fmt"
 	"log/slog"
-	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/common/middleware"
 	"trabajo-final-distribuidos/common/result"
 	"trabajo-final-distribuidos/common/resultpublisher"
+	"trabajo-final-distribuidos/common/shutdown"
 )
 
 const (
@@ -19,7 +17,7 @@ const (
 	progressLogInterval = 1000
 )
 
-type DateFilterConfig struct {
+type FilterConfig struct {
 	MOMHost string
 	MOMPort int
 }
@@ -29,33 +27,34 @@ type clientStats struct {
 	matched  int
 }
 
-type DateFilter struct {
+type Filter struct {
 	articlesQueue    middleware.Middleware
 	resultsPublisher *resultpublisher.Publisher
 	statsByClient    map[string]clientStats
 }
 
-func NewDateFilter(config DateFilterConfig) (*DateFilter, error) {
+func NewFilter(config FilterConfig) (*Filter, error) {
 	settings := middleware.ConnSettings{Hostname: config.MOMHost, Port: config.MOMPort}
 	articlesQueue, err := middleware.CreateQueueWithRetry(articlesQueueName, settings)
 	if err != nil {
 		return nil, err
 	}
-	return &DateFilter{
+	return &Filter{
 		articlesQueue:    articlesQueue,
 		resultsPublisher: resultpublisher.New(settings),
 		statsByClient:    make(map[string]clientStats),
 	}, nil
 }
 
-func (filter *DateFilter) Run() error {
+func (filter *Filter) Run() error {
 	defer filter.articlesQueue.Close()
 	defer func() {
 		if err := filter.resultsPublisher.Close(); err != nil {
 			slog.Error("While closing results publishers", "err", err)
 		}
 	}()
-	go filter.handleSignals()
+
+	shutdown.OnSignal(func() { _ = filter.articlesQueue.StopConsuming() })
 
 	slog.Info("Consuming articles from RabbitMQ...", "queue", articlesQueueName)
 	var processingErr error
@@ -80,16 +79,7 @@ func (filter *DateFilter) Run() error {
 	return err
 }
 
-func (filter *DateFilter) handleSignals() {
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
-	defer signal.Stop(signals)
-	<-signals
-	slog.Info("Shutdown signal received")
-	filter.articlesQueue.StopConsuming()
-}
-
-func (filter *DateFilter) handleGatewayMessage(msg middleware.Message) error {
+func (filter *Filter) handleGatewayMessage(msg middleware.Message) error {
 	articleMsg, err := inner.DeserializeQ1Articles(&msg)
 	if err != nil {
 		return err
@@ -105,7 +95,7 @@ func (filter *DateFilter) handleGatewayMessage(msg middleware.Message) error {
 	}
 }
 
-func (filter *DateFilter) handleArticlesMessage(articleMsg *inner.Q1ArticlesMessage) error {
+func (filter *Filter) handleArticlesMessage(articleMsg *inner.Q1ArticlesMessage) error {
 	stats := filter.statsByClient[articleMsg.ClientID]
 	var results []result.Q1Result
 	for _, articleRecord := range articleMsg.Records {
@@ -125,7 +115,7 @@ func (filter *DateFilter) handleArticlesMessage(articleMsg *inner.Q1ArticlesMess
 	return filter.publishResults(articleMsg.ClientID, results)
 }
 
-func (filter *DateFilter) handleArticleRecordMessage(articleRecord inner.Q1ArticleItem) *result.Q1Result {
+func (filter *Filter) handleArticleRecordMessage(articleRecord inner.Q1ArticleItem) *result.Q1Result {
 	dateModified := time.Unix(int64(articleRecord.DateModified), 0).UTC()
 	if articleRecord.Language == "en" && dateModified.Year() <= 2020 {
 		return &result.Q1Result{Url: articleRecord.Url, DateModified: articleRecord.DateModified}
@@ -133,7 +123,7 @@ func (filter *DateFilter) handleArticleRecordMessage(articleRecord inner.Q1Artic
 	return nil
 }
 
-func (filter *DateFilter) publishResults(clientID string, records []result.Q1Result) error {
+func (filter *Filter) publishResults(clientID string, records []result.Q1Result) error {
 	// Un batch sin coincidencias no termina la consulta
 	if len(records) == 0 {
 		return nil
@@ -145,7 +135,7 @@ func (filter *DateFilter) publishResults(clientID string, records []result.Q1Res
 	return filter.resultsPublisher.Publish(clientID, *msg)
 }
 
-func (filter *DateFilter) handleEndOfRecordsMessage(clientID string) error {
+func (filter *Filter) handleEndOfRecordsMessage(clientID string) error {
 	msg, err := inner.SerializeQ1ResultsEOF(clientID)
 	if err != nil {
 		return err

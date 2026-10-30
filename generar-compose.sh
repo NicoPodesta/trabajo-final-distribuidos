@@ -100,22 +100,6 @@ gateway() {
 YAML
 }
 
-date_filter() {
-  cat <<'YAML'
-  date_filter_0:
-    build:
-      context: ./src/
-      dockerfile: filters/Dockerfile
-    container_name: date_filter_0
-    depends_on:
-    - rabbitmq
-    environment:
-    - MOM_HOST=rabbitmq
-    - MOM_PORT=5672
-
-YAML
-}
-
 worker() {
   local name=$1
   local directory=$2
@@ -174,7 +158,7 @@ YAML
     gateway "$id"
   done
 
-  date_filter
+  worker q1_filter_0 q1filter
   worker q2_filter_0 q2filter
   worker image_fetcher_0 imagefetcher CHUNK_SIZE=65536
 
@@ -184,7 +168,7 @@ YAML
 
   worker q3_vocabulary_join_0 q3vocabularyjoin "TOKENIZER_AMOUNT=${tokenizer_count}"
   worker q5_avg_partial_0 q5avgpartial "TOKENIZER_AMOUNT=${tokenizer_count}"
-  worker q5_filter_0 q5filter Q5_FILTER_ID=0 "TOKENIZER_AMOUNT=${tokenizer_count}"
+  worker q5_filter_0 q5filter ID=0 "TOKENIZER_AMOUNT=${tokenizer_count}"
   worker q5_avg_aggregator_0 q5avgaggregator Q5_AVG_PARTIAL_AMOUNT=1 Q5_FILTER_AMOUNT=1
 
   for id in $(seq 0 $((q4_counter_count - 1))); do

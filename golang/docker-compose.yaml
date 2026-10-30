@@ -45,16 +45,18 @@ services:
     - MOM_PORT=5672
     - EXPECTED_QUERIES=5
 
-  date_filter_0:
+  q1_filter_0:
     build:
       context: ./src/
-      dockerfile: filters/Dockerfile
-    container_name: date_filter_0
+      dockerfile: q1filter/Dockerfile
+    container_name: q1_filter_0
     depends_on:
-    - rabbitmq
+      rabbitmq:
+        condition: service_healthy
     environment:
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
+    - LOG_LEVEL=info
 
   q2_filter_0:
     build:
@@ -138,7 +140,7 @@ services:
     environment:
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
-    - Q5_FILTER_ID=0
+    - ID=0
     - TOKENIZER_AMOUNT=1
     - LOG_LEVEL=info
 

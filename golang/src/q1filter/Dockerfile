@@ -6,9 +6,9 @@ COPY go.mod .
 COPY go.sum .
 COPY common ./common
 RUN go mod download
-COPY filters ./filters
-RUN CGO_ENABLED=0 GOOS=linux go build -o bin/date_filter ./filters
+COPY q1filter ./q1filter
+RUN CGO_ENABLED=0 GOOS=linux go build -buildvcs=false -o bin/q1filter ./q1filter
 
 FROM busybox:latest
-COPY --from=builder /build/bin/date_filter /date_filter
-ENTRYPOINT ["./date_filter"]
+COPY --from=builder /build/bin/q1filter /q1filter
+ENTRYPOINT ["./q1filter"]
