@@ -5,6 +5,7 @@ import (
 
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/common/middleware"
+	"trabajo-final-distribuidos/common/shutdown"
 )
 
 const (
@@ -83,6 +84,7 @@ func (tokenizer *Tokenizer) Run() error {
 	defer tokenizer.historicalCountsQueue.Close()
 	defer tokenizer.recentArticlesQueue.Close()
 
+	shutdown.OnSignal(func() { _ = tokenizer.abstractsQueue.StopConsuming() })
 	slog.Info("Consuming abstracts from RabbitMQ...", "queue", abstractsQueueName)
 	return tokenizer.abstractsQueue.StartConsuming(func(msg middleware.Message, ack func(), nack func()) {
 		if err := tokenizer.handleGatewayMessage(msg); err != nil {

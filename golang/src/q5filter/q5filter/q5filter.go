@@ -9,6 +9,7 @@ import (
 	"trabajo-final-distribuidos/common/middleware"
 	"trabajo-final-distribuidos/common/result"
 	"trabajo-final-distribuidos/common/resultpublisher"
+	"trabajo-final-distribuidos/common/shutdown"
 )
 
 const recentArticlesQueueName = "recent_articles"
@@ -57,6 +58,11 @@ func (filter *Filter) Run() error {
 	}()
 	defer filter.recentArticlesQueue.Close()
 	defer filter.averageExchange.Close()
+
+	shutdown.OnSignal(func() {
+		_ = filter.recentArticlesQueue.StopConsuming()
+		_ = filter.averageExchange.StopConsuming()
+	})
 
 	averageErr := make(chan error, 1)
 	go func() {

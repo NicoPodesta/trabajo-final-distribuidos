@@ -5,6 +5,7 @@ import (
 
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/common/middleware"
+	"trabajo-final-distribuidos/common/shutdown"
 )
 
 const avgPartialsQueueName = "avg_partials"
@@ -59,6 +60,7 @@ func (aggregator *AvgAggregator) Run() error {
 	defer aggregator.avgPartialsQueue.Close()
 	defer aggregator.averageExchange.Close()
 
+	shutdown.OnSignal(func() { _ = aggregator.avgPartialsQueue.StopConsuming() })
 	slog.Info("Consuming avg partials from RabbitMQ...", "queue", avgPartialsQueueName)
 	return aggregator.avgPartialsQueue.StartConsuming(func(msg middleware.Message, ack func(), nack func()) {
 		if err := aggregator.handleMessage(msg); err != nil {
