@@ -3,9 +3,9 @@
 
 title C4 · Contexto · Wikipedia Article Analysis
 
-Person(usuario, "Usuario", "Ejecuta las consultas Q1 a Q5 sobre su dataset de artículos de Wikipedia")
+Person(usuario, "Usuario", "Consulta su propio dataset")
 
-System(sistema, "Wikipedia Article Analysis", "Procesa artículos en inglés y francés y devuelve los resultados de Q1 a Q5 de forma aislada para cada cliente")
+System(sistema, "Wikipedia Article Analysis", "Responde las consultas Q1 a Q5 sobre artículos de Wikipedia")
 
 System_Ext(wikimedia, "API de Wikimedia", "Provee las imágenes de los artículos")
 

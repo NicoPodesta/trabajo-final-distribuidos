@@ -3,34 +3,29 @@
 
 AddElementTag("ref", $bgColor="#e0e0e0", $fontColor="#5a5a5a", $borderColor="#9e9e9e", $legendText="detallado en otro diagrama")
 
-title C4 · Contenedores · Cliente, ingesta y consultas sobre metadatos (Q1, Q2)
+title C4 · Contenedores · Ingesta y consultas sobre metadatos (Q1, Q2)
 
 Person(usuario, "Usuario", "Ejecuta las consultas sobre su dataset")
 System_Ext(wikimedia, "API de Wikimedia", "Provee las imágenes de los artículos")
 
 System_Boundary(sistema, "Wikipedia Article Analysis") {
-    Container(client, "Client", "", "Lee el dataset línea a línea, lo envía y guarda los resultados de cada consulta")
-    Container(gateway, "Gateway", "", "Asigna client_id, publica lotes de artículos y devuelve los resultados al cliente a medida que llegan")
-    ContainerQueue(broker, "Message broker", "", "Transporta los mensajes asíncronos entre contenedores")
-    Container(parser, "Parser", "", "Parsea los artículos, deriva idioma y año y descarta los campos no usados")
-    Container(q1, "Q1 Filter", "", "Selecciona artículos en inglés con año ≤ 2020")
-    Container(q2, "Q2 Filter", "", "Selecciona artículos con año ≤ 2020 y sección biography / biographie")
-    Container(img, "Image Fetcher", "", "Descarga la imagen de cada biografía seleccionada")
-    Container(tokenizer, "Tokenizer", "", "Ver 02b · Consultas sobre texto (Q3, Q4) y 02c · Consulta sobre promedio de palabras (Q5)", $tags="ref")
+    Container(client, "Client", "Go", "Envía el dataset y guarda los resultados de cada consulta")
+    Container(gateway, "Gateway", "Go", "Recibe los artículos y devuelve los resultados")
+    Container(q1, "Q1 Filter", "Go", "Selecciona los artículos históricos en inglés")
+    Container(q2, "Q2 Filter", "Go", "Selecciona las biografías históricas")
+    Container(img, "Image Fetcher", "Go", "Obtiene la imagen de cada biografía")
+    Container(tokenizer, "Tokenizer", "Go", "Ver 02b (Q3, Q4) y 02c (Q5)", $tags="ref")
 }
 
 Rel(usuario, client, "Ejecuta con su dataset")
-Rel(client, gateway, "Envía artículos y recibe resultados", "TCP, protocolo propio")
-Rel(gateway, parser, "Publica lotes de artículos", "Asíncrono, middleware")
-Rel(parser, q1, "Publica artículos proyectados", "Asíncrono, middleware")
-Rel(parser, q2, "Publica artículos proyectados", "Asíncrono, middleware")
-Rel(parser, tokenizer, "Publica artículos proyectados", "Asíncrono, middleware")
-Rel(q2, img, "Publica biografías con año ≤ 2020", "Asíncrono, middleware")
+Rel(client, gateway, "Envía artículos y recibe resultados", "TCP")
+Rel(gateway, q1, "Envía artículos", "RabbitMQ")
+Rel(gateway, q2, "Envía artículos", "RabbitMQ")
+Rel(gateway, tokenizer, "Envía abstracts", "RabbitMQ")
+Rel(q2, img, "Envía biografías", "RabbitMQ")
 Rel(img, wikimedia, "Descarga imágenes", "HTTPS")
-Rel(q1, gateway, "Publica resultados de Q1", "Asíncrono, middleware")
-Rel(img, gateway, "Publica resultados de Q2", "Asíncrono, middleware")
-
-Lay_D(gateway, broker)
+Rel(q1, gateway, "Devuelve resultados de Q1", "RabbitMQ")
+Rel(img, gateway, "Devuelve resultados de Q2", "RabbitMQ")
 
 SHOW_LEGEND()
 @enduml

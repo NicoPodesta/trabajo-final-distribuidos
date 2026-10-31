@@ -6,20 +6,19 @@ AddElementTag("ref", $bgColor="#e0e0e0", $fontColor="#5a5a5a", $borderColor="#9e
 title C4 · Contenedores · Consultas sobre texto (Q3, Q4)
 
 System_Boundary(sistema, "Wikipedia Article Analysis") {
-    Container(parser, "Parser", "", "Ver 02a · Cliente, ingesta y consultas sobre metadatos (Q1, Q2)", $tags="ref")
-    Container(gateway, "Gateway", "", "Ver 02a · Cliente, ingesta y consultas sobre metadatos (Q1, Q2)", $tags="ref")
-    Container(tokenizer, "Tokenizer", "", "Obtiene las palabras distintas de cada abstract, quita stopwords, cuenta palabras y pre-agrega por lote")
-    Container(q3, "Q3 Vocabulary Join", "", "Detecta las palabras presentes en artículos en inglés y en francés")
-    Container(q4c, "Q4 Word Counter", "", "Cuenta en cuántos abstracts aparece cada palabra y obtiene un top 20 local")
-    Container(q4m, "Q4 Top 20 Merger", "", "Combina los top 20 locales en el top 20 final de cada cliente")
+    Container(gateway, "Gateway", "Go", "Ver 02a", $tags="ref")
+    Container(tokenizer, "Tokenizer", "Go", "Extrae las palabras de cada abstract, sin stopwords")
+    Container(q3, "Q3 Vocabulary Join", "Go", "Detecta las palabras presentes en inglés y en francés")
+    Container(q4c, "Q4 Word Counter", "Go", "Cuenta en cuántos abstracts aparece cada palabra")
+    Container(q4m, "Q4 Top 20 Merger", "Go", "Combina los parciales en el top 20 final")
 }
 
-Rel(parser, tokenizer, "Publica artículos proyectados", "Asíncrono, middleware")
-Rel(tokenizer, q3, "Publica palabras con su idioma", "Asíncrono, middleware")
-Rel(tokenizer, q4c, "Publica conteos parciales de palabras", "Asíncrono, middleware")
-Rel(q4c, q4m, "Publica top 20 local", "Asíncrono, middleware")
-Rel(q3, gateway, "Publica resultados de Q3", "Asíncrono, middleware")
-Rel(q4m, gateway, "Publica resultados de Q4", "Asíncrono, middleware")
+Rel(gateway, tokenizer, "Envía abstracts", "RabbitMQ")
+Rel(tokenizer, q3, "Envía palabras por idioma", "RabbitMQ")
+Rel(tokenizer, q4c, "Envía palabras", "RabbitMQ")
+Rel(q4c, q4m, "Envía su top 20 parcial", "RabbitMQ")
+Rel(q3, gateway, "Devuelve resultados de Q3", "RabbitMQ")
+Rel(q4m, gateway, "Devuelve resultados de Q4", "RabbitMQ")
 
 SHOW_LEGEND()
 @enduml
