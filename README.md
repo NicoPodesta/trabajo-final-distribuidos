@@ -39,7 +39,8 @@ cd golang && make up
 
 ### Gateway / Collector / Parser
 
-- Gateway soporta multicliente. Handler, Collector y Parser/Projector viven en el mismo proceso.
+- Gateway soporta multicliente. Handler, Collector y Parser/Projector
+(este último ya no existe como tal) viven en el mismo proceso.
 - Cada conexión recibe un `client_id` formado por el ID del Gateway y una secuencia local. Identifica la sesión para devolver los resultados al cliente correspondiente. Las sesiones se mantienen en memoria.
 - Gateway proyecta cada batch hacia las colas de RabbitMQ (`article_dates`, `article_sections`, `abstracts`) en un único mensaje por cola conteniendo el batch completo.
 - Gateway proyecta en las queues: `article_dates` (language, url, date_modified) hacia Q1, `article_sections` (language, name, url, date_modified, image, sections) hacia Q2 y `abstracts` (language, url, date_modified, abstract) hacia el Tokenizer.
