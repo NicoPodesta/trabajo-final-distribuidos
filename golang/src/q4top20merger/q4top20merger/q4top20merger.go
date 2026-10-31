@@ -2,7 +2,6 @@ package q4top20merger
 
 import (
 	"log/slog"
-	"sort"
 
 	"trabajo-final-distribuidos/common/eofcounter"
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
@@ -14,7 +13,6 @@ import (
 
 const (
 	partialTop20QueueName = "partial_top20"
-	topSize               = 20
 )
 
 type TopMergerConfig struct {
@@ -45,7 +43,11 @@ func NewTopMerger(config TopMergerConfig) (*TopMerger, error) {
 }
 
 func (merger *TopMerger) Run() error {
-	defer merger.partialTop20Queue.Close()
+	defer func() {
+		if err := merger.partialTop20Queue.Close(); err != nil {
+			slog.Error("While closing partial top queue", "err", err)
+		}
+	}()
 	defer func() {
 		if err := merger.resultsPublisher.Close(); err != nil {
 			slog.Error("While closing results publisher", "err", err)
@@ -85,7 +87,7 @@ func (merger *TopMerger) handleEndOfPartialTop(clientID string) error {
 	partialTops := merger.partialTopsByClient[clientID]
 	delete(merger.partialTopsByClient, clientID)
 
-	top := buildTop(partialTops)
+	top := result.TopQ4(partialTops)
 	slog.Info("Merged partial tops", "clientID", clientID, "candidates", len(partialTops))
 	for rank, item := range top {
 		slog.Debug("Final top", "clientID", clientID, "rank", rank+1, "word", item.Word, "count", item.Count)
@@ -110,14 +112,4 @@ func (merger *TopMerger) publishFinalTop(clientID string, top []result.Q4Result)
 		return err
 	}
 	return merger.resultsPublisher.Publish(clientID, *eofMsg)
-}
-
-func buildTop(records []result.Q4Result) []result.Q4Result {
-	sort.Slice(records, func(i, j int) bool {
-		if records[i].Count != records[j].Count {
-			return records[i].Count > records[j].Count
-		}
-		return records[i].Word < records[j].Word
-	})
-	return records[:min(topSize, len(records))]
 }

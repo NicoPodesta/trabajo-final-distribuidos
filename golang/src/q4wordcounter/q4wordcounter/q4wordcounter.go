@@ -3,7 +3,6 @@ package q4wordcounter
 import (
 	"fmt"
 	"log/slog"
-	"sort"
 
 	"trabajo-final-distribuidos/common/eofcounter"
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
@@ -15,7 +14,6 @@ import (
 const (
 	wordCountsQueuePrefix = "word_counts_"
 	partialTop20QueueName = "partial_top20"
-	topSize               = 20
 )
 
 type WordCounterConfig struct {
@@ -139,12 +137,5 @@ func buildTop(counts map[string]uint32) []result.Q4Result {
 	for word, count := range counts {
 		items = append(items, result.Q4Result{Word: word, Count: count})
 	}
-
-	sort.Slice(items, func(i, j int) bool {
-		if items[i].Count != items[j].Count {
-			return items[i].Count > items[j].Count
-		}
-		return items[i].Word < items[j].Word
-	})
-	return items[:min(topSize, len(items))]
+	return result.TopQ4(items)
 }
