@@ -8,23 +8,16 @@ participant "Q5 Filter" as F
 participant "Gateway" as GW
 
 par mientras llegan los artículos
-    T -> A : largo de los históricos
+    T -> A : cantidad de palabras\nde cada artículo histórico
 else
-    T -> F : largo de los recientes
+    T -> F : cantidad de palabras\nde cada artículo reciente
     note right of F : los retiene hasta conocer el promedio
 end
 
-T -> A : fin de artículos
-A -> G : suma parcial
-G -> F : promedio global
+T -> A : fin de los artículos
+A -> G : suma y cantidad parciales
+G -> F : promedio de palabras
 
 F -> GW : recientes retenidos por encima del promedio
 
-loop artículos que llegan después
-    T -> F : largo del reciente
-    F -> GW : si supera el promedio
-end
-
-T -> F : fin de artículos
-F -> GW : fin de Q5
 @enduml
