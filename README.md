@@ -4,82 +4,114 @@
 
 Los datos de cada cliente van en `input/client_N/` (archivos `.parquet`) y sus resultados quedan en `output/client_N/`.
 
-El `docker-compose.yaml` se genera con `generar-compose.sh`, que recibe el archivo de salida, la cantidad de clientes y, opcionalmente, la cantidad de tokenizers (por defecto 1):
+El `docker-compose.yaml` se genera con `generar-compose.sh`, que recibe el archivo de salida, la cantidad de clientes y, opcionalmente, las cantidades de gateways, tokenizers y contadores de Q4 (por defecto 1 cada una):
 
+```bash
+./generar-compose.sh <archivo-salida> <clientes> [gateways] [tokenizers] [q4-wordcounters]
 ```
-./generar-compose.sh golang/docker-compose.yaml 2 3
+
+Por ejemplo, con 2 clientes, 2 gateways, 3 tokenizers y 2 contadores de Q4:
+
+```bash
+./generar-compose.sh golang/docker-compose.yaml 2 2 3 2
 cd golang && make up
 ```
 
-`cd golang && make switch` ofrece escenarios fijos: 1 o 2 clientes, con 1 o 3 tokenizers.
+`cd golang && make switch` permite generar la configuración eligiendo entre cuatro escenarios fijos. Luego se levanta con `make up`.
 
 ## Decisiones - estado actual
 
-- El client lee .parquet de a 100 rows y envía los artículos en batchs (`ArticleBatch`) por TCP al Gateway, esperando un ACK por batch.
-- Gateway proyecta cada batch hacia las colas de RabbitMQ (`article_dates`, `article_sections`, `abstracts`) en un único mensaje por cola conteniendo el batch completo.
-- Ejecucion con 1 client, 1 gateway, el load balancer y una instancia por componente de Q1, Q2, Q4 y Q5.
-- Load balancer asigna gateways a clientes por Round-Robin.
+### Ejecución
+
+- Ejecucion con cantidades configurables de clientes, gateways, tokenizers y contadores de Q4. Un load balancer y una instancia de los demás componentes de Q1 a Q5.
+
+### Cliente
+
+- El cliente obtiene del Load Balancer la dirección del Gateway y se conecta directamente a él.
+- El client lee .parquet de a hasta 100 rows y envía los artículos en batchs (`ArticleBatch`) por TCP al Gateway, esperando un ACK por batch.
 - Cliente envia articulos y recibe resultados concurrentemente por TCP (full duplex).
 - El cliente no manda ACKs al recibir resultados para no complicar el protocolo: el propio TCP ya regula la velocidad si el cliente lee lento.
-- Gateway proyecta en las queues: `article_dates` (language, url, date_modified) hacia Q1, `article_sections` (language, name, url, date_modified, image, sections) hacia Q2 y `abstracts` (language, url, date_modified, abstract) hacia el Tokenizer.
-- Gateway soporta multicliente.
-- Filtro Q1 consume `article_dates` y confirma los mensajes.
-- Filtro Q2 e Image Fetcher funcionando: el filtro consume `article_sections` y publica pedidos individuales en `image_downloads`, el Fetcher descarga y envía una imagen por vez.
-- Gateway y cliente soportan `Q2ImageChunk`: se reenvía cada chunk por TCP. Nombre y URL viajan solo en el primer chunk; `last=true` termina una imagen y el EOF Q2 termina la consulta de ese cliente.
-- Un `EndOfRecords` con imágenes incompletas es un error. Al salir se cierran los archivos y se eliminan solo los parciales de esta ejecución; las imágenes completas se conservan.
-- Protocolo interno tipado con enums (`MsgData`, `MsgEOF`): se eliminó el uso de lista vacía como EOF para evitar que lotes sin coincidencias se confundan con el fin de transmisión.
-- Cola única compartida `results_<gatewayID>`: los mensajes incluyen un header con `type`, `client_id` y `query_id` (Q1 a Q5) para que Gateway sepa qué deserializar.
-- Q1, Image Fetcher y Q4 TopMerger usan `common/resultpublisher`: cada consulta serializa sus resultados y su EOF; cada worker tiene su publisher, que reutiliza conexiones por gateway y las cierra al salir de `Run`. Si el top está vacío se publica solamente el EOF.
-- Gateway coordina la recepción de resultados de todas las queries: espera el EOF de cada consulta (configurable con `EXPECTED_QUERIES`) antes de enviar el `EndOfRecords` final al cliente y cerrar la sesión.
-- Cliente preparado para recibir y persistir resultados de Q1 a Q5.
-- Stopwords: Go no trae listas en la libreria estandar, asi que se copiaron las de NLTK (las mismas que usa el notebook) a `tokenizer/stopwords.go`.
-- Q4WordCounter - Top parcial: ordena por count descendente y desempata por palabra ascendente.
-- Q4WordCounter - mensajes: Se envia a la cola de partial_top20 2 mensajes: top y EOF, asegurando de enviar un solo EOF.
-- Q5 - promedio entero: el Avg Aggregator envia el promedio como numero entero truncado, no hace falta transmitir decimales.
-- Q5 - cliente sin articulos historicos, promedio como 0 que se envia al exchange hacia el q5Filter.
-- 1er patron EOF a replicar: una cola por replica con reparto por `hash(clave) % M` y el EOF enviado a todas las colas, para estado por clave. Ej: q4Counter.
-- 2er patron EOF a replicar: cola compartida donde la replica que recibe el EOF lo reenvia a todas por un exchange de control, con un mutex para que el EOF salga despues de los datos en curso, replicas sobre una cola. Ej: tokenizer
-- Tokenizer -> Q4WordCount sharding: se calcula el hash con`fnv32a(palabra) % K` (K = `Q4_WORD_COUNTER_AMOUNT`) y manda un mensaje a cada cola `word_counts_<k>` que tenga palabras.
+- Al terminar de enviar los archivos, manda `EndOfRecords` y espera su ACK. Sigue recibiendo resultados hasta el `EndOfRecords` del Gateway.
 
+### Load Balancer
+
+- Load balancer asigna gateways a clientes por Round-Robin y devuelve la dirección del Gateway asignado.
+
+### Gateway / Collector / Parser
+
+- Gateway soporta multicliente. Handler, Collector y Parser/Projector viven en el mismo proceso.
+- Cada conexión recibe un `client_id` formado por el ID del Gateway y una secuencia local. Identifica la sesión para devolver los resultados al cliente correspondiente. Las sesiones se mantienen en memoria.
+- Gateway proyecta cada batch hacia las colas de RabbitMQ (`article_dates`, `article_sections`, `abstracts`) en un único mensaje por cola conteniendo el batch completo.
+- Gateway proyecta en las queues: `article_dates` (language, url, date_modified) hacia Q1, `article_sections` (language, name, url, date_modified, image, sections) hacia Q2 y `abstracts` (language, url, date_modified, abstract) hacia el Tokenizer.
+- El ACK de cada batch se envía después de publicar sus proyecciones en las tres colas.
+- Protocolo interno tipado con enums (`MsgData`, `MsgEOF`, `MsgChunk`): los batches sin coincidencias no se confunden con el fin de transmisión.
+- Cola única por Gateway `results_<gatewayID>`: los mensajes incluyen un header con `type`, `client_id` y `query_id`. Collector los reenvía por el socket de la sesión correspondiente.
+- Las cinco consultas usan `common/resultpublisher` para publicar resultados y EOF, reutilizando conexiones por Gateway.
+- Gateway espera el EOF de cada consulta (configurable con `EXPECTED_QUERIES`) antes de enviar el `EndOfRecords` final al cliente y cerrar la sesión. Cuenta consultas terminadas, no réplicas.
+
+### Tokenizer
+
+- Consume batches de `abstracts` desde una cola compartida entre sus réplicas.
+- Convierte el texto a minúsculas y elimina stopwords y tokens compuestos solo por números.
+- Usa las mismas listas de stopwords de NLTK que el notebook, incluidas en `tokenizer/text/stopwords.go` para mantener el mismo criterio de filtrado.
+- Para Q3 publica los pares `(word, language)` sin repetirlos dentro del batch, en `vocabulary_0`.
+- Para Q4 cuenta en cuántos abstracts del batch aparece cada palabra. Cada abstract aporta como máximo 1 por palabra.
+- Para Q5 publica la cantidad de palabras de cada artículo, separando históricos hasta 2020 inclusive y posteriores a 2020. Omite los abstracts vacíos.
+- La réplica que recibe el EOF lo distribuye a todas mediante `tokenizer_control`. Cada réplica usa un mutex para esperar a que termine el procesamiento en curso antes de publicar sus EOF hacia las siguientes etapas.
+
+### Q1
+
+- Consume batches de `article_dates` y selecciona artículos con `language = en` y año de modificación hasta 2020 inclusive, interpretando la fecha en UTC.
+- Publica `url` y `date_modified` de las coincidencias de cada batch. Un batch sin coincidencias no genera resultados ni termina la consulta.
+- No elimina URLs repetidas ni descarta URLs vacías. Un timestamp igual a 0 se interpreta como 1970.
+- Si ocurre un error, envía NACK y detiene el consumo.
+- Al recibir EOF, publica el EOF de Q1 incluso si no hubo coincidencias y libera las estadísticas del cliente, mantenidas en memoria.
+- Actualmente se ejecuta un filtro, todavía falta coordinar el cierre entre réplicas de Q1.
+
+### Q2
+
+- El filtro consume batches de `article_sections` y selecciona artículos con año de modificación hasta 2020 inclusive (UTC) y una sección `biography` o `biographie`, ignorando mayúsculas y espacios en los extremos del nombre de la sección.
+- Los artículos sin imagen se omiten y el procesamiento continúa, sin tratarlos como error.
+- Cada coincidencia con imagen genera un pedido individual en `image_downloads`, con nombre, URL del artículo e `image_ref`. El Fetcher descarga directamente esa imagen a un archivo temporal y luego publica chunks de hasta 64 KiB con la configuración actual.
+- Gateway y cliente soportan `Q2ImageChunk`: se reenvía cada chunk por TCP. Nombre y URL viajan solo en el primer chunk. `last=true` termina una imagen y el EOF Q2 termina la consulta de ese cliente.
+- Después de publicar todos los chunks, el Fetcher cierra y borra el temporal y confirma el pedido con ACK. Este ACK no confirma que el cliente haya guardado la imagen.
+- El EOF se propaga por `image_downloads` y luego como EOF de Q2, incluso si no hubo imágenes. El procesamiento actual es secuencial, con una instancia del filtro y del Fetcher. La concurrencia y el manejo distribuido de errores quedan para otra etapa.
+- Si el cliente recibe el `EndOfRecords` final del Gateway y todavía tiene una imagen sin su último chunk (`last=true`), informa un error. Al cerrar, borra los archivos de las imágenes que quedaron a medio recibir en esa ejecución y conserva las que ya recibió completas.
+- El cliente guarda las imágenes en `output/client_N/q2_images/run-*/` y el archivo `q2_results.csv`, con columnas `image_id,name,url,file`, en `output/client_N/`. Mientras recibe los chunks, escribe cada imagen en un archivo `.part`. Al recibir el último chunk, cambia esa extensión por `.jpg`, `.png`, etc., según el formato detectado en los bytes recibidos. Si no reconoce el formato, usa `.bin`.
+
+### Q3
+
+- Consume pares `(word, language)` de `vocabulary_0` y mantiene en memoria, por cliente y palabra, su presencia en inglés y francés.
+- Publica cada palabra una sola vez cuando aparece en ambos idiomas, sin esperar al cierre de la consulta.
+- Espera la cantidad de EOF indicada por `TOKENIZER_AMOUNT`, publica el EOF de Q3 y libera el estado del cliente, incluso si no hubo palabras compartidas.
+- Actualmente usa una cola y una instancia de Vocabulary Join. El reparto por palabra entre varias particiones sigue pendiente.
+
+### Q4
+
+- Cuenta en cuántos abstracts aparece cada palabra. Cada abstract aporta como máximo 1 por palabra y los contadores suman los valores preagregados de cada batch.
+- Tokenizer reparte las palabras con `fnv32a(palabra) % K` (K = `Q4_WORD_COUNTER_AMOUNT`) entre las colas `word_counts_<k>`. Publica datos solo en las colas con palabras y envía EOF a todas.
+- Cada WordCounter mantiene sus conteos por cliente en memoria y espera los EOF de los Tokenizers antes de calcular su top 20 parcial.
+- El top se ordena por count descendente y desempata por palabra ascendente. Cada contador publica su top en `partial_top20` y luego un EOF. Si no tiene palabras, publica solamente el EOF.
+- TopMerger espera los EOF de los K contadores, selecciona el top 20 global con el mismo criterio y publica los resultados y el EOF de Q4. Si el top está vacío, publica solamente el EOF.
+
+### Q5
+
+- Compara la cantidad de palabras de los artículos posteriores a 2020 con el promedio de los artículos hasta 2020 inclusive, usando el año de modificación en UTC y datos separados por cliente.
+- Cuenta las palabras después del filtrado del Tokenizer, incluyendo las repetidas. Omite los abstracts vacíos. Un abstract no vacío que queda sin palabras después del filtrado cuenta como 0.
+- Avg Partial consume `historical_counts`, acumula suma de palabras y cantidad de artículos, y espera los EOF de los Tokenizers antes de publicar su parcial y EOF en `avg_partials`.
+- Avg Aggregator espera los EOF de los parciales y calcula el promedio como entero truncado. Si el cliente no tiene artículos históricos, usa 0. Publica el promedio mediante el exchange `q5_average` hacia los filtros.
+- Q5 Filter consume `recent_articles` y guarda los candidatos en memoria hasta recibir el promedio. Selecciona los artículos cuya cantidad de palabras es estrictamente mayor al promedio y publica `url` y `word_count`.
+- El filtro publica el EOF de Q5 cuando ya recibió el promedio y los EOF de los Tokenizers para los artículos recientes, y libera el estado del cliente.
 
 ## Pendientes
 
-- Probar levantar multicliente.
-- Validar multiples gateways con el load balancer.
-- Implementar Q3.
-- Medir descarga y publicación de Q2 antes de agregar concurrencia o réplicas.
-- Reutilizar `common/resultpublisher` al implementar las demás querys
-
-## Q2 — funcionamiento actual
-
-1. El filtro selecciona artículos con fecha de modificación hasta 2020 inclusive y una sección llamada `biography` o `biographie`. Ignora mayúsculas y espacios al inicio y al final del nombre de la sección.
-2. Cada coincidencia genera un pedido con `client_id`, nombre, URL del artículo y `image_ref`. Esta última es la URL `image.content_url` del Parquet: se descarga directamente, sin consultar otra API.
-3. Image Fetcher descarga la imagen completa a un archivo temporal. Luego lo abre y publica chunks de hasta 64 KiB (`CHUNK_SIZE=65536`). No carga la imagen completa en memoria.
-4. Cada chunk identifica imagen y secuencia. El primero incluye nombre y URL del artículo; el último lleva `last=true`. Los resultados se publican en `results_<gatewayID>` y Gateway los reenvía por TCP.
-5. Tras publicar todos los chunks, el Fetcher cierra y borra el temporal, confirma el pedido con ACK y atiende el siguiente. Este ACK no confirma que el cliente haya guardado la imagen.
-6. El EOF de `image_downloads` se publica como EOF de Q2 después de los pedidos anteriores, incluso si no hubo coincidencias. Gateway espera los EOF de Q1, Q2, Q4 y Q5 (`EXPECTED_QUERIES=4`) antes del `EndOfRecords` final.
-
-El cliente guarda las imágenes y un `q2_results.csv` con columnas `image_id,name,url,file` dentro de `output/q2_images/run-*/`. Las imágenes incompletas usan la extensión `.part`; al completarse se renombran según su contenido.
-
-El procesamiento actual es secuencial y usa una instancia del filtro y del Fetcher. Se conservan los chequeos básicos existentes; la concurrencia y el manejo distribuido de errores quedan para otra etapa.
-
-Diagramas del flujo implementado: [actividad](Diagramas/actividad/Actividad%20q2.svg) y [secuencia](Diagramas/secuencia/secuencia%20q2.svg).
-
-### Validación de Q2
-
-Se probó el recorrido completo con Compose, archivos Parquet pequeños y un servidor HTTPS local con imágenes conocidas:
-
-- **Con coincidencias:** de 7 artículos se recibieron las 3 imágenes esperadas. Se comprobó el límite de fecha de 2020, ambas secciones y la normalización de mayúsculas y espacios. Una imagen de 197.069 bytes requirió 4 chunks de 64 KiB como máximo.
-- **Sin coincidencias:** 4 artículos generaron un CSV con encabezado y ninguna imagen; el cliente finalizó normalmente.
-- Los archivos recibidos coincidieron byte por byte con los originales y el CSV conservó nombres y URLs, incluyendo comas y acentos. Solo se hicieron las 3 descargas esperadas.
-- En ambas ejecuciones llegaron los EOF de Q1, Q2, Q4 y Q5. No quedaron archivos `.part`, temporales del Fetcher ni mensajes pendientes en las colas.
-
-Esta prueba verifica el flujo secuencial con un origen HTTPS controlado; no mide rendimiento ni disponibilidad de imágenes en Wikimedia.
+- Validar la ejecución completa con varios clientes, gateways, tokenizers y comprobando que los resultados y cierres correspondan a cada cliente.
 
 ## Consultas
 
 - Se puede utilizar la libreria externa parquet-go?
 - Se puede utilizar la libreria externa `github.com/bbalet/stopwords` para las stopwords?
 - Es necesario mandar los acks por aplicación en la ida? (Se adoptó envío y ack por batches de 100 artículos).
-- Consultar al profe el tamaño de los chunks Q2: por defecto, 64 KiB de contenido (`DefaultQ2ChunkSize`).
+- Consultar al profe el tamaño de los chunks Q2, tamaño maximo de imagen para descargar, como tratar las imagenes vacias
 - Consultar al profe la salida Q2 prevista: un archivo por imagen y CSV con `image_id,name,url,file`.
+- Para q3 cual es el tamaño minimo de palabras que deberiamos aceptar
