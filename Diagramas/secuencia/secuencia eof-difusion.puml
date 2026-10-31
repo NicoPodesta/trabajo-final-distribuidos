@@ -1,0 +1,17 @@
+@startuml
+title Secuencia · Difusión del EOF entre los Tokenizers
+
+participant "Gateway" as GW
+queue "abstracts\n(cola compartida)" as A
+participant "Tokenizer 0" as T0
+participant "Tokenizer 1" as T1
+queue "tokenizer_control\n(exchange)" as CTRL
+
+GW -> A : EOF del cliente (un solo mensaje)
+A -> T0 : lo recibe una sola réplica
+
+
+T0 -> CTRL : difunde el EOF del cliente
+CTRL -> T0
+CTRL -> T1
+@enduml

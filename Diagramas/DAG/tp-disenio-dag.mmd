@@ -1,28 +1,24 @@
 flowchart LR
-    C(["Client"]) -->|"artículos crudos"| IN["Gateway ×N: ingesta<br/>asigna client_id, arma lotes,<br/>emite EOF del cliente"]
-    IN -->|"lotes (client_id, gateway_id, artículos)"| P["Parser / Projector ×N<br/>parsea, deriva idioma y año,<br/>descarta campos no usados"]
+    C(["Client"]) -->|"artículos"| IN["Gateway<br/>ingesta"]
 
-    P -->|"(lang, year, url, date)"| Q1F["Q1 Filter ×N<br/>lang = en ∧ año ≤ 2020"]
+    IN -->|"artículos y fechas"| Q1F["Q1 Filter"]
+    IN -->|"artículos y secciones"| Q2F["Q2 Filter"]
+    IN -->|"abstracts"| T["Tokenizer"]
 
-    P -->|"(year, name, url, sections, image_ref)"| Q2F["Q2 Filter ×N<br/>año ≤ 2020 ∧ sección<br/>biography / biographie"]
-    Q2F -->|"(name, url, image_ref)"| IMG["Image Fetcher ×N<br/>descarga bytes"]
-    WM[("API Wikimedia")] -.->|"bytes de imagen"| IMG
+    Q2F -->|"artículos con imagen"| IMG["Image Fetcher"]
 
-    P -->|"(url, lang, year, abstract)"| T["Tokenizer ×N<br/>normaliza, palabras distintas<br/>por abstract, quita stopwords,<br/>pre-agrega por lote"]
+    T -->|"palabras por idioma"| Q3J["Q3 Vocabulary Join"]
+    T -->|"palabras"| Q4C["Q4 Word Counter"]
+    Q4C -->|"top 20 parcial"| Q4M["Q4 Top 20 Merger"]
 
-    T -->|"(word, lang) sin repetir por lote<br/>agrupado por word"| Q3J["Q3 Vocabulary Join ×K<br/>emite word al verla en en y fr"]
+    T -->|"largo de históricos"| Q5A["Q5 Avg Partial"]
+    Q5A -->|"suma parcial"| Q5G["Q5 Avg Aggregator"]
+    T -->|"largo de recientes"| Q5F["Q5 Filter"]
+    Q5G -.->|"promedio"| Q5F
 
-    T -->|"(word, k) por lote<br/>agrupado por word"| Q4C["Q4 Word Counter ×K<br/>df por palabra + top 20 local"]
-    Q4C -->|"top 20 local, al EOF"| Q4M["Q4 Top 20 Merger<br/>×1 por cliente"]
-
-    T -->|"n_words, año ≤ 2020"| Q5A["Q5 Avg Partial ×N<br/>(suma, conteo)"]
-    Q5A -->|"(suma, conteo), al EOF"| Q5G["Q5 Avg Aggregator<br/>×1 por cliente"]
-    T -->|"(url, n_words), año ≥ 2021"| Q5F["Q5 Filter ×N<br/>retiene hasta el promedio,<br/>n_words > avg"]
-    Q5G -.->|"promedio a todas las réplicas<br/>(bloqueante)"| Q5F
-
-    Q1F -->|"Q1: (url, date), en flujo<br/>ruteo por gateway_id"| OUT["Gateway ×N: entrega<br/>(misma réplica que la ingesta del cliente)<br/>escribe al socket a medida que llega,<br/>cierra al recibir EOF de Q1..Q5"]
-    IMG -->|"Q2: (name, url, bytes), en flujo<br/>ruteo por gateway_id"| OUT
-    Q3J -->|"Q3: words compartidas, en flujo<br/>ruteo por gateway_id"| OUT
-    Q4M -->|"Q4: 20 pares (word, count), al EOF<br/>ruteo por gateway_id"| OUT
-    Q5F -->|"Q5: (url, n_words), tras el promedio<br/>ruteo por gateway_id"| OUT
-    OUT -->|"(query_id, resultados) + fin"| C2(["Client"])
+    Q1F -->|"Q1"| OUT["Gateway<br/>entrega"]
+    IMG -->|"Q2"| OUT
+    Q3J -->|"Q3"| OUT
+    Q4M -->|"Q4"| OUT
+    Q5F -->|"Q5"| OUT
+    OUT -->|"resultados"| C2(["Client"])

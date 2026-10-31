@@ -1,0 +1,19 @@
+@startuml
+title Secuencia · Cada Tokenizer cierra hacia los Word Counters
+
+participant "Tokenizer 0" as T0
+participant "Tokenizer 1" as T1
+queue "word_counts_k\n(una cola por Word Counter)" as WC
+
+note over T0, T1
+  Ambos recibieron el EOF por tokenizer_control.
+end note
+
+par
+    T0 -> WC : últimos datos pendientes
+    T0 -> WC : EOF a las K colas
+else
+    T1 -> WC : últimos datos pendientes
+    T1 -> WC : EOF a las K colas
+end
+@enduml

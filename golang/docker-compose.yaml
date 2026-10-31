@@ -14,8 +14,25 @@ services:
     - SERVER_HOST=load_balancer
     - SERVER_PORT=5000
     volumes:
-    - ../input/client_0:/datasets
+    - /run/media/xiamotron/5dfaea23-dd36-40e2-9de6-b9f7525b7b6c/tp_data/client_0:/datasets
     - ../output/client_0:/output
+
+  client_1:
+    build:
+      context: ./src/
+      dockerfile: client/Dockerfile
+    container_name: client_1
+    user: "1000:1000"
+    depends_on:
+    - load_balancer
+    environment:
+    - INPUT_DIR=/datasets
+    - OUTPUT_DIR=/output
+    - SERVER_HOST=load_balancer
+    - SERVER_PORT=5000
+    volumes:
+    - /run/media/xiamotron/5dfaea23-dd36-40e2-9de6-b9f7525b7b6c/tp_data/client_1:/datasets
+    - ../output/client_1:/output
 
   load_balancer:
     build:
@@ -24,10 +41,11 @@ services:
     container_name: load_balancer
     depends_on:
     - gateway_0
+    - gateway_1
     environment:
     - SERVER_HOST=load_balancer
     - SERVER_PORT=5000
-    - GATEWAYS=gateway_0:5678
+    - GATEWAYS=gateway_0:5678,gateway_1:5678
 
   gateway_0:
     build:
@@ -40,6 +58,22 @@ services:
     environment:
     - ID=0
     - SERVER_HOST=gateway_0
+    - SERVER_PORT=5678
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - EXPECTED_QUERIES=5
+
+  gateway_1:
+    build:
+      context: ./src/
+      dockerfile: gateway/Dockerfile
+    container_name: gateway_1
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+    - ID=1
+    - SERVER_HOST=gateway_1
     - SERVER_PORT=5678
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
@@ -97,8 +131,40 @@ services:
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
     - TOKENIZER_ID=0
-    - TOKENIZER_AMOUNT=1
-    - Q4_WORD_COUNTER_AMOUNT=1
+    - TOKENIZER_AMOUNT=3
+    - Q4_WORD_COUNTER_AMOUNT=2
+    - LOG_LEVEL=info
+
+  tokenizer_1:
+    build:
+      context: ./src/
+      dockerfile: tokenizer/Dockerfile
+    container_name: tokenizer_1
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - TOKENIZER_ID=1
+    - TOKENIZER_AMOUNT=3
+    - Q4_WORD_COUNTER_AMOUNT=2
+    - LOG_LEVEL=info
+
+  tokenizer_2:
+    build:
+      context: ./src/
+      dockerfile: tokenizer/Dockerfile
+    container_name: tokenizer_2
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - TOKENIZER_ID=2
+    - TOKENIZER_AMOUNT=3
+    - Q4_WORD_COUNTER_AMOUNT=2
     - LOG_LEVEL=info
 
   q3_vocabulary_join_0:
@@ -112,7 +178,7 @@ services:
     environment:
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
-    - TOKENIZER_AMOUNT=1
+    - TOKENIZER_AMOUNT=3
     - LOG_LEVEL=info
 
   q5_avg_partial_0:
@@ -126,7 +192,7 @@ services:
     environment:
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
-    - TOKENIZER_AMOUNT=1
+    - TOKENIZER_AMOUNT=3
     - LOG_LEVEL=info
 
   q5_filter_0:
@@ -141,7 +207,7 @@ services:
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
     - ID=0
-    - TOKENIZER_AMOUNT=1
+    - TOKENIZER_AMOUNT=3
     - LOG_LEVEL=info
 
   q5_avg_aggregator_0:
@@ -171,7 +237,22 @@ services:
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
     - Q4_WORD_COUNTER_ID=0
-    - TOKENIZER_AMOUNT=1
+    - TOKENIZER_AMOUNT=3
+    - LOG_LEVEL=info
+
+  q4_word_counter_1:
+    build:
+      context: ./src/
+      dockerfile: q4wordcounter/Dockerfile
+    container_name: q4_word_counter_1
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - Q4_WORD_COUNTER_ID=1
+    - TOKENIZER_AMOUNT=3
     - LOG_LEVEL=info
 
   q4_top20_merger_0:
@@ -185,7 +266,7 @@ services:
     environment:
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
-    - Q4_WORD_COUNTER_AMOUNT=1
+    - Q4_WORD_COUNTER_AMOUNT=2
     - LOG_LEVEL=info
 
   rabbitmq:
