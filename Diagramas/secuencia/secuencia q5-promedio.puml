@@ -1,49 +1,30 @@
 @startuml q5-promedio
-title Secuencia · Q5 · Promedio y recorrido concurrente
+title Secuencia · Q5 · Los recientes esperan el promedio
 
-participant "Tokenizer\n(réplica)" as T
-participant "Q5 Avg Partial\n(réplica)" as A
+participant "Tokenizer" as T
+participant "Q5 Avg Partial" as A
 participant "Q5 Avg Aggregator" as G
-participant "Q5 Filter\n(réplica)" as F
-database "Archivo local Filter \npor client_id" as D
-participant "Gateway\n(réplica del cliente)" as GW
+participant "Q5 Filter" as F
+participant "Gateway" as GW
 
-par mientras llegan artículos del cliente
-    T -> A : n_words\naño ≤ 2020
+par mientras llegan los artículos
+    T -> A : largo de los históricos
 else
-    T -> F : (url, n_words)\naño ≥ 2021
-    F -> D : append (url, n)\nconsume y ack de inmediato
+    T -> F : largo de los recientes
+    note right of F : los retiene hasta conocer el promedio
 end
 
-T -> A : DONE(client)
-A -> A : al tener DONE de todas\nlas réplicas de Tokenizer
-A -> G : (suma, cantidad) de esta réplica\nruteo por client_id
-G -> G : al tener todos los parciales,\ncalcula el promedio final
-G ->> F : promedio final [broadcast]
+T -> A : fin de artículos
+A -> G : suma parcial
+G -> F : promedio global
 
-F -> F : vacía lo ya encolado\ny lo agrega al archivo
+F -> GW : recientes retenidos por encima del promedio
 
-par a partir del promedio final
-    T -> F : artículos que llegan después
-    F -> F : filtra esa línea\nsi n > promedio
-    F -> GW : Q5 (url, n_words)\nruteo por gateway_id
-else
-    F -> D : recorre lo ya guardado
-    loop cada línea con n > promedio
-        F -> GW : Q5 (url, n_words)\nruteo por gateway_id
-    end
+loop artículos que llegan después
+    T -> F : largo del reciente
+    F -> GW : si supera el promedio
 end
 
-T -> F : DONE(client)\nde cada réplica de Tokenizer
-F -> D : borra el archivo
-F -> GW : DONE(Q5)
-
-note over F
-  El promedio final habilita el filtro.
-  DONE solo indica que no llegan más artículos:
-  ahí se borra el archivo y se cierra Q5.
-  El recorrido no frena el consumo
-  de otros clientes.
-end note
-
+T -> F : fin de artículos
+F -> GW : fin de Q5
 @enduml

@@ -1,33 +1,16 @@
 @startuml q5-filter
-title Actividad · Q5 Filter · Una réplica
+title Actividad · Q5 Filter · Artículo reciente
 
 start
 
-while (¿SIGTERM?) is (no)
-  :Consumir un mensaje de cualquier client_id;
+:Llega un artículo reciente de un cliente;
 
-  if (¿Artículo y ese cliente todavía no tiene promedio?) then (sí)
-    :Agregar (url, n) a su archivo;
-  elseif (¿Llega el promedio de ese cliente?) then (sí)
-    :Pasar a su archivo lo que ya está encolado;
-    fork
-      :Recorrer ese archivo y publicar n > promedio;
-    fork again
-      :Seguir consumiendo, incluso de otros clientes;
-    end fork
-  elseif (¿Artículo posterior al promedio?) then (sí)
-    :Publicar si n > promedio, sin escribirlo a disco;
-  else (DONE de todos los Tokenizer)
-    :Borrar su archivo y publicar DONE(Q5);
-  endif
-endwhile (sí)
+if (¿Ya conoce el promedio de ese cliente?) then (sí)
+  :Publicar si n_words > promedio;
+else (no)
+  :Guardar el artículo en el archivo del cliente;
+endif
 
-:Cerrar archivos y middleware;
 stop
-
-note right
-  Cada client_id tiene su archivo y su promedio.
-  El archivo solo guarda lo anterior al promedio.
-end note
 
 @enduml
