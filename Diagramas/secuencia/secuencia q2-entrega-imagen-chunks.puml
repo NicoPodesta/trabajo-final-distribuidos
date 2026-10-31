@@ -1,0 +1,29 @@
+@startuml
+title Secuencia · Q2 · Entrega de la imagen en chunks
+
+participant "Q2 Filter" as Q2
+participant "Image Fetcher" as IMG
+participant "API de Wikimedia" as WM
+queue "Cola de resultados\n(del Gateway del cliente)" as Q
+participant "Gateway" as GW
+actor "Client" as C
+
+Q2 -> IMG : artículo con referencia a la imagen
+
+par descarga sin esperar la cola
+    IMG -> WM : descarga la imagen
+    WM --> IMG : imagen completa
+else entrega de los chunks
+    loop por cada chunk de la imagen
+        IMG -> Q : chunk
+        Q -> GW : chunk
+        GW -> C : chunk
+    end
+end
+
+note over IMG, Q
+  Si la cola está llena, solo espera la publicación:
+  la descarga sigue.
+end note
+
+@enduml
