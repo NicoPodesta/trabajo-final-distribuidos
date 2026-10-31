@@ -28,11 +28,11 @@ type ClientConfig struct {
 }
 
 type Client struct {
-	conn     net.Conn
-	sender   *Sender
-	receiver *Receiver
-	running  atomic.Bool
-	config   ClientConfig
+	conn           net.Conn
+	articleSender  *ArticleSender
+	resultsHandler *ResultsHandler
+	running        atomic.Bool
+	config         ClientConfig
 }
 
 func NewClient(config ClientConfig) (*Client, error) {
@@ -53,14 +53,16 @@ func NewClient(config ClientConfig) (*Client, error) {
 		return nil, fmt.Errorf("while initializing result writer: %w", err)
 	}
 
-	sender := NewSender(conn, config.InputDir)
-	receiver := NewReceiver(conn, writer)
+	socketWriter := external.NewWriter(conn)
+	socketReader := external.NewReader(conn)
+	articleSender := NewArticleSender(socketWriter, config.InputDir)
+	resultsHandler := NewResultsHandler(socketReader, socketWriter, writer)
 
 	client := &Client{
-		conn:     conn,
-		sender:   sender,
-		receiver: receiver,
-		config:   config,
+		conn:           conn,
+		articleSender:  articleSender,
+		resultsHandler: resultsHandler,
+		config:         config,
 	}
 	client.running.Store(true)
 	return client, nil
@@ -113,31 +115,31 @@ func (client *Client) Run() error {
 	go client.handleSignals(cancel)
 
 	ackChannel := make(chan struct{}, 1)
-	receiverErrorChannel := make(chan error, 1)
+	handlerErrorChannel := make(chan error, 1)
 
 	go func() {
-		recvErr := client.receiver.Receive(ctx, ackChannel)
-		receiverErrorChannel <- recvErr
-		if recvErr != nil {
+		handlerErr := client.resultsHandler.Handle(ctx, ackChannel)
+		handlerErrorChannel <- handlerErr
+		if handlerErr != nil {
 			cancel()
 			client.conn.Close()
 		}
 	}()
 
-	sendErr := client.sender.Send(ctx, ackChannel)
+	sendErr := client.articleSender.Send(ctx, ackChannel)
 	if sendErr != nil {
 		cancel()
 		client.conn.Close()
-		recvErr := <-receiverErrorChannel
+		handlerErr := <-handlerErrorChannel
 		if client.running.Load() {
-			return errors.Join(sendErr, recvErr)
+			return errors.Join(sendErr, handlerErr)
 		}
 		return nil
 	}
 
-	recvErr := <-receiverErrorChannel
-	if recvErr != nil && client.running.Load() {
-		return recvErr
+	handlerErr := <-handlerErrorChannel
+	if handlerErr != nil && client.running.Load() {
+		return handlerErr
 	}
 
 	return nil

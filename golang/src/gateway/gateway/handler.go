@@ -49,17 +49,36 @@ func (h *ClientHandler) Handle(conn net.Conn, shutdownChannel <-chan struct{}) {
 
 	slog.Info("Client registered", "clientID", clientID)
 
+	go func() {
+		select {
+		case <-shutdownChannel:
+			_ = conn.Close()
+		case <-session.doneChannel:
+		}
+	}()
+
 	reader := external.NewReader(conn)
 	received := 0
+	endOfRecordsReceived := false
+
 	for {
 		msgType, err := reader.ReadMsgType()
 		if err != nil {
-			slog.Debug("While reading message type from client", "clientID", clientID, "err", err)
+			select {
+			case <-session.doneChannel:
+				slog.Info("Client session completed successfully", "clientID", clientID)
+			default:
+				slog.Debug("While reading message type from client", "clientID", clientID, "err", err)
+			}
 			return
 		}
 
 		switch msgType {
 		case external.ArticleBatch:
+			if endOfRecordsReceived {
+				slog.Error("Unexpected ArticleBatch after EndOfRecords", "clientID", clientID)
+				return
+			}
 			count, err := h.handleArticleBatch(session, reader, clientID)
 			if err != nil {
 				slog.Error("While handling article batch message", "clientID", clientID, "err", err)
@@ -68,18 +87,20 @@ func (h *ClientHandler) Handle(conn net.Conn, shutdownChannel <-chan struct{}) {
 			received += count
 
 		case external.EndOfRecords:
+			if endOfRecordsReceived {
+				slog.Error("Duplicate EndOfRecords from client", "clientID", clientID)
+				return
+			}
+			endOfRecordsReceived = true
 			if err := h.handleEndOfRecords(session, clientID, received); err != nil {
 				slog.Error("While handling end of records message", "clientID", clientID, "err", err)
 				return
 			}
 
-			select {
-			case <-session.doneChannel:
-				slog.Info("Client session completed successfully", "clientID", clientID)
-			case <-shutdownChannel:
-				slog.Warn("Gateway shutting down while waiting for client results", "clientID", clientID)
+		case external.Ack:
+			if err := session.notifyAck(); err != nil {
+				slog.Warn("Received unexpected or extra ACK from client", "clientID", clientID, "err", err)
 			}
-			return
 
 		default:
 			slog.Error("Read unexpected message type from client", "clientID", clientID, "type", msgType)

@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -lt 2 || $# -gt 5 ]]; then
-  echo "Uso: $0 <archivo-salida> <cantidad-clientes> [cantidad-gateways] [cantidad-tokenizers] [cantidad-q4-wordcounters]" >&2
+if [[ $# -lt 1 || $# -gt 5 ]]; then
+  echo "Uso: $0 <archivo-salida> [cantidad-clientes] [cantidad-gateways] [cantidad-tokenizers] [cantidad-q4-wordcounters]" >&2
   exit 1
 fi
 
 output_file="$1"
-client_count="$2"
-gateway_count="${3:-1}"
-tokenizer_count="${4:-1}"
-q4_counter_count="${5:-1}"
+client_count="${2:-3}"
+gateway_count="${3:-3}"
+tokenizer_count="${4:-3}"
+q4_counter_count="${5:-3}"
 
 for val in "$client_count" "$gateway_count" "$tokenizer_count" "$q4_counter_count"; do
   if ! [[ "$val" =~ ^[0-9]+$ ]] || [[ "$val" -lt 1 ]]; then
@@ -175,7 +175,7 @@ YAML
     worker "q4_word_counter_${id}" q4wordcounter "Q4_WORD_COUNTER_ID=${id}" "TOKENIZER_AMOUNT=${tokenizer_count}"
   done
 
-  worker q4_top20_merger_0 q4top20merger "Q4_WORD_COUNTER_AMOUNT=${q4_counter_count}"
+  worker q4_top20_merger q4top20merger "Q4_WORD_COUNTER_AMOUNT=${q4_counter_count}"
   rabbitmq
 } > "$output_file"
 

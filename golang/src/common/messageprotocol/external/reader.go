@@ -188,6 +188,41 @@ func (r *Reader) ReadQ2Result() (*result.Q2Result, error) {
 	return &result.Q2Result{Name: name, Url: url, Image: image}, nil
 }
 
+func (r *Reader) ReadQ2ImageChunk() (*result.Q2ImageChunk, error) {
+	imageID, err := r.readString()
+	if err != nil {
+		return nil, err
+	}
+	seq, err := r.readUint32()
+	if err != nil {
+		return nil, err
+	}
+	last, err := r.readUint32()
+	if err != nil {
+		return nil, err
+	}
+	if last > 1 {
+		return nil, fmt.Errorf("invalid Q2 image chunk last flag: %d", last)
+	}
+
+	chunk := &result.Q2ImageChunk{ImageID: imageID, Seq: seq, Last: last == 1}
+	if seq == 0 {
+		if chunk.Name, err = r.readString(); err != nil {
+			return nil, err
+		}
+		if chunk.Url, err = r.readString(); err != nil {
+			return nil, err
+		}
+	}
+	if chunk.Bytes, err = r.readBytes(); err != nil {
+		return nil, err
+	}
+	if err := chunk.Validate(); err != nil {
+		return nil, err
+	}
+	return chunk, nil
+}
+
 func (r *Reader) ReadQ3Result() (*result.Q3Result, error) {
 	word, err := r.readString()
 	if err != nil {

@@ -53,19 +53,19 @@ type articleRow struct {
 	Abstract string `parquet:"abstract"`
 }
 
-type Sender struct {
+type ArticleSender struct {
 	writer   *external.Writer
 	inputDir string
 }
 
-func NewSender(conn io.Writer, inputDir string) *Sender {
-	return &Sender{
-		writer:   external.NewWriter(conn),
+func NewArticleSender(writer *external.Writer, inputDir string) *ArticleSender {
+	return &ArticleSender{
+		writer:   writer,
 		inputDir: inputDir,
 	}
 }
 
-func (s *Sender) Send(ctx context.Context, ackChannel <-chan struct{}) error {
+func (s *ArticleSender) Send(ctx context.Context, ackChannel <-chan struct{}) error {
 	total := 0
 	err := filepath.WalkDir(s.inputDir, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
@@ -101,7 +101,7 @@ func (s *Sender) Send(ctx context.Context, ackChannel <-chan struct{}) error {
 	return nil
 }
 
-func (s *Sender) sendFile(ctx context.Context, path string, ackChannel <-chan struct{}) (int, error) {
+func (s *ArticleSender) sendFile(ctx context.Context, path string, ackChannel <-chan struct{}) (int, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		slog.Debug("Error while opening input file", "err", err)

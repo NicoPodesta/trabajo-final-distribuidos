@@ -22,7 +22,7 @@ type q2PartialImage struct {
 	url     string
 }
 
-// El Receiver es el único que usa estos campos
+// El ResultsHandler es el único que usa estos campos
 type q2ImageWriter struct {
 	directory string
 	csvFile   *os.File
