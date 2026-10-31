@@ -110,9 +110,24 @@ cd golang && make up
 
 ## Consultas
 
-- Se puede utilizar la libreria externa parquet-go?
-- Se puede utilizar la libreria externa `github.com/bbalet/stopwords` para las stopwords?
-- Es necesario mandar los acks por aplicación en la ida? (Se adoptó envío y ack por batches de 100 artículos).
-- Consultar al profe el tamaño de los chunks Q2, tamaño maximo de imagen para descargar, como tratar las imagenes vacias
+- Se puede utilizar la libreria externa parquet-go? -> solo para la parte de lectura
+- json?, busquemos la eficiencia. serializacion de json -> optimizar con respecto a espacios, overhead
+- Se puede utilizar la libreria externa `github.com/bbalet/stopwords` para las stopwords? -> Si, adaptando el notebook, adaptar en notebook 'i acento'
+- Es necesario mandar los acks por aplicación en la ida? (Se adoptó envío y ack por batches de 100 artículos). -> TCP puede descartar al llenarse los buffers,
+recibir no es lo mismo que procesar ACKs distintos capa de transporte(tcp) vs aplicacion.
+- Consultar al profe el tamaño de los chunks Q2, tamaño maximo de imagen para descargar, como tratar las imagenes vacias -> No limite de tañamo,
+limitar reintentos, si agregamos url e bytes de imagen para poder verificar (no skip de registro en q2_results.csv)
 - Consultar al profe la salida Q2 prevista: un archivo por imagen y CSV con `image_id,name,url,file`.
 - Para q3 cual es el tamaño minimo de palabras que deberiamos aceptar
+- El top se ordena por count descendente y desempata por palabra ascendent
+- Graficos
+- Prefetch en middleware en 1 para esta entrega OK. Mejora grande, seria intenresante poner mas ej: 20, resolviendo los problemas de coordinacion asociados
+
+## Proximos pasos
+
+- Entrega virtual, 20:30 hs - 45 mins
+- Presenten el sistema, presenten el sistema a nivel arquitectura, respuestas del sistema, 3 clientes, 3 replicas en todo minimo, empezar a procesar antes de lanzar
+Si quieren meter mas mejor, pero mejor procesar mas DATA, corrida en 20 minutos standarizada. 
+- Scripts para comparar los resultados de notebook para realizar la verificacion
+- Presentacion no a nivel codigo, sino convenciendo que esto funciona. 
+- No es una evalucion oral de la materia, sino del TP
