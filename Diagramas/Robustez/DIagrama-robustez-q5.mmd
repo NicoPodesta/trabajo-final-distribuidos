@@ -1,6 +1,7 @@
 %% Q5 · promedio histórico y artículos recientes
 %% Fuente semántica; SVG y PNG usan una distribución fija para conservar legibilidad.
-%% Cierres: notificación a todos los participantes después de procesar sus datos.
+%% Réplicas: se conserva el diseño previsto; la coordinación de cierre aún tiene pendientes.
+%% Parser, TCP Handler y Collector pertenecen al mismo proceso Gateway; se muestran en dos vistas.
 flowchart LR
     subgraph PARTIAL["Q5 Partial · por réplica"]
     Q5A(("Q5 Avg<br/>Partial · ×N"))
@@ -12,20 +13,22 @@ flowchart LR
     E5(("Promedio y fin<br/>por client_id<br/>memoria"))
     end
     subgraph RETURN["Retorno al cliente"]
-    RQ@{ shape: h-cyl, label: "results[g]<br/>Q5: url, n_words<br/>datos / fin por worker" }
-    GW(("Gateway<br/>Collector · ×G"))
-    RESPQ@{ shape: h-cyl, label: "responses[h]<br/>connection_id, client_id<br/>query_id, payload / fin" }
-    RX(("TCP Handler<br/>×H<br/>client_id → socket"))
+    RQ@{ shape: h-cyl, label: "results_&lt;gatewayID&gt;<br/>Q5: url, n_words<br/>type, client_id, query_id" }
+    subgraph GATEWAY["Gateway ×G · retorno; mismo proceso que la proyección"]
+    GW(("Gateway<br/>Collector"))
+    SESSION(("Sesiones<br/>client_id → socket<br/>EOF por consulta"))
+    RX(("TCP Handler<br/>del Gateway<br/>client_id → socket"))
     API(("Socket<br/>TCP/IP"))
     end
-    P(("Parser /<br/>Projector<br/>×N"))
-    TQ@{ shape: h-cyl, label: "abstracts<br/>url, lang, year, abstract<br/>1 cola · N consumidores" }
+    end
+    P(("Parser /<br/>Projector<br/>en Gateway ×G"))
+    TQ@{ shape: h-cyl, label: "abstracts<br/>url, language,<br/>date_modified, abstract<br/>1 cola · N consumidores" }
     T(("Tokenizer<br/>×N"))
     OLDQ@{ shape: h-cyl, label: "historical_counts<br/>n_words · year ≤ 2020<br/>1 cola · N consumidores" }
-    PARTQ@{ shape: h-cyl, label: "avg_partials<br/>worker_id, suma, cantidad<br/>1 cola · 1 consumidor" }
+    PARTQ@{ shape: h-cyl, label: "avg_partials<br/>sum, count<br/>1 cola · 1 consumidor" }
     Q5G(("Q5 Avg<br/>Aggregator · ×1"))
-    EX["Exchange<br/>del promedio"]
-    AQ@{ shape: h-cyl, label: "promedio<br/>client_id, valor<br/>1 cola por Q5 Filter" }
+    EX["Exchange<br/>q5_average · direct"]
+    AQ@{ shape: h-cyl, label: "promedio<br/>client_id, valor entero<br/>1 cola por Q5 Filter" }
     CQ@{ shape: h-cyl, label: "recent_articles<br/>url, n_words · year ≥ 2021<br/>1 cola · N consumidores" }
     C(("Client<br/>destinatario"))
     P --> TQ
@@ -43,9 +46,10 @@ flowchart LR
     Q5F <--> F5
     Q5F --- E5
     RQ --> GW
-    GW --> RESPQ
-    RESPQ --> RX
-    RX --> API
+    GW --- SESSION
+    RX --- SESSION
+    RX --- API
+    GW -->|escritura por sesión| API
     API --> C
     Q5F --> RQ
     classDef control fill:#edf7f3,stroke:#377964;
@@ -53,9 +57,10 @@ flowchart LR
     classDef boundary fill:#eaf3fd,stroke:#397bac;
     class API boundary;
     classDef entity fill:#fff5db,stroke:#b6903e;
+    class SESSION entity;
     class SUM,E5 entity;
     classDef queue fill:#f0f1f9,stroke:#737d9e;
-    class TQ,OLDQ,PARTQ,AQ,CQ,RQ,RESPQ queue;
+    class TQ,OLDQ,PARTQ,AQ,CQ,RQ queue;
     classDef exchange fill:#f0f1f9,stroke:#737d9e;
     class EX exchange;
     classDef file fill:#fff7e9,stroke:#ad8242;
@@ -63,4 +68,4 @@ flowchart LR
     classDef actor fill:white,stroke:#526579;
 %% Cantidad de palabras: n_words es la cantidad de words distintas del abstract, sin stopwords. Se usa para calcular el promedio histórico y para comparar los artículos recientes.
 %% Exchange del promedio: Aggregator publica el promedio en el exchange. El exchange manda una copia a la cola de cada filtro. Los candidatos se reparten; el promedio llega a todos.
-%% Cuándo termina: Cada filtro espera el promedio y el fin de sus dos entradas. Revisa todos sus candidatos, envía los resultados y avisa que terminó. Gateway espera a todos los filtros.
+%% Cuándo termina: Cada filtro espera el promedio y el fin de artículos recientes. Revisa todos sus candidatos, envía los resultados y avisa que terminó. En el diseño se espera a todos los filtros; hoy Gateway registra EOF por consulta.

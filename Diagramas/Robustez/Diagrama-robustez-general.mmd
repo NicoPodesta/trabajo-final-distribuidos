@@ -1,7 +1,7 @@
-%% N >= 1 clients; H >= 1 TCP Handlers; G >= 1 Gateways. Requests es compartida; sólo el recolector de resultados queda fijo por sesión.
+%% N >= 1 clients; G >= 1 Gateways. Cada sesión mantiene su Gateway; sus componentes internos comparten proceso.
 %% Robustez 1. Distribución visual fija en render-robustness.cjs.
 %% Q1 arriba; Q5 abajo. Los recuadros agrupan controles y recursos propios.
-%% TCP Handler conserva sockets; Gateway consume requests y ejecuta Result Collector.
+%% Handler recibe y proyecta; Collector escribe resultados por el socket de la sesión dentro del mismo Gateway.
 %% N = workers por etapa; K = particiones de cada consulta; estado por client_id.
 flowchart LR
     FILE1["Archivo de entrada<br/>artículos"]
@@ -10,38 +10,37 @@ flowchart LR
     CN(("Client N<br/>lee y envía"))
     WM["Wikimedia"]
     subgraph SYS["Sistema de análisis"]
+    LB(("Load Balancer<br/>round-robin<br/>asigna Gateway"))
+        subgraph GATEWAY_PROCESS["Gateway ×G · un proceso por réplica"]
         subgraph TCP_SCOPE["Recepción TCP"]
             API(("Socket TCP/IP"))
-            RX(("TCP Handler<br/>×H"))
-            CONN(("Conexiones<br/>client_id ↔ socket<br/>connection_id<br/>memoria"))
+            RX(("TCP Handler"))
+            CONN(("Conexiones<br/>client_id ↔ socket<br/>memoria de sesión"))
         end
-        REQQ@{ shape: h-cyl, label: "requests<br/>open, batches y EOF<br/>1 cola · G consumidores" }
-        RESPQ@{ shape: h-cyl, label: "responses<br/>resultados y fin<br/>1 por TCP Handler" }
         subgraph GATEWAY_SCOPE["Gateway"]
-            GW(("Gateway<br/>Result Collector<br/>×G"))
+            GW(("Gateway<br/>Result Collector"))
             SESSION(("Sesiones<br/>resultados y fin<br/>destino · memoria"))
         end
-        PQ@{ shape: h-cyl, label: "articles<br/>batches de artículos<br/>1 cola · N workers" }
-        P(("Parser / Projector<br/>×N"))
-        Q1Q@{ shape: h-cyl, label: "article_dates<br/>lang, year, url, date<br/>1 cola · N workers" }
+        P(("Parser / Projector<br/>dentro del Handler"))
+        end
+        Q1Q@{ shape: h-cyl, label: "article_dates<br/>language, url, date_modified<br/>1 cola · N workers" }
         Q1(("Q1 Filter<br/>×N"))
         Q2Q@{ shape: h-cyl, label: "article_sections<br/>datos de artículo y sections<br/>1 cola · N workers" }
         Q2(("Q2 Filter<br/>×N"))
         IQ@{ shape: h-cyl, label: "image_downloads<br/>name, url, image_ref<br/>1 cola · N workers" }
         subgraph IMAGE_SCOPE["Image Fetcher · por worker"]
             IMG(("Image Fetcher<br/>×N"))
-            IF["Resultados Q2<br/>listos para enviar"]
-            SEND(("Envío<br/>hilo del worker"))
-            HTTP(("HTTP<br/>Wikimedia"))
+            IF["Temporal por imagen<br/>descarga completa"]
+            HTTP(("HTTP(S)<br/>image_ref"))
         end
-        TQ@{ shape: h-cyl, label: "abstracts<br/>url, lang, year, abstract<br/>1 cola · N workers" }
+        TQ@{ shape: h-cyl, label: "abstracts<br/>url, language,<br/>date_modified, abstract<br/>1 cola · N workers" }
         T(("Tokenizer<br/>×N"))
-        VQ@{ shape: h-cyl, label: "vocabulary[i]<br/>word, lang<br/>K colas · hash(word)" }
+        VQ@{ shape: h-cyl, label: "vocabulary[i]<br/>word, language<br/>K colas · hash(word)" }
         subgraph Q3_SCOPE["Q3 · por partición"]
             Q3(("Q3 Vocabulary Join<br/>×K"))
             VSTATE(("Presencias<br/>word → en / fr<br/>enviado: bool<br/>memoria<br/>por client_id"))
         end
-        WQ@{ shape: h-cyl, label: "word_counts[i]<br/>word<br/>K colas · hash(word)" }
+        WQ@{ shape: h-cyl, label: "word_counts_&lt;i&gt;<br/>word, count<br/>K colas · hash(word)" }
         subgraph Q4_SCOPE["Q4 Counter · por partición"]
             Q4C(("Q4 Word Counter<br/>×K"))
             CF["estado_q4/segmentos<br/>word y cantidad"]
@@ -53,9 +52,9 @@ flowchart LR
             Q5A(("Q5 Avg Partial<br/>×N"))
             SUM(("Suma y cantidad<br/>por client_id<br/>memoria"))
         end
-        PARTQ@{ shape: h-cyl, label: "avg_partials<br/>suma, cantidad<br/>1 cola · 1 worker" }
+        PARTQ@{ shape: h-cyl, label: "avg_partials<br/>sum, count<br/>1 cola · 1 worker" }
         Q5G(("Q5 Avg Aggregator<br/>×1"))
-        EX["Exchange<br/>fanout"]
+        EX["Exchange<br/>q5_average · direct"]
         AQ@{ shape: h-cyl, label: "promedio<br/>client_id, valor<br/>1 por Q5 Filter" }
         CQ@{ shape: h-cyl, label: "recent_articles<br/>url, n_words; year ≥ 2021<br/>1 cola · N workers" }
         subgraph FILTER_SCOPE["Q5 Filter · por worker"]
@@ -63,16 +62,12 @@ flowchart LR
             F5["candidatos_q5/*.jsonl<br/>url y n_words"]
             U(("Promedio y fin<br/>por client_id<br/>memoria"))
         end
-        RQ@{ shape: h-cyl, label: "results<br/>client_id, query_id<br/>1 por Gateway" }
+        RQ@{ shape: h-cyl, label: "results_&lt;gatewayID&gt;<br/>type, client_id, query_id<br/>1 por Gateway" }
         API <--> RX
         RX --- CONN
-        RX --> REQQ
-        REQQ --> GW
-        GW --> RESPQ
-        RESPQ --> RX
+        RX --> P
+        GW --> API
         GW --- SESSION
-        GW --> PQ
-        PQ --> P
         P --> Q1Q
         Q1Q --> Q1
         P --> Q2Q
@@ -81,8 +76,7 @@ flowchart LR
         TQ --> T
         Q2 --> IQ
         IQ --> IMG
-        IMG --> IF
-        IF --> SEND
+        IMG <--> IF
         IMG <--> HTTP
         T --> VQ
         VQ --> Q3
@@ -105,7 +99,7 @@ flowchart LR
         Q5F <--> F5
         Q5F --- U
         Q1 --> RQ
-        SEND --> RQ
+        IMG -->|chunks| RQ
         Q3 --> RQ
         Q4M --> RQ
         Q5F --> RQ
@@ -113,8 +107,10 @@ flowchart LR
     end
     FILE1 --> C
     FILEC --> CN
-    C <--> API
-    CN <--> API
+    C <-->|1. conexión inicial / dirección del Gateway| LB
+    C <-->|2. conexión TCP directa| API
+    CN <-->|1. conexión inicial / dirección del Gateway| LB
+    CN <-->|2. conexión TCP directa| API
     HTTP <--> WM
     classDef actor fill:#fff,stroke:#526477,color:#24384a;
     classDef boundary fill:#e8f1fc,stroke:#3774aa,color:#214966;
@@ -125,8 +121,14 @@ flowchart LR
     classDef exchange fill:#eef0f8,stroke:#707796,color:#3c4365;
     class WM actor;
     class API,HTTP boundary;
-    class C,CN,RX,GW,P,T,Q1,Q2,IMG,SEND,Q3,Q4C,Q4M,Q5A,Q5G,Q5F control;
+    class LB,C,CN,RX,GW,P,T,Q1,Q2,IMG,Q3,Q4C,Q4M,Q5A,Q5G,Q5F control;
     class CONN,SESSION,VSTATE,SUM,U entity;
     class IF,CF,F5,FILE1,FILEC file;
-    class REQQ,RESPQ,PQ,Q1Q,Q2Q,TQ,IQ,VQ,WQ,TOPQ,OLDQ,PARTQ,AQ,CQ,RQ queue;
+    class Q1Q,Q2Q,TQ,IQ,VQ,WQ,TOPQ,OLDQ,PARTQ,AQ,CQ,RQ queue;
     class EX exchange;
+%% Gateway: conserva Handler, proyección y Collector dentro de un mismo proceso; retorno directo por la sesión.
+%% Q1: todavía falta coordinar el cierre entre réplicas. Gateway actual registra EOF por consulta.
+%% Q2: descarga completa al temporal antes de publicar chunks desde el Fetcher; después cierra y borra el archivo.
+%% Q4: se conservan los segmentos del diseño; actualmente los conteos están en memoria.
+
+%% Asignación inicial: El cliente se conecta al Load Balancer, recibe GatewayAssignment con la dirección elegida por round-robin y cierra esa conexión. Luego abre la sesión TCP directamente con el Gateway; artículos y resultados no pasan por el balanceador.

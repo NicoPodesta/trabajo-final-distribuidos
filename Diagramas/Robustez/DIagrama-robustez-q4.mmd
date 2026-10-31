@@ -1,23 +1,26 @@
 %% Q4 · conteos por word y top 20 global
 %% Fuente semántica; SVG y PNG usan una distribución fija para conservar legibilidad.
-%% Cierres: notificación a todos los participantes después de procesar sus datos.
+%% Réplicas: se conserva el diseño previsto; la coordinación de cierre aún tiene pendientes.
+%% Parser, TCP Handler y Collector pertenecen al mismo proceso Gateway; se muestran en dos vistas.
 flowchart LR
     subgraph COUNTER["Q4 · por partición"]
     Q4C(("Q4 Word<br/>Counter · ×K"))
     F4["estado_q4/segmentos<br/>word, count"]
     end
     subgraph RETURN["Retorno al cliente"]
-    RQ@{ shape: h-cyl, label: "results[g]<br/>Q4: [(word, count)]<br/>datos / fin por worker" }
-    GW(("Gateway<br/>Collector · ×G"))
-    RESPQ@{ shape: h-cyl, label: "responses[h]<br/>connection_id, client_id<br/>query_id, payload / fin" }
-    RX(("TCP Handler<br/>×H<br/>client_id → socket"))
+    RQ@{ shape: h-cyl, label: "results_&lt;gatewayID&gt;<br/>Q4: [(word, count)]<br/>type, client_id, query_id" }
+    subgraph GATEWAY["Gateway ×G · retorno; mismo proceso que la proyección"]
+    GW(("Gateway<br/>Collector"))
+    SESSION(("Sesiones<br/>client_id → socket<br/>EOF por consulta"))
+    RX(("TCP Handler<br/>del Gateway<br/>client_id → socket"))
     API(("Socket<br/>TCP/IP"))
     end
-    P(("Parser /<br/>Projector<br/>×N"))
-    TQ@{ shape: h-cyl, label: "abstracts<br/>url, lang, year, abstract<br/>1 cola · N consumidores" }
+    end
+    P(("Parser /<br/>Projector<br/>en Gateway ×G"))
+    TQ@{ shape: h-cyl, label: "abstracts<br/>url, language,<br/>date_modified, abstract<br/>1 cola · N consumidores" }
     T(("Tokenizer<br/>preagrega por lote<br/>×N"))
-    WQ@{ shape: h-cyl, label: "word_counts[i]<br/>(word, k) por lote<br/>K colas · hash(word) % K" }
-    TOPQ@{ shape: h-cyl, label: "partial_top20<br/>partition_id, [(word, count)]<br/>hasta 20 por partición" }
+    WQ@{ shape: h-cyl, label: "word_counts_&lt;i&gt;<br/>word, count por lote<br/>K colas · hash(word) % K" }
+    TOPQ@{ shape: h-cyl, label: "partial_top20<br/>[(word, count)]<br/>hasta 20 por partición" }
     Q4M(("Q4 Top 20<br/>Merger · ×1"))
     C(("Client<br/>destinatario"))
     P --> TQ
@@ -28,9 +31,10 @@ flowchart LR
     Q4C --> TOPQ
     TOPQ --> Q4M
     RQ --> GW
-    GW --> RESPQ
-    RESPQ --> RX
-    RX --> API
+    GW --- SESSION
+    RX --- SESSION
+    RX --- API
+    GW -->|escritura por sesión| API
     API --> C
     Q4M --> RQ
     classDef control fill:#edf7f3,stroke:#377964;
@@ -38,13 +42,14 @@ flowchart LR
     classDef boundary fill:#eaf3fd,stroke:#397bac;
     class API boundary;
     classDef entity fill:#fff5db,stroke:#b6903e;
+    class SESSION entity;
     classDef queue fill:#f0f1f9,stroke:#737d9e;
-    class TQ,WQ,TOPQ,RQ,RESPQ queue;
+    class TQ,WQ,TOPQ,RQ queue;
     classDef exchange fill:#f0f1f9,stroke:#737d9e;
     classDef file fill:#fff7e9,stroke:#ad8242;
     class F4 file;
     classDef actor fill:white,stroke:#526579;
-%% Conteos preagregados por lote: Tokenizer emite (word, k) por cliente y lote: k cuenta abstracts, no repeticiones. Los lotes aportan incrementos disjuntos. Counter suma k por palabra y combina sus segmentos antes de elegir el top 20 local.
+%% Conteos preagregados por lote: Tokenizer emite (word, k) por cliente y lote: k cuenta abstracts, no repeticiones. Los lotes aportan incrementos disjuntos. Counter suma k por palabra. Se conservan los segmentos del diseño; actualmente los conteos están en memoria.
 %% Top global: Merger recibe el top 20 de cada partición y elige las 20 words más frecuentes del conjunto. Todas las particiones usan el mismo desempate.
-%% Cuándo termina: Merger espera la lista de cada partición, también una lista vacía si no recibió words. Después envía el top global y el fin de Q4.
+%% Cuándo termina: Merger espera la lista de cada partición, también su EOF si no recibió words. Después envía el top global y el fin de Q4.
 %% k cuenta abstracts del lote que contienen word; cada abstract aporta como máximo 1. Counter suma k, no 1 por mensaje.
