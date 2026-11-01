@@ -74,8 +74,16 @@ func (filter *Filter) Run() error {
 			slog.Error("While closing results publisher", "err", err)
 		}
 	}()
-	defer filter.recentArticlesQueue.Close()
-	defer filter.averageExchange.Close()
+	defer func() {
+		if err := filter.recentArticlesQueue.Close(); err != nil {
+			slog.Error("While closing recent articles queue", "err", err)
+		}
+	}()
+	defer func() {
+		if err := filter.averageExchange.Close(); err != nil {
+			slog.Error("While closing average exchange", "err", err)
+		}
+	}()
 	defer func() {
 		if err := filter.broadcaster.Close(); err != nil {
 			slog.Error("While closing EOF broadcaster", "err", err)
