@@ -91,7 +91,11 @@ func NewTokenizer(config TokenizerConfig) (tokenizer *Tokenizer, err error) {
 
 func (tokenizer *Tokenizer) Run() error {
 	defer tokenizer.conns.Close()
-	defer tokenizer.broadcaster.Close()
+	defer func() {
+		if err := tokenizer.broadcaster.Close(); err != nil {
+			slog.Error("While closing EOF broadcaster", "err", err)
+		}
+	}()
 
 	shutdown.OnSignal(func() {
 		_ = tokenizer.abstractsQueue.StopConsuming()
