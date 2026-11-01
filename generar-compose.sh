@@ -186,4 +186,4 @@ YAML
   rabbitmq
 } > "$output_file"
 
-echo "Docker Compose generado en $output_file con $client_count cliente(s), $gateway_count gateway(s), $tokenizer_count tokenizer(s) y $q4_counter_count q4-counter(s)."
+echo "Docker Compose generado en $output_file con $client_count cliente(s), $gateway_count gateway(s), $tokenizer_count tokenizer(s), $q4_counter_count q4-counter(s), $q5_avg_partial_count q5-avgpartial(s) y $q5_filter_count q5-filter(s)."
