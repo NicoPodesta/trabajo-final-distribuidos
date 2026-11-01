@@ -1,28 +1,28 @@
-package q5filter
+package pending
 
 import "trabajo-final-distribuidos/common/messageprotocol/inner"
 
-type memoryPending struct {
+type Memory struct {
 	articlesByClient map[string][]inner.RecentArticleItem
 }
 
-func newMemoryPending() *memoryPending {
-	return &memoryPending{articlesByClient: make(map[string][]inner.RecentArticleItem)}
+func NewMemory() *Memory {
+	return &Memory{articlesByClient: make(map[string][]inner.RecentArticleItem)}
 }
 
-func (store *memoryPending) Append(clientID string, articles []inner.RecentArticleItem) {
+func (store *Memory) Append(clientID string, articles []inner.RecentArticleItem) {
 	if len(articles) == 0 {
 		return
 	}
 	store.articlesByClient[clientID] = append(store.articlesByClient[clientID], articles...)
 }
 
-func (store *memoryPending) Take(clientID string) []inner.RecentArticleItem {
+func (store *Memory) Take(clientID string) []inner.RecentArticleItem {
 	articles := store.articlesByClient[clientID]
 	delete(store.articlesByClient, clientID)
 	return articles
 }
 
-func (store *memoryPending) Count(clientID string) int {
+func (store *Memory) Count(clientID string) int {
 	return len(store.articlesByClient[clientID])
 }

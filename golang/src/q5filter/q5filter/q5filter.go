@@ -10,6 +10,7 @@ import (
 	"trabajo-final-distribuidos/common/middleware"
 	"trabajo-final-distribuidos/common/resultpublisher"
 	"trabajo-final-distribuidos/common/shutdown"
+	"trabajo-final-distribuidos/q5filter/pending"
 )
 
 const (
@@ -63,7 +64,7 @@ func NewFilter(config FilterConfig) (*Filter, error) {
 		broadcaster:         broadcaster,
 		resultsPublisher:    resultpublisher.New(settings),
 		clients:             make(map[string]*clientState),
-		pending:             newMemoryPending(),
+		pending:             pending.NewMemory(),
 		eofs:                eofcounter.New(config.TokenizerAmount),
 	}, nil
 }
