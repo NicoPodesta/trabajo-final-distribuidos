@@ -51,11 +51,7 @@ func NewAvgAggregator(config AvgAggregatorConfig) (*AvgAggregator, error) {
 		return nil, err
 	}
 
-	filterKeys := make([]string, config.Q5FilterAmount)
-	for filterID := range filterKeys {
-		filterKeys[filterID] = inner.Q5FilterRoutingKey(filterID)
-	}
-	averageExchange, err := middleware.CreateExchangeMiddleware(inner.Q5AverageExchange, filterKeys, settings)
+	averageExchange, err := middleware.CreateExchangeMiddleware(inner.Q5AverageExchange, inner.Q5FilterRoutingKeys(config.Q5FilterAmount), settings)
 	if err != nil {
 		_ = avgPartialsQueue.Close()
 		return nil, err
