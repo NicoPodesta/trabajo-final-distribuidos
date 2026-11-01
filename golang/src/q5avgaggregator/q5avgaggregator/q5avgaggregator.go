@@ -3,6 +3,7 @@ package q5avgaggregator
 import (
 	"log/slog"
 
+	"trabajo-final-distribuidos/common/eofcounter"
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/common/middleware"
 	"trabajo-final-distribuidos/common/shutdown"
@@ -25,9 +26,8 @@ type totals struct {
 type AvgAggregator struct {
 	avgPartialsQueue middleware.Middleware
 	averageExchange  middleware.Middleware
-	avgPartialAmount int
 	totalsByClient   map[string]*totals
-	eofCountByClient map[string]int
+	eofs             *eofcounter.Counter
 }
 
 func NewAvgAggregator(config AvgAggregatorConfig) (*AvgAggregator, error) {
@@ -50,15 +50,22 @@ func NewAvgAggregator(config AvgAggregatorConfig) (*AvgAggregator, error) {
 	return &AvgAggregator{
 		avgPartialsQueue: avgPartialsQueue,
 		averageExchange:  averageExchange,
-		avgPartialAmount: config.Q5AvgPartialAmount,
 		totalsByClient:   make(map[string]*totals),
-		eofCountByClient: make(map[string]int),
+		eofs:             eofcounter.New(config.Q5AvgPartialAmount),
 	}, nil
 }
 
 func (aggregator *AvgAggregator) Run() error {
-	defer aggregator.avgPartialsQueue.Close()
-	defer aggregator.averageExchange.Close()
+	defer func() {
+		if err := aggregator.avgPartialsQueue.Close(); err != nil {
+			slog.Error("While closing avg partials queue", "err", err)
+		}
+	}()
+	defer func() {
+		if err := aggregator.averageExchange.Close(); err != nil {
+			slog.Error("While closing average exchange", "err", err)
+		}
+	}()
 
 	shutdown.OnSignal(func() { _ = aggregator.avgPartialsQueue.StopConsuming() })
 	slog.Info("Consuming avg partials from RabbitMQ...", "queue", avgPartialsQueueName)
@@ -98,14 +105,12 @@ func (aggregator *AvgAggregator) addPartials(clientID string, records []inner.Av
 }
 
 func (aggregator *AvgAggregator) handleEndOfPartials(clientID string) error {
-	aggregator.eofCountByClient[clientID]++
-	if aggregator.eofCountByClient[clientID] < aggregator.avgPartialAmount {
+	if !aggregator.eofs.Add(clientID) {
 		return nil
 	}
 
 	clientTotals := aggregator.totalsByClient[clientID]
 	delete(aggregator.totalsByClient, clientID)
-	delete(aggregator.eofCountByClient, clientID)
 
 	var average uint64
 	if clientTotals == nil || clientTotals.count == 0 {
