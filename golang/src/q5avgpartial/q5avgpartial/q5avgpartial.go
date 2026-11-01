@@ -2,7 +2,9 @@ package q5avgpartial
 
 import (
 	"log/slog"
+	"sync"
 
+	"trabajo-final-distribuidos/common/eofbroadcaster"
 	"trabajo-final-distribuidos/common/eofcounter"
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/common/middleware"
@@ -12,12 +14,15 @@ import (
 const (
 	historicalCountsQueueName = "historical_counts"
 	avgPartialsQueueName      = "avg_partials"
+	controlExchangeName       = "q5_avg_partial_control"
 )
 
 type AvgPartialConfig struct {
-	MOMHost         string
-	MOMPort         int
-	TokenizerAmount int
+	MOMHost          string
+	MOMPort          int
+	TokenizerAmount  int
+	AvgPartialID     int
+	AvgPartialAmount int
 }
 
 type totals struct {
@@ -29,6 +34,8 @@ type AvgPartial struct {
 	conns                 *middleware.Connections
 	historicalCountsQueue middleware.Middleware
 	avgPartialsQueue      middleware.Middleware
+	broadcaster           *eofbroadcaster.Broadcaster
+	mu                    sync.Mutex
 	totalsByClient        map[string]*totals
 	eofs                  *eofcounter.Counter
 }
@@ -47,10 +54,17 @@ func NewAvgPartial(config AvgPartialConfig) (*AvgPartial, error) {
 		return nil, err
 	}
 
+	broadcaster, err := eofbroadcaster.New(controlExchangeName, config.AvgPartialID, config.AvgPartialAmount, conns.Settings)
+	if err != nil {
+		conns.Close()
+		return nil, err
+	}
+
 	return &AvgPartial{
 		conns:                 conns,
 		historicalCountsQueue: historicalCountsQueue,
 		avgPartialsQueue:      avgPartialsQueue,
+		broadcaster:           broadcaster,
 		totalsByClient:        make(map[string]*totals),
 		eofs:                  eofcounter.New(config.TokenizerAmount),
 	}, nil
@@ -58,8 +72,27 @@ func NewAvgPartial(config AvgPartialConfig) (*AvgPartial, error) {
 
 func (partial *AvgPartial) Run() error {
 	defer partial.conns.Close()
+	defer func() {
+		if err := partial.broadcaster.Close(); err != nil {
+			slog.Error("While closing EOF broadcaster", "err", err)
+		}
+	}()
 
-	shutdown.OnSignal(func() { _ = partial.historicalCountsQueue.StopConsuming() })
+	shutdown.OnSignal(func() {
+		_ = partial.historicalCountsQueue.StopConsuming()
+		_ = partial.broadcaster.Stop()
+	})
+
+	go func() {
+		if err := partial.broadcaster.Start(func(clientID string) error {
+			partial.mu.Lock()
+			defer partial.mu.Unlock()
+			return partial.handleEndOfInput(clientID)
+		}); err != nil {
+			slog.Error("Control consumer stopped with error", "err", err)
+		}
+	}()
+
 	slog.Info("Consuming historical counts from RabbitMQ...", "queue", historicalCountsQueueName)
 	return partial.historicalCountsQueue.StartConsuming(func(msg middleware.Message, ack func(), nack func()) {
 		if err := partial.handleMessage(msg); err != nil {
@@ -76,9 +109,11 @@ func (partial *AvgPartial) handleMessage(msg middleware.Message) error {
 	}
 
 	if historicalCountsMsg.IsEOF() {
-		return partial.handleEndOfInput(historicalCountsMsg.ClientID)
+		return partial.broadcaster.Broadcast(historicalCountsMsg.ClientID)
 	}
 
+	partial.mu.Lock()
+	defer partial.mu.Unlock()
 	partial.addCounts(historicalCountsMsg.ClientID, historicalCountsMsg.Records)
 	return nil
 }

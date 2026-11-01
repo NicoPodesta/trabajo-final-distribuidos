@@ -4,16 +4,16 @@
 
 Los datos de cada cliente van en `input/client_N/` (archivos `.parquet`) y sus resultados quedan en `output/client_N/`.
 
-El `docker-compose.yaml` se genera con `generar-compose.sh`, que recibe el archivo de salida, la cantidad de clientes y, opcionalmente, las cantidades de gateways, tokenizers y contadores de Q4 (por defecto 1 cada una):
+El `docker-compose.yaml` se genera con `generar-compose.sh`, que recibe el archivo de salida, la cantidad de clientes y, opcionalmente, las cantidades de gateways, tokenizers, contadores de Q4 y Avg Partial de Q5 (por defecto 3 cada una, salvo Avg Partial que es 1):
 
 ```bash
-./generar-compose.sh <archivo-salida> <clientes> [gateways] [tokenizers] [q4-wordcounters]
+./generar-compose.sh <archivo-salida> <clientes> [gateways] [tokenizers] [q4-wordcounters] [q5-avgpartials]
 ```
 
-Por ejemplo, con 2 clientes, 2 gateways, 3 tokenizers y 2 contadores de Q4:
+Por ejemplo, con 2 clientes, 2 gateways, 3 tokenizers, 2 contadores de Q4 y 2 Avg Partial de Q5:
 
 ```bash
-./generar-compose.sh golang/docker-compose.yaml 2 2 3 2
+./generar-compose.sh golang/docker-compose.yaml 2 2 3 2 2
 cd golang && make up
 ```
 

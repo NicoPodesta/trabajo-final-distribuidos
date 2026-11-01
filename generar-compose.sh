@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -lt 1 || $# -gt 5 ]]; then
-  echo "Uso: $0 <archivo-salida> [cantidad-clientes] [cantidad-gateways] [cantidad-tokenizers] [cantidad-q4-wordcounters]" >&2
+if [[ $# -lt 1 || $# -gt 6 ]]; then
+  echo "Uso: $0 <archivo-salida> [cantidad-clientes] [cantidad-gateways] [cantidad-tokenizers] [cantidad-q4-wordcounters] [cantidad-q5-avgpartials]" >&2
   exit 1
 fi
 
@@ -11,8 +11,9 @@ client_count="${2:-3}"
 gateway_count="${3:-3}"
 tokenizer_count="${4:-3}"
 q4_counter_count="${5:-3}"
+q5_avg_partial_count="${6:-1}"
 
-for val in "$client_count" "$gateway_count" "$tokenizer_count" "$q4_counter_count"; do
+for val in "$client_count" "$gateway_count" "$tokenizer_count" "$q4_counter_count" "$q5_avg_partial_count"; do
   if ! [[ "$val" =~ ^[0-9]+$ ]] || [[ "$val" -lt 1 ]]; then
     echo "Error: los conteos deben ser enteros positivos" >&2
     exit 1
@@ -167,9 +168,11 @@ YAML
   done
 
   worker q3_vocabulary_join_0 q3vocabularyjoin "TOKENIZER_AMOUNT=${tokenizer_count}"
-  worker q5_avg_partial_0 q5avgpartial "TOKENIZER_AMOUNT=${tokenizer_count}"
+  for id in $(seq 0 $((q5_avg_partial_count - 1))); do
+    worker "q5_avg_partial_${id}" q5avgpartial "Q5_AVG_PARTIAL_ID=${id}" "Q5_AVG_PARTIAL_AMOUNT=${q5_avg_partial_count}" "TOKENIZER_AMOUNT=${tokenizer_count}"
+  done
   worker q5_filter_0 q5filter ID=0 "TOKENIZER_AMOUNT=${tokenizer_count}"
-  worker q5_avg_aggregator_0 q5avgaggregator Q5_AVG_PARTIAL_AMOUNT=1 Q5_FILTER_AMOUNT=1
+  worker q5_avg_aggregator_0 q5avgaggregator "Q5_AVG_PARTIAL_AMOUNT=${q5_avg_partial_count}" Q5_FILTER_AMOUNT=1
 
   for id in $(seq 0 $((q4_counter_count - 1))); do
     worker "q4_word_counter_${id}" q4wordcounter "Q4_WORD_COUNTER_ID=${id}" "TOKENIZER_AMOUNT=${tokenizer_count}"
