@@ -30,7 +30,7 @@ type Filter struct {
 	averageExchange     middleware.Middleware
 	broadcaster         *eofbroadcaster.Broadcaster
 	resultsPublisher    *resultpublisher.Publisher
-	mutex               sync.Mutex
+	mu                  sync.Mutex
 	clients             map[string]*clientState
 	pending             pendingStore
 	eofs                *eofcounter.Counter
@@ -97,7 +97,7 @@ func (filter *Filter) Run() error {
 	})
 
 	go func() {
-		if err := filter.broadcaster.Start(filter.handleBroadcastEOF); err != nil {
+		if err := filter.broadcaster.Start(filter.processTokenizersDone); err != nil {
 			slog.Error("Control consumer stopped with error", "err", err)
 		}
 	}()
