@@ -3,7 +3,6 @@ package q5filter
 import "trabajo-final-distribuidos/common/messageprotocol/inner"
 
 type clientState struct {
-	pending    []inner.RecentArticleItem
 	average    uint64
 	hasAverage bool
 	recentsEOF bool
@@ -11,21 +10,18 @@ type clientState struct {
 	selected   int
 }
 
-func (state *clientState) addArticles(articles []inner.RecentArticleItem) []inner.RecentArticleItem {
+func (state *clientState) addArticles(articles []inner.RecentArticleItem) (selected []inner.RecentArticleItem, retained []inner.RecentArticleItem) {
 	state.total += len(articles)
 	if !state.hasAverage {
-		state.pending = append(state.pending, articles...)
-		return nil
+		return nil, articles
 	}
-	return state.selectAboveAverage(articles)
+	return state.selectAboveAverage(articles), nil
 }
 
-func (state *clientState) setAverage(average uint64) []inner.RecentArticleItem {
+func (state *clientState) setAverage(average uint64, pending []inner.RecentArticleItem) []inner.RecentArticleItem {
 	state.average = average
 	state.hasAverage = true
-	selected := state.selectAboveAverage(state.pending)
-	state.pending = nil
-	return selected
+	return state.selectAboveAverage(pending)
 }
 
 func (state *clientState) markRecentsEOF() {

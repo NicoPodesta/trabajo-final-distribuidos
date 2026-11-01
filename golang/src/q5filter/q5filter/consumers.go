@@ -24,7 +24,9 @@ func (filter *Filter) handleRecentArticles(msg middleware.Message) error {
 	defer filter.mutex.Unlock()
 	state := filter.stateOf(clientID)
 
-	return filter.publishSelected(clientID, state.addArticles(recentArticlesMsg.Records))
+	selected, retained := state.addArticles(recentArticlesMsg.Records)
+	filter.pending.Append(clientID, retained)
+	return filter.publishSelected(clientID, selected)
 }
 
 func (filter *Filter) handleBroadcastEOF(clientID string) error {
@@ -54,9 +56,9 @@ func (filter *Filter) handleAverage(msg middleware.Message) error {
 	defer filter.mutex.Unlock()
 	state := filter.stateOf(clientID)
 
-	slog.Info("Received average", "clientID", clientID, "average", averageMsg.Records[0], "pending", len(state.pending))
+	slog.Info("Received average", "clientID", clientID, "average", averageMsg.Records[0], "pending", filter.pending.Count(clientID))
 
-	if err := filter.publishSelected(clientID, state.setAverage(averageMsg.Records[0])); err != nil {
+	if err := filter.publishSelected(clientID, state.setAverage(averageMsg.Records[0], filter.pending.Take(clientID))); err != nil {
 		return err
 	}
 	return filter.finishIfComplete(clientID, state)

@@ -32,6 +32,7 @@ type Filter struct {
 	resultsPublisher    *resultpublisher.Publisher
 	mutex               sync.Mutex
 	clients             map[string]*clientState
+	pending             pendingStore
 	eofs                *eofcounter.Counter
 }
 
@@ -62,6 +63,7 @@ func NewFilter(config FilterConfig) (*Filter, error) {
 		broadcaster:         broadcaster,
 		resultsPublisher:    resultpublisher.New(settings),
 		clients:             make(map[string]*clientState),
+		pending:             newMemoryPending(),
 		eofs:                eofcounter.New(config.TokenizerAmount),
 	}, nil
 }
