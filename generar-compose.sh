@@ -171,7 +171,7 @@ YAML
   for id in $(seq 0 $((q5_avg_partial_count - 1))); do
     worker "q5_avg_partial_${id}" q5avgpartial "Q5_AVG_PARTIAL_ID=${id}" "Q5_AVG_PARTIAL_AMOUNT=${q5_avg_partial_count}" "TOKENIZER_AMOUNT=${tokenizer_count}"
   done
-  worker q5_filter_0 q5filter Q5_FILTER_ID=0 "TOKENIZER_AMOUNT=${tokenizer_count}"
+  worker q5_filter_0 q5filter Q5_FILTER_ID=0 Q5_FILTER_AMOUNT=1 "TOKENIZER_AMOUNT=${tokenizer_count}"
   worker q5_avg_aggregator_0 q5avgaggregator "Q5_AVG_PARTIAL_AMOUNT=${q5_avg_partial_count}" Q5_FILTER_AMOUNT=1
 
   for id in $(seq 0 $((q4_counter_count - 1))); do

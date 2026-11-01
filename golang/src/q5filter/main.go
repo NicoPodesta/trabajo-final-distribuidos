@@ -25,6 +25,11 @@ func loadConfig() (q5filter.FilterConfig, error) {
 		return q5filter.FilterConfig{}, err
 	}
 
+	filterAmount, err := config.RequiredInt("Q5_FILTER_AMOUNT")
+	if err != nil {
+		return q5filter.FilterConfig{}, err
+	}
+
 	tokenizerAmount, err := config.RequiredInt("TOKENIZER_AMOUNT")
 	if err != nil {
 		return q5filter.FilterConfig{}, err
@@ -34,6 +39,7 @@ func loadConfig() (q5filter.FilterConfig, error) {
 		MOMHost:         momHost,
 		MOMPort:         momPort,
 		FilterID:        filterID,
+		FilterAmount:    filterAmount,
 		TokenizerAmount: tokenizerAmount,
 	}, nil
 }

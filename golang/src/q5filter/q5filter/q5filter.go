@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"sync"
 
+	"trabajo-final-distribuidos/common/eofbroadcaster"
 	"trabajo-final-distribuidos/common/eofcounter"
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/common/middleware"
@@ -13,18 +14,23 @@ import (
 	"trabajo-final-distribuidos/common/shutdown"
 )
 
-const recentArticlesQueueName = "recent_articles"
+const (
+	recentArticlesQueueName = "recent_articles"
+	controlExchangeName     = "q5_filter_control"
+)
 
 type FilterConfig struct {
 	MOMHost         string
 	MOMPort         int
 	FilterID        int
+	FilterAmount    int
 	TokenizerAmount int
 }
 
 type Filter struct {
 	recentArticlesQueue middleware.Middleware
 	averageExchange     middleware.Middleware
+	broadcaster         *eofbroadcaster.Broadcaster
 	resultsPublisher    *resultpublisher.Publisher
 	mutex               sync.Mutex
 	clients             map[string]*clientState
@@ -45,9 +51,17 @@ func NewFilter(config FilterConfig) (*Filter, error) {
 		return nil, err
 	}
 
+	broadcaster, err := eofbroadcaster.New(controlExchangeName, config.FilterID, config.FilterAmount, settings)
+	if err != nil {
+		_ = recentArticlesQueue.Close()
+		_ = averageExchange.Close()
+		return nil, err
+	}
+
 	return &Filter{
 		recentArticlesQueue: recentArticlesQueue,
 		averageExchange:     averageExchange,
+		broadcaster:         broadcaster,
 		resultsPublisher:    resultpublisher.New(settings),
 		clients:             make(map[string]*clientState),
 		eofs:                eofcounter.New(config.TokenizerAmount),
@@ -62,11 +76,23 @@ func (filter *Filter) Run() error {
 	}()
 	defer filter.recentArticlesQueue.Close()
 	defer filter.averageExchange.Close()
+	defer func() {
+		if err := filter.broadcaster.Close(); err != nil {
+			slog.Error("While closing EOF broadcaster", "err", err)
+		}
+	}()
 
 	shutdown.OnSignal(func() {
 		_ = filter.recentArticlesQueue.StopConsuming()
 		_ = filter.averageExchange.StopConsuming()
+		_ = filter.broadcaster.Stop()
 	})
+
+	go func() {
+		if err := filter.broadcaster.Start(filter.handleBroadcastEOF); err != nil {
+			slog.Error("Control consumer stopped with error", "err", err)
+		}
+	}()
 
 	averageErr := make(chan error, 1)
 	go func() {
@@ -109,19 +135,27 @@ func (filter *Filter) handleRecentArticles(msg middleware.Message) error {
 
 	clientID := recentArticlesMsg.ClientID
 
+	if recentArticlesMsg.IsEOF() {
+		return filter.broadcaster.Broadcast(clientID)
+	}
+
 	filter.mutex.Lock()
 	defer filter.mutex.Unlock()
 	state := filter.stateOf(clientID)
 
-	if recentArticlesMsg.IsEOF() {
-		if !filter.eofs.Add(clientID) {
-			return nil
-		}
-		state.markRecentsEOF()
-		return filter.finishIfComplete(clientID, state)
-	}
-
 	return filter.publishSelected(clientID, state.addArticles(recentArticlesMsg.Records))
+}
+
+func (filter *Filter) handleBroadcastEOF(clientID string) error {
+	filter.mutex.Lock()
+	defer filter.mutex.Unlock()
+	state := filter.stateOf(clientID)
+
+	if !filter.eofs.Add(clientID) {
+		return nil
+	}
+	state.markRecentsEOF()
+	return filter.finishIfComplete(clientID, state)
 }
 
 func (filter *Filter) handleAverage(msg middleware.Message) error {
