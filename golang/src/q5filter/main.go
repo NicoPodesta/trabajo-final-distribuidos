@@ -20,7 +20,7 @@ func loadConfig() (q5filter.FilterConfig, error) {
 		return q5filter.FilterConfig{}, err
 	}
 
-	filterID, err := config.RequiredInt("ID")
+	filterID, err := config.RequiredInt("Q5_FILTER_ID")
 	if err != nil {
 		return q5filter.FilterConfig{}, err
 	}
