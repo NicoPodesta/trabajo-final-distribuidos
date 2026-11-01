@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"syscall"
 
+	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/common/middleware"
 )
 
@@ -25,6 +26,7 @@ type GatewayConfig struct {
 	MOMHost         string
 	MOMPort         int
 	ExpectedQueries int
+	ExpectedEOFs    map[inner.QueryID]int
 }
 
 type Gateway struct {
@@ -77,7 +79,7 @@ func NewGateway(config GatewayConfig) (gw *Gateway, err error) {
 		return nil, err
 	}
 
-	sessionManager := NewSessionManager(config.ExpectedQueries)
+	sessionManager := NewSessionManager(config.ExpectedQueries, config.ExpectedEOFs)
 	handler := NewClientHandler(config.ID, sessionManager, articleDatesQ, articleSectionsQ, abstractsQ)
 	collector := NewResultCollector(config.ID, resultsQ, sessionManager)
 

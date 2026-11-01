@@ -80,6 +80,7 @@ services:
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
     - EXPECTED_QUERIES=5
+    - Q5_FILTER_AMOUNT=1
 
   gateway_1:
     build:
@@ -96,6 +97,7 @@ services:
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
     - EXPECTED_QUERIES=5
+    - Q5_FILTER_AMOUNT=1
 
   gateway_2:
     build:
@@ -112,6 +114,7 @@ services:
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
     - EXPECTED_QUERIES=5
+    - Q5_FILTER_AMOUNT=1
 
   q1_filter_0:
     build:

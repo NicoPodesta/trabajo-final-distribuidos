@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"trabajo-final-distribuidos/common/config"
+	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/gateway/gateway"
 )
 
@@ -39,6 +40,11 @@ func loadConfig() (gateway.GatewayConfig, error) {
 		return gateway.GatewayConfig{}, err
 	}
 
+	q5FilterAmount, err := config.OptionalInt("Q5_FILTER_AMOUNT", 1)
+	if err != nil {
+		return gateway.GatewayConfig{}, err
+	}
+
 	return gateway.GatewayConfig{
 		ID:              id,
 		ServerHost:      serverHost,
@@ -46,6 +52,7 @@ func loadConfig() (gateway.GatewayConfig, error) {
 		MOMHost:         momHost,
 		MOMPort:         momPort,
 		ExpectedQueries: expectedQueries,
+		ExpectedEOFs:    map[inner.QueryID]int{inner.Q5: q5FilterAmount},
 	}, nil
 }
 

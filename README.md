@@ -4,16 +4,16 @@
 
 Los datos de cada cliente van en `input/client_N/` (archivos `.parquet`) y sus resultados quedan en `output/client_N/`.
 
-El `docker-compose.yaml` se genera con `generar-compose.sh`, que recibe el archivo de salida, la cantidad de clientes y, opcionalmente, las cantidades de gateways, tokenizers, contadores de Q4 y Avg Partial de Q5 (por defecto 3 cada una, salvo Avg Partial que es 1):
+El `docker-compose.yaml` se genera con `generar-compose.sh`, que recibe el archivo de salida, la cantidad de clientes y, opcionalmente, las cantidades de gateways, tokenizers, contadores de Q4, Avg Partial y Filter de Q5 (por defecto 3 cada una, salvo Avg Partial y Filter de Q5 que son 1):
 
 ```bash
-./generar-compose.sh <archivo-salida> <clientes> [gateways] [tokenizers] [q4-wordcounters] [q5-avgpartials]
+./generar-compose.sh <archivo-salida> <clientes> [gateways] [tokenizers] [q4-wordcounters] [q5-avgpartials] [q5-filters]
 ```
 
-Por ejemplo, con 2 clientes, 2 gateways, 3 tokenizers, 2 contadores de Q4 y 2 Avg Partial de Q5:
+Por ejemplo, con 2 clientes, 2 gateways, 3 tokenizers, 2 contadores de Q4, 2 Avg Partial y 2 Filter de Q5:
 
 ```bash
-./generar-compose.sh golang/docker-compose.yaml 2 2 3 2 2
+./generar-compose.sh golang/docker-compose.yaml 2 2 3 2 2 2
 cd golang && make up
 ```
 
@@ -23,7 +23,7 @@ cd golang && make up
 
 ### Ejecución
 
-- Ejecucion con cantidades configurables de clientes, gateways, tokenizers y contadores de Q4. Un load balancer y una instancia de los demás componentes de Q1 a Q5.
+- Ejecucion con cantidades configurables de clientes, gateways, tokenizers, contadores de Q4, Avg Partial y Filter de Q5. Un load balancer y una instancia de los demás componentes de Q1 a Q5.
 
 ### Cliente
 
@@ -49,11 +49,13 @@ cd golang && make up
 - Cola única por Gateway `results_<gatewayID>`: los mensajes incluyen un header con `type`, `client_id` y `query_id`. Collector los reenvía por el socket de la sesión correspondiente.
 - Las cinco consultas usan `common/resultpublisher` para publicar resultados y EOF, reutilizando conexiones por Gateway.
 - Gateway espera el EOF de cada consulta (configurable con `EXPECTED_QUERIES`) antes de enviar el `EndOfRecords` final al cliente y cerrar la sesión. Cuenta consultas terminadas, no réplicas.
+- Una consulta puede cerrar con más de un EOF: uno por réplica de su última etapa. `Q5_FILTER_AMOUNT` indica cuántos espera de Q5. Como cada réplica publica sus datos y después su EOF por la misma cola, cuando llega el último EOF ya llegaron todos los datos.
 
 ### Tokenizer
 
 - Consume batches de `abstracts` desde una cola compartida entre sus réplicas.
 - Convierte el texto a minúsculas y elimina stopwords y tokens compuestos solo por números.
+- Con `İ` (I turca con punto) `strings.ToLower` de Go da `i`, mientras que `lower()` de Python da `i` más un punto combinante y la palabra se parte en dos (`İdris` pasa a `i` y `dris`). Se conserva el comportamiento de Go. Se modifica el notebook se reemplaza `İ` por `i` antes de pasar a minúsculas.
 - Usa las mismas listas de stopwords de NLTK que el notebook, incluidas en `tokenizer/text/stopwords.go` para mantener el mismo criterio de filtrado.
 - Para Q3 publica los pares `(word, language)` sin repetirlos dentro del batch, en `vocabulary_0`.
 - Para Q4 cuenta en cuántos abstracts del batch aparece cada palabra. Cada abstract aporta como máximo 1 por palabra.
@@ -101,13 +103,15 @@ cd golang && make up
 - Cuenta las palabras después del filtrado del Tokenizer, incluyendo las repetidas. Omite los abstracts vacíos. Un abstract no vacío que queda sin palabras después del filtrado cuenta como 0.
 - Avg Partial consume `historical_counts`, acumula suma de palabras y cantidad de artículos, y espera los EOF de los Tokenizers antes de publicar su parcial y EOF en `avg_partials`.
 - Avg Aggregator espera los EOF de los parciales y calcula el promedio como entero truncado. Si el cliente no tiene artículos históricos, usa 0. Publica el promedio mediante el exchange `q5_average` hacia los filtros.
-- Q5 Filter consume `recent_articles` y guarda los candidatos en memoria hasta recibir el promedio. Selecciona los artículos cuya cantidad de palabras es estrictamente mayor al promedio y publica `url` y `word_count`.
-- El filtro publica el EOF de Q5 cuando ya recibió el promedio y los EOF de los Tokenizers para los artículos recientes, y libera el estado del cliente.
+- Q5 Filter consume `recent_articles` y guarda los candidatos en memoria hasta recibir el promedio (el objetivo es guardarlos en disco). Selecciona los artículos cuya cantidad de palabras es estrictamente mayor al promedio y publica `url` y `word_count`.
+- Las réplicas del Filter compiten por `recent_articles`, así que cada artículo lo recibe una sola réplica, y el promedio llega a todas por una clave de enrutamiento propia (`q5_filter_<id>`). La réplica que recibe un EOF de un Tokenizer lo difunde por `q5_filter_control`, y cada una cuenta un EOF por Tokenizer.
+- Cada réplica publica el EOF de Q5 cuando ya recibió el promedio y los EOF de los Tokenizers para los artículos recientes, y libera el estado del cliente. Con varias réplicas el Gateway recibe varios EOF de Q5.
 
 ## Pendientes
 
 - Validar la ejecución completa con varios clientes, gateways, tokenizers y comprobando que los resultados y cierres correspondan a cada cliente.
-- Carrera en el cierre de los Tokenizers, q5AvgPartial: el EOF de control puede llegar antes de que se procese un lote ya entregado a esa réplica, y ese lote se publica después del EOF.
+- Carrera en el cierre de los Tokenizers, q5AvgPartial, q5Filter: el EOF de control puede llegar antes de que se procese un lote ya entregado a esa réplica, y ese lote se publica después del EOF.
+
 ## Consultas
 
 - Se puede utilizar la libreria externa parquet-go? -> solo para la parte de lectura

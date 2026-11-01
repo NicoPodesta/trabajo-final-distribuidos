@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -lt 1 || $# -gt 6 ]]; then
-  echo "Uso: $0 <archivo-salida> [cantidad-clientes] [cantidad-gateways] [cantidad-tokenizers] [cantidad-q4-wordcounters] [cantidad-q5-avgpartials]" >&2
+if [[ $# -lt 1 || $# -gt 7 ]]; then
+  echo "Uso: $0 <archivo-salida> [cantidad-clientes] [cantidad-gateways] [cantidad-tokenizers] [cantidad-q4-wordcounters] [cantidad-q5-avgpartials] [cantidad-q5-filters]" >&2
   exit 1
 fi
 
@@ -12,8 +12,9 @@ gateway_count="${3:-3}"
 tokenizer_count="${4:-3}"
 q4_counter_count="${5:-3}"
 q5_avg_partial_count="${6:-1}"
+q5_filter_count="${7:-1}"
 
-for val in "$client_count" "$gateway_count" "$tokenizer_count" "$q4_counter_count" "$q5_avg_partial_count"; do
+for val in "$client_count" "$gateway_count" "$tokenizer_count" "$q4_counter_count" "$q5_avg_partial_count" "$q5_filter_count"; do
   if ! [[ "$val" =~ ^[0-9]+$ ]] || [[ "$val" -lt 1 ]]; then
     echo "Error: los conteos deben ser enteros positivos" >&2
     exit 1
@@ -97,6 +98,7 @@ gateway() {
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
     - EXPECTED_QUERIES=5
+    - Q5_FILTER_AMOUNT=${q5_filter_count}
 
 YAML
 }
@@ -171,8 +173,10 @@ YAML
   for id in $(seq 0 $((q5_avg_partial_count - 1))); do
     worker "q5_avg_partial_${id}" q5avgpartial "Q5_AVG_PARTIAL_ID=${id}" "Q5_AVG_PARTIAL_AMOUNT=${q5_avg_partial_count}" "TOKENIZER_AMOUNT=${tokenizer_count}"
   done
-  worker q5_filter_0 q5filter Q5_FILTER_ID=0 Q5_FILTER_AMOUNT=1 "TOKENIZER_AMOUNT=${tokenizer_count}"
-  worker q5_avg_aggregator_0 q5avgaggregator "Q5_AVG_PARTIAL_AMOUNT=${q5_avg_partial_count}" Q5_FILTER_AMOUNT=1
+  for id in $(seq 0 $((q5_filter_count - 1))); do
+    worker "q5_filter_${id}" q5filter "Q5_FILTER_ID=${id}" "Q5_FILTER_AMOUNT=${q5_filter_count}" "TOKENIZER_AMOUNT=${tokenizer_count}"
+  done
+  worker q5_avg_aggregator_0 q5avgaggregator "Q5_AVG_PARTIAL_AMOUNT=${q5_avg_partial_count}" "Q5_FILTER_AMOUNT=${q5_filter_count}"
 
   for id in $(seq 0 $((q4_counter_count - 1))); do
     worker "q4_word_counter_${id}" q4wordcounter "Q4_WORD_COUNTER_ID=${id}" "TOKENIZER_AMOUNT=${tokenizer_count}"

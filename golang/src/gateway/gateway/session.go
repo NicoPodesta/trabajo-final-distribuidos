@@ -19,12 +19,14 @@ type clientSession struct {
 	doneChannel     chan struct{}
 	closeOnce       sync.Once
 	expectedQueries int
-	completedEOFs   map[inner.QueryID]bool
+	expectedEOFs    map[inner.QueryID]int
+	receivedEOFs    map[inner.QueryID]int
+	completedCount  int
 	sessionLock     sync.Mutex
 	ackChan         chan struct{}
 }
 
-func newClientSession(conn net.Conn, expectedQueries int) *clientSession {
+func newClientSession(conn net.Conn, expectedQueries int, expectedEOFs map[inner.QueryID]int) *clientSession {
 	if expectedQueries <= 0 {
 		expectedQueries = 5
 	}
@@ -33,17 +35,28 @@ func newClientSession(conn net.Conn, expectedQueries int) *clientSession {
 		writer:          external.NewWriter(conn),
 		doneChannel:     make(chan struct{}),
 		expectedQueries: expectedQueries,
-		completedEOFs:   make(map[inner.QueryID]bool),
+		expectedEOFs:    expectedEOFs,
+		receivedEOFs:    make(map[inner.QueryID]int),
 		ackChan:         make(chan struct{}, 1),
 	}
+}
+
+func (s *clientSession) eofsExpectedFor(queryID inner.QueryID) int {
+	if amount := s.expectedEOFs[queryID]; amount > 0 {
+		return amount
+	}
+	return 1
 }
 
 func (s *clientSession) registerEOF(queryID inner.QueryID) (bool, error) {
 	s.sessionLock.Lock()
 	defer s.sessionLock.Unlock()
 
-	s.completedEOFs[queryID] = true
-	if len(s.completedEOFs) >= s.expectedQueries {
+	s.receivedEOFs[queryID]++
+	if s.receivedEOFs[queryID] == s.eofsExpectedFor(queryID) {
+		s.completedCount++
+	}
+	if s.completedCount >= s.expectedQueries {
 		if err := s.writer.WriteEndOfRecords(); err != nil {
 			return true, err
 		}
@@ -133,12 +146,14 @@ type SessionManager struct {
 	sessionsLock    sync.RWMutex
 	sessions        map[string]*clientSession
 	expectedQueries int
+	expectedEOFs    map[inner.QueryID]int
 }
 
-func NewSessionManager(expectedQueries int) *SessionManager {
+func NewSessionManager(expectedQueries int, expectedEOFs map[inner.QueryID]int) *SessionManager {
 	return &SessionManager{
 		sessions:        make(map[string]*clientSession),
 		expectedQueries: expectedQueries,
+		expectedEOFs:    expectedEOFs,
 	}
 }
 
@@ -146,7 +161,7 @@ func (sm *SessionManager) CreateSession(clientID string, conn net.Conn) *clientS
 	sm.sessionsLock.Lock()
 	defer sm.sessionsLock.Unlock()
 
-	session := newClientSession(conn, sm.expectedQueries)
+	session := newClientSession(conn, sm.expectedQueries, sm.expectedEOFs)
 	sm.sessions[clientID] = session
 	return session
 }
