@@ -2,6 +2,7 @@ package q2imagefetcher
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,19 +12,51 @@ import (
 	"time"
 )
 
-// TODO: revisar si mantenemos el timeout de descarga
-const downloadTimeout = 1 * time.Minute
+const (
+	downloadTimeout    = 1 * time.Minute
+	downloadRetries    = 10
+	downloadRetryDelay = 1 * time.Second
+)
+
+var errImageNotFound = errors.New("image not found")
 
 type DownloadedImage struct {
 	Path string
 	Size int64
 }
 
-// DownloadImage devuelve un archivo temporal con la imagen descargada
-func DownloadImage(ctx context.Context, clientID, imageID, imageRef string) (download *DownloadedImage, err error) {
+// Intenta descargar la imagen sin límite de tamaño y devuelve un archivo temporal.
+func DownloadImage(ctx context.Context, clientID, imageID, imageRef string) (*DownloadedImage, error) {
 	if strings.TrimSpace(clientID) == "" || strings.TrimSpace(imageID) == "" {
 		return nil, fmt.Errorf("image download requires client_id and image_id")
 	}
+	var err error
+	for attempt := 0; attempt <= downloadRetries; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		var image *DownloadedImage
+		image, err = downloadImageAttempt(ctx, clientID, imageID, imageRef)
+		if err == nil {
+			return image, nil
+		}
+		if errors.Is(err, errImageNotFound) {
+			return nil, err
+		}
+		if attempt < downloadRetries {
+			timer := time.NewTimer(downloadRetryDelay)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return nil, ctx.Err()
+			case <-timer.C:
+			}
+		}
+	}
+	return nil, fmt.Errorf("image download failed after %d attempts: %w", downloadRetries+1, err)
+}
+
+func downloadImageAttempt(ctx context.Context, clientID, imageID, imageRef string) (download *DownloadedImage, err error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, imageRef, nil)
 	if err != nil {
 		return nil, err
@@ -35,6 +68,9 @@ func DownloadImage(ctx context.Context, clientID, imageID, imageRef string) (dow
 		return nil, err
 	}
 	defer response.Body.Close()
+	if response.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("%w: HTTP %s", errImageNotFound, response.Status)
+	}
 	if response.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("image download returned HTTP %s", response.Status)
 	}
