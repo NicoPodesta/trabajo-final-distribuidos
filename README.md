@@ -107,7 +107,7 @@ cd golang && make up
 ## Pendientes
 
 - Validar la ejecución completa con varios clientes, gateways, tokenizers y comprobando que los resultados y cierres correspondan a cada cliente.
-- Carrera en el cierre de los Tokenizers: el EOF de control puede llegar antes de que se procese un lote ya entregado a esa réplica, y ese lote se publica después del EOF.
+- Carrera en el cierre de los Tokenizers, q5AvgPartial: el EOF de control puede llegar antes de que se procese un lote ya entregado a esa réplica, y ese lote se publica después del EOF.
 ## Consultas
 
 - Se puede utilizar la libreria externa parquet-go? -> solo para la parte de lectura

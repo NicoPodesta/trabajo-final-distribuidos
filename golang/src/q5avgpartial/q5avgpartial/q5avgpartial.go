@@ -30,13 +30,20 @@ type totals struct {
 	count uint64
 }
 
+func (clientTotals *totals) add(wordCounts []uint32) {
+	for _, wordCount := range wordCounts {
+		clientTotals.sum += uint64(wordCount)
+		clientTotals.count++
+	}
+}
+
 type AvgPartial struct {
 	conns                 *middleware.Connections
 	historicalCountsQueue middleware.Middleware
 	avgPartialsQueue      middleware.Middleware
 	broadcaster           *eofbroadcaster.Broadcaster
 	mu                    sync.Mutex
-	totalsByClient        map[string]*totals
+	totalsByClient        map[string]totals
 	eofs                  *eofcounter.Counter
 }
 
@@ -65,7 +72,7 @@ func NewAvgPartial(config AvgPartialConfig) (*AvgPartial, error) {
 		historicalCountsQueue: historicalCountsQueue,
 		avgPartialsQueue:      avgPartialsQueue,
 		broadcaster:           broadcaster,
-		totalsByClient:        make(map[string]*totals),
+		totalsByClient:        make(map[string]totals),
 		eofs:                  eofcounter.New(config.TokenizerAmount),
 	}, nil
 }
@@ -87,7 +94,7 @@ func (partial *AvgPartial) Run() error {
 		if err := partial.broadcaster.Start(func(clientID string) error {
 			partial.mu.Lock()
 			defer partial.mu.Unlock()
-			return partial.handleEndOfInput(clientID)
+			return partial.handleTokenizerEOF(clientID)
 		}); err != nil {
 			slog.Error("Control consumer stopped with error", "err", err)
 		}
@@ -118,33 +125,27 @@ func (partial *AvgPartial) handleMessage(msg middleware.Message) error {
 	return nil
 }
 
-func (partial *AvgPartial) addCounts(clientID string, records []uint32) {
+func (partial *AvgPartial) addCounts(clientID string, wordCounts []uint32) {
 	clientTotals := partial.totalsByClient[clientID]
-	if clientTotals == nil {
-		clientTotals = &totals{}
-		partial.totalsByClient[clientID] = clientTotals
-	}
-
-	for _, wordCount := range records {
-		clientTotals.sum += uint64(wordCount)
-		clientTotals.count++
-	}
+	clientTotals.add(wordCounts)
+	partial.totalsByClient[clientID] = clientTotals
 }
 
-func (partial *AvgPartial) handleEndOfInput(clientID string) error {
+func (partial *AvgPartial) takeTotals(clientID string) totals {
+	clientTotals := partial.totalsByClient[clientID]
+	delete(partial.totalsByClient, clientID)
+	return clientTotals
+}
+
+func (partial *AvgPartial) handleTokenizerEOF(clientID string) error {
 	if !partial.eofs.Add(clientID) {
 		return nil
 	}
 
-	clientTotals := partial.totalsByClient[clientID]
-	delete(partial.totalsByClient, clientID)
+	clientTotals := partial.takeTotals(clientID)
+	slog.Info("All tokenizers finished", "clientID", clientID, "sum", clientTotals.sum, "count", clientTotals.count)
 
-	if clientTotals == nil {
-		clientTotals = &totals{}
-	}
-	slog.Info("Received end of input", "clientID", clientID, "sum", clientTotals.sum, "count", clientTotals.count)
-
-	return partial.publishPartial(clientID, *clientTotals)
+	return partial.publishPartial(clientID, clientTotals)
 }
 
 func (partial *AvgPartial) publishPartial(clientID string, clientTotals totals) error {
