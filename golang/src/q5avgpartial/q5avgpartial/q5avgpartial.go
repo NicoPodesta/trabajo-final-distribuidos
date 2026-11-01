@@ -47,23 +47,26 @@ type AvgPartial struct {
 	eofs                  *eofcounter.Counter
 }
 
-func NewAvgPartial(config AvgPartialConfig) (*AvgPartial, error) {
+func NewAvgPartial(config AvgPartialConfig) (partial *AvgPartial, err error) {
 	conns := middleware.NewConnections(middleware.ConnSettings{Hostname: config.MOMHost, Port: config.MOMPort})
+	defer func() {
+		if err != nil {
+			conns.Close()
+		}
+	}()
+
 	historicalCountsQueue, err := conns.Queue(historicalCountsQueueName)
 	if err != nil {
-		conns.Close()
 		return nil, err
 	}
 
 	avgPartialsQueue, err := conns.Queue(avgPartialsQueueName)
 	if err != nil {
-		conns.Close()
 		return nil, err
 	}
 
 	broadcaster, err := eofbroadcaster.New(controlExchangeName, config.AvgPartialID, config.AvgPartialAmount, conns.Settings)
 	if err != nil {
-		conns.Close()
 		return nil, err
 	}
 
@@ -90,15 +93,7 @@ func (partial *AvgPartial) Run() error {
 		_ = partial.broadcaster.Stop()
 	})
 
-	go func() {
-		if err := partial.broadcaster.Start(func(clientID string) error {
-			partial.mu.Lock()
-			defer partial.mu.Unlock()
-			return partial.handleTokenizerEOF(clientID)
-		}); err != nil {
-			slog.Error("Control consumer stopped with error", "err", err)
-		}
-	}()
+	go partial.consumeControl()
 
 	slog.Info("Consuming historical counts from RabbitMQ...", "queue", historicalCountsQueueName)
 	return partial.historicalCountsQueue.StartConsuming(func(msg middleware.Message, ack func(), nack func()) {
@@ -107,6 +102,18 @@ func (partial *AvgPartial) Run() error {
 		}
 		ack()
 	})
+}
+
+func (partial *AvgPartial) consumeControl() {
+	if err := partial.broadcaster.Start(partial.handleBroadcastEOF); err != nil {
+		slog.Error("Control consumer stopped with error", "err", err)
+	}
+}
+
+func (partial *AvgPartial) handleBroadcastEOF(clientID string) error {
+	partial.mu.Lock()
+	defer partial.mu.Unlock()
+	return partial.handleTokenizerEOF(clientID)
 }
 
 func (partial *AvgPartial) handleMessage(msg middleware.Message) error {
@@ -119,13 +126,13 @@ func (partial *AvgPartial) handleMessage(msg middleware.Message) error {
 		return partial.broadcaster.Broadcast(historicalCountsMsg.ClientID)
 	}
 
-	partial.mu.Lock()
-	defer partial.mu.Unlock()
-	partial.addCounts(historicalCountsMsg.ClientID, historicalCountsMsg.Records)
+	partial.handleCounts(historicalCountsMsg.ClientID, historicalCountsMsg.Records)
 	return nil
 }
 
-func (partial *AvgPartial) addCounts(clientID string, wordCounts []uint32) {
+func (partial *AvgPartial) handleCounts(clientID string, wordCounts []uint32) {
+	partial.mu.Lock()
+	defer partial.mu.Unlock()
 	clientTotals := partial.totalsByClient[clientID]
 	clientTotals.add(wordCounts)
 	partial.totalsByClient[clientID] = clientTotals
@@ -150,18 +157,25 @@ func (partial *AvgPartial) handleTokenizerEOF(clientID string) error {
 
 func (partial *AvgPartial) publishPartial(clientID string, clientTotals totals) error {
 	if clientTotals.count > 0 {
-		msg, err := inner.SerializeAvgPartials(clientID, []inner.AvgPartialItem{{Sum: clientTotals.sum, Count: clientTotals.count}})
-		if err != nil {
-			return err
-		}
-		if err := partial.avgPartialsQueue.Send(*msg); err != nil {
+		if err := partial.publishTotals(clientID, clientTotals); err != nil {
 			return err
 		}
 	}
+	return partial.publishEOF(clientID)
+}
 
-	eofMsg, err := inner.SerializeAvgPartialsEOF(clientID)
+func (partial *AvgPartial) publishTotals(clientID string, clientTotals totals) error {
+	msg, err := inner.SerializeAvgPartials(clientID, []inner.AvgPartialItem{{Sum: clientTotals.sum, Count: clientTotals.count}})
 	if err != nil {
 		return err
 	}
-	return partial.avgPartialsQueue.Send(*eofMsg)
+	return partial.avgPartialsQueue.Send(*msg)
+}
+
+func (partial *AvgPartial) publishEOF(clientID string) error {
+	msg, err := inner.SerializeAvgPartialsEOF(clientID)
+	if err != nil {
+		return err
+	}
+	return partial.avgPartialsQueue.Send(*msg)
 }
