@@ -23,10 +23,24 @@ type totals struct {
 	count uint64
 }
 
+func (clientTotals *totals) add(partials []inner.AvgPartialItem) {
+	for _, partial := range partials {
+		clientTotals.sum += partial.Sum
+		clientTotals.count += partial.Count
+	}
+}
+
+func (clientTotals *totals) average() uint64 {
+	if clientTotals.count == 0 {
+		return 0
+	}
+	return clientTotals.sum / clientTotals.count
+}
+
 type AvgAggregator struct {
 	avgPartialsQueue middleware.Middleware
 	averageExchange  middleware.Middleware
-	totalsByClient   map[string]*totals
+	totalsByClient   map[string]totals
 	eofs             *eofcounter.Counter
 }
 
@@ -50,7 +64,7 @@ func NewAvgAggregator(config AvgAggregatorConfig) (*AvgAggregator, error) {
 	return &AvgAggregator{
 		avgPartialsQueue: avgPartialsQueue,
 		averageExchange:  averageExchange,
-		totalsByClient:   make(map[string]*totals),
+		totalsByClient:   make(map[string]totals),
 		eofs:             eofcounter.New(config.Q5AvgPartialAmount),
 	}, nil
 }
@@ -91,17 +105,16 @@ func (aggregator *AvgAggregator) handleMessage(msg middleware.Message) error {
 	return nil
 }
 
-func (aggregator *AvgAggregator) addPartials(clientID string, records []inner.AvgPartialItem) {
+func (aggregator *AvgAggregator) addPartials(clientID string, partials []inner.AvgPartialItem) {
 	clientTotals := aggregator.totalsByClient[clientID]
-	if clientTotals == nil {
-		clientTotals = &totals{}
-		aggregator.totalsByClient[clientID] = clientTotals
-	}
+	clientTotals.add(partials)
+	aggregator.totalsByClient[clientID] = clientTotals
+}
 
-	for _, record := range records {
-		clientTotals.sum += record.Sum
-		clientTotals.count += record.Count
-	}
+func (aggregator *AvgAggregator) takeTotals(clientID string) totals {
+	clientTotals := aggregator.totalsByClient[clientID]
+	delete(aggregator.totalsByClient, clientID)
+	return clientTotals
 }
 
 func (aggregator *AvgAggregator) handleEndOfPartials(clientID string) error {
@@ -109,16 +122,12 @@ func (aggregator *AvgAggregator) handleEndOfPartials(clientID string) error {
 		return nil
 	}
 
-	clientTotals := aggregator.totalsByClient[clientID]
-	delete(aggregator.totalsByClient, clientID)
-
-	var average uint64
-	if clientTotals == nil || clientTotals.count == 0 {
+	clientTotals := aggregator.takeTotals(clientID)
+	average := clientTotals.average()
+	if clientTotals.count == 0 {
 		slog.Warn("Client has no historical articles, using average 0", "clientID", clientID)
 	} else {
-		average = clientTotals.sum / clientTotals.count
-		exactAverage := float64(clientTotals.sum) / float64(clientTotals.count)
-		slog.Info("Calculated average", "clientID", clientID, "sum", clientTotals.sum, "count", clientTotals.count, "average", exactAverage, "integerAverage", average)
+		slog.Info("Calculated average", "clientID", clientID, "sum", clientTotals.sum, "count", clientTotals.count, "average", float64(clientTotals.sum)/float64(clientTotals.count), "integerAverage", average)
 	}
 
 	return aggregator.publishAverage(clientID, average)
