@@ -76,6 +76,8 @@ func (join *VocabularyJoin) addVocabulary(clientID string, records []inner.Vocab
 		join.wordsByClient[clientID] = words
 	}
 
+	var matches []result.Q3Result
+	selectedWords := make(map[string]struct{})
 	for _, record := range records {
 		if record.Word == "" || (record.Language != "en" && record.Language != "fr") {
 			return fmt.Errorf("invalid Q3 vocabulary item: %+v", record)
@@ -93,15 +95,25 @@ func (join *VocabularyJoin) addVocabulary(clientID string, records []inner.Vocab
 		if !presence.english || !presence.french || presence.sent {
 			continue
 		}
+		if _, selected := selectedWords[record.Word]; selected {
+			continue
+		}
+		selectedWords[record.Word] = struct{}{}
+		matches = append(matches, result.Q3Result{Word: record.Word})
+	}
+	if len(matches) == 0 {
+		return nil
+	}
 
-		msg, err := inner.SerializeQ3Results(clientID, []result.Q3Result{{Word: record.Word}})
-		if err != nil {
-			return err
-		}
-		if err := join.resultsPublisher.Publish(clientID, *msg); err != nil {
-			return err
-		}
-		presence.sent = true
+	msg, err := inner.SerializeQ3Results(clientID, matches)
+	if err != nil {
+		return err
+	}
+	if err := join.resultsPublisher.Publish(clientID, *msg); err != nil {
+		return err
+	}
+	for _, match := range matches {
+		words[match.Word].sent = true
 	}
 	return nil
 }
