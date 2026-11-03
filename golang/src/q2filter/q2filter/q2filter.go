@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-	"time"
 
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/common/middleware"
@@ -83,58 +82,8 @@ func (filter *Filter) handleMessage(msg middleware.Message) error {
 	case inner.MsgData:
 		return filter.handleArticlesMessage(articleMsg)
 	case inner.MsgEOF:
-		return filter.handleEndOfRecordsMessage(articleMsg.ClientID)
+		return filter.publishEOF(articleMsg.ClientID)
 	default:
 		return fmt.Errorf("unexpected Q2 articles message type: %d", articleMsg.Type)
 	}
-}
-
-func (filter *Filter) handleArticlesMessage(articleMsg *inner.Q2ArticlesMessage) error {
-	for _, article := range articleMsg.Records {
-		if !matchesArticle(article) {
-			continue
-		}
-		if strings.TrimSpace(article.Image) == "" {
-			slog.Debug("Skipping Q2 article without image", "clientID", articleMsg.ClientID, "url", article.Url)
-			continue
-		}
-		msg, err := inner.SerializeImageDownload(articleMsg.ClientID, inner.ImageDownloadRequest{
-			Name:     article.Name,
-			Url:      article.Url,
-			ImageRef: article.Image,
-		})
-		if err != nil {
-			return err
-		}
-		if err := filter.downloadsQueue.Send(*msg); err != nil {
-			return fmt.Errorf("publishing image download for client %q, article %q: %w", articleMsg.ClientID, article.Url, err)
-		}
-		slog.Debug("Published image download request", "clientID", articleMsg.ClientID, "url", article.Url)
-	}
-	return nil
-}
-
-func (filter *Filter) handleEndOfRecordsMessage(clientID string) error {
-	msg, err := inner.SerializeImageDownloadsEOF(clientID)
-	if err != nil {
-		return err
-	}
-	if err := filter.downloadsQueue.Send(*msg); err != nil {
-		return fmt.Errorf("publishing image downloads EOF for client %q: %w", clientID, err)
-	}
-	slog.Info("Published end of image download requests", "clientID", clientID)
-	return nil
-}
-
-func matchesArticle(article inner.Q2ArticleItem) bool {
-	if time.Unix(int64(article.DateModified), 0).UTC().Year() > 2020 {
-		return false
-	}
-	for _, section := range article.Sections {
-		section = strings.TrimSpace(section)
-		if strings.EqualFold(section, "biography") || strings.EqualFold(section, "biographie") {
-			return true
-		}
-	}
-	return false
 }
