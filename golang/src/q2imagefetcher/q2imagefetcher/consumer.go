@@ -9,7 +9,6 @@ import (
 	"trabajo-final-distribuidos/common/middleware"
 )
 
-
 func (f *Fetcher) Run(ctx context.Context) (err error) {
 	defer func() {
 		err = errors.Join(err, f.downloadsQueue.Close(), f.publisher.Close())
@@ -39,7 +38,8 @@ func (f *Fetcher) Run(ctx context.Context) (err error) {
 			nack()
 			return
 		}
-		// La imagen ya fue enviada y el mensaje puede ser confirmado
+		// Imagen publicada o descartada por un fallo del origen
+		// Una cancelación posterior a completar la publicación permite el ACK
 		ack()
 	})
 	close(consumingDone)

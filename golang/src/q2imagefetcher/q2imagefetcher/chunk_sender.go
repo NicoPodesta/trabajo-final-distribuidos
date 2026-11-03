@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"os"
 
@@ -17,17 +18,13 @@ func (f *Fetcher) sendImage(ctx context.Context, clientID, imageID string, reque
 	if err != nil {
 		return err
 	}
-	defer func() {
-		if removeErr := os.Remove(image.Path); removeErr != nil {
-			err = errors.Join(err, fmt.Errorf("removing temporary image: %w", removeErr))
-		}
-	}()
 	file, err := os.Open(image.Path)
 	if err != nil {
-		return err
+		return errors.Join(fmt.Errorf("opening temporary image: %w", err), removeTemporaryImage(image.Path))
 	}
 
-	defer func() { err = errors.Join(err, file.Close()) }()
+	published := false
+	defer func() { err = errors.Join(err, cleanupSentImage(file, image.Path, published)) }()
 
 	buffer := make([]byte, int(min(int64(f.chunkSize), image.Size)))
 	remaining := image.Size
@@ -64,5 +61,21 @@ func (f *Fetcher) sendImage(ctx context.Context, clientID, imageID string, reque
 			return fmt.Errorf("publishing chunk %d: %w", seq, err)
 		}
 	}
+	// Una cancelación posterior no convierte esta publicación en fallo
+	published = true
 	return nil
+}
+
+func cleanupSentImage(file io.Closer, path string, published bool) error {
+	var cleanupErr error
+	if err := file.Close(); err != nil {
+		cleanupErr = fmt.Errorf("%w: closing temporary image after reading: %w", errImageLocal, err)
+	}
+	// Intentar el borrado aun si falló el cierre
+	cleanupErr = errors.Join(cleanupErr, removeTemporaryImage(path))
+	if published && cleanupErr != nil {
+		slog.Warn("Failed to clean up published image", "path", path, "err", cleanupErr)
+		return nil
+	}
+	return cleanupErr
 }

@@ -2,6 +2,7 @@ package q2imagefetcher
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -23,10 +24,15 @@ type FetcherConfig struct {
 
 type Fetcher struct {
 	downloadsQueue middleware.Middleware
-	publisher      *resultpublisher.Publisher
+	publisher      imagePublisher
 	chunkSize      int
 	nextImage      uint64
 	finished       map[string]bool
+}
+
+type imagePublisher interface {
+	Publish(clientID string, msg middleware.Message) error
+	Close() error
 }
 
 func NewFetcher(config FetcherConfig) (*Fetcher, error) {
@@ -73,6 +79,12 @@ func (f *Fetcher) handleMessage(ctx context.Context, msg middleware.Message) err
 		f.nextImage++
 		imageID := strconv.FormatUint(f.nextImage, 10)
 		if err := f.sendImage(ctx, request.ClientID, imageID, *request.Request); err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return errors.Join(ctxErr, err)
+			}
+			if !isImageSourceError(err) {
+				return err
+			}
 			slog.Warn("Failed to download image from source, skipping", "clientID", request.ClientID, "imageID", imageID, "url", request.Request.ImageRef, "err", err)
 			return nil
 		}
