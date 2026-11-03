@@ -3,6 +3,7 @@ package q1filter
 import (
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/common/middleware"
@@ -37,14 +38,22 @@ func NewFilter(config FilterConfig) (*Filter, error) {
 }
 
 func (filter *Filter) Run() error {
-	defer filter.articlesQueue.Close()
+	defer func() {
+		if err := filter.articlesQueue.Close(); err != nil {
+			slog.Error("While closing Q1 articles queue", "err", err)
+		}
+	}()
 	defer func() {
 		if err := filter.resultsPublisher.Close(); err != nil {
 			slog.Error("While closing results publishers", "err", err)
 		}
 	}()
 
-	shutdown.OnSignal(func() { _ = filter.articlesQueue.StopConsuming() })
+	shutdown.OnSignal(func() {
+		if err := filter.articlesQueue.StopConsuming(); err != nil {
+			slog.Error("While stopping Q1 consumption", "err", err)
+		}
+	})
 
 	slog.Info("Consuming articles from RabbitMQ...", "queue", articlesQueueName)
 	var processingErr error
@@ -56,7 +65,9 @@ func (filter *Filter) Run() error {
 		if processingErr = filter.handleGatewayMessage(msg); processingErr != nil {
 			slog.Error("While handling gateway message", "err", processingErr)
 
-			filter.articlesQueue.StopConsuming()
+			if stopErr := filter.articlesQueue.StopConsuming(); stopErr != nil {
+				slog.Error("While stopping Q1 consumption", "err", stopErr)
+			}
 			nack()
 			return
 		}
@@ -73,6 +84,9 @@ func (filter *Filter) handleGatewayMessage(msg middleware.Message) error {
 	articleMsg, err := inner.DeserializeQ1Articles(&msg)
 	if err != nil {
 		return err
+	}
+	if strings.TrimSpace(articleMsg.ClientID) == "" {
+		return fmt.Errorf("Q1 articles message has no client_id")
 	}
 
 	switch articleMsg.Type {

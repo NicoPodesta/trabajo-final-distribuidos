@@ -3,6 +3,7 @@ package middleware
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -264,6 +265,7 @@ func (b *rabbitBroker) stopConsuming() {
 	}
 	b.stoppedLocally = true
 	if err := b.channel.Cancel(b.consumerTag, false); err != nil && !errors.Is(err, amqp.ErrClosed) {
+		slog.Error("While cancelling AMQP consumer", "consumerTag", b.consumerTag, "err", err)
 		return
 	}
 	b.consuming = false
