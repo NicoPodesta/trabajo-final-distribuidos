@@ -3,28 +3,18 @@ package q1filter
 import (
 	"fmt"
 	"log/slog"
-	"time"
 
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/common/middleware"
-	"trabajo-final-distribuidos/common/result"
 	"trabajo-final-distribuidos/common/resultpublisher"
 	"trabajo-final-distribuidos/common/shutdown"
 )
 
-const (
-	articlesQueueName   = "article_dates"
-	progressLogInterval = 1000
-)
+const articlesQueueName = "article_dates"
 
 type FilterConfig struct {
 	MOMHost string
 	MOMPort int
-}
-
-type clientStats struct {
-	received int
-	matched  int
 }
 
 type Filter struct {
@@ -93,58 +83,4 @@ func (filter *Filter) handleGatewayMessage(msg middleware.Message) error {
 	default:
 		return fmt.Errorf("unexpected Q1 message type: %d", articleMsg.Type)
 	}
-}
-
-func (filter *Filter) handleArticlesMessage(articleMsg *inner.Q1ArticlesMessage) error {
-	stats := filter.statsByClient[articleMsg.ClientID]
-	var results []result.Q1Result
-	for _, articleRecord := range articleMsg.Records {
-		if matched := filter.handleArticleRecordMessage(articleRecord); matched != nil {
-			results = append(results, *matched)
-			stats.matched++
-		}
-		stats.received++
-		if stats.received%progressLogInterval == 0 {
-			slog.Info("Received articles", "clientID", articleMsg.ClientID, "articles", stats.received)
-		}
-	}
-	filter.statsByClient[articleMsg.ClientID] = stats
-	if len(results) == 0 {
-		return nil
-	}
-	return filter.publishResults(articleMsg.ClientID, results)
-}
-
-func (filter *Filter) handleArticleRecordMessage(articleRecord inner.Q1ArticleItem) *result.Q1Result {
-	dateModified := time.Unix(int64(articleRecord.DateModified), 0).UTC()
-	if articleRecord.Language == "en" && dateModified.Year() <= 2020 {
-		return &result.Q1Result{Url: articleRecord.Url, DateModified: articleRecord.DateModified}
-	}
-	return nil
-}
-
-func (filter *Filter) publishResults(clientID string, records []result.Q1Result) error {
-	// Un batch sin coincidencias no termina la consulta
-	if len(records) == 0 {
-		return nil
-	}
-	msg, err := inner.SerializeQ1Results(clientID, records)
-	if err != nil {
-		return err
-	}
-	return filter.resultsPublisher.Publish(clientID, *msg)
-}
-
-func (filter *Filter) handleEndOfRecordsMessage(clientID string) error {
-	msg, err := inner.SerializeQ1ResultsEOF(clientID)
-	if err != nil {
-		return err
-	}
-	if err := filter.resultsPublisher.Publish(clientID, *msg); err != nil {
-		return err
-	}
-	stats := filter.statsByClient[clientID]
-	slog.Info("Received end of input", "clientID", clientID, "articles", stats.received, "matches", stats.matched)
-	delete(filter.statsByClient, clientID)
-	return nil
 }
