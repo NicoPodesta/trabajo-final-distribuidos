@@ -31,11 +31,16 @@ func loadConfig() (q2imagefetcher.FetcherConfig, error) {
 	if err != nil {
 		return q2imagefetcher.FetcherConfig{}, err
 	}
+	maxPendingRequests, err := config.OptionalInt("Q2_MAX_PENDING_REQUESTS", 4)
+	if err != nil {
+		return q2imagefetcher.FetcherConfig{}, err
+	}
 
 	return q2imagefetcher.FetcherConfig{
-		MOMHost:   momHost,
-		MOMPort:   momPort,
-		ChunkSize: chunkSize,
+		MOMHost:            momHost,
+		MOMPort:            momPort,
+		ChunkSize:          chunkSize,
+		MaxPendingRequests: maxPendingRequests,
 	}, nil
 }
 

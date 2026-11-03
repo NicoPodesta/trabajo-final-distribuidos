@@ -24,11 +24,26 @@ var consumerSeq atomic.Uint64
 // Initialize middleware
 
 func CreateQueueMiddleware(queueName string, connectionSettings ConnSettings) (Middleware, error) {
+	return CreateQueueMiddlewareWithPrefetch(queueName, connectionSettings, queuePrefetch)
+}
+
+// Configura el límite de mensajes sin ACK de esta cola
+func CreateQueueMiddlewareWithPrefetch(queueName string, connectionSettings ConnSettings, prefetch int) (Middleware, error) {
+	if err := validateQueuePrefetch(prefetch); err != nil {
+		return nil, err
+	}
 	broker, err := connectBroker(connectionSettings)
 	if err != nil {
 		return nil, err
 	}
-	return &queueMiddleware{name: queueName, broker: broker}, nil
+	return &queueMiddleware{name: queueName, broker: broker, prefetch: prefetch}, nil
+}
+
+func validateQueuePrefetch(prefetch int) error {
+	if prefetch < 1 || prefetch > 65535 {
+		return fmt.Errorf("queue prefetch must be between 1 and 65535")
+	}
+	return nil
 }
 
 func CreateExchangeMiddleware(exchange string, keys []string, connectionSettings ConnSettings) (Middleware, error) {
@@ -51,15 +66,16 @@ func connectBroker(settings ConnSettings) (*rabbitBroker, error) {
 // queueMiddleware methods
 
 type queueMiddleware struct {
-	name   string
-	broker *rabbitBroker
+	name     string
+	broker   *rabbitBroker
+	prefetch int
 }
 
 func (q *queueMiddleware) StartConsuming(callback func(msg Message, ack func(), nack func())) error {
 	if err := q.broker.declareQueue(q.name); err != nil {
 		return err
 	}
-	return q.broker.consume(q.name, queuePrefetch, callback)
+	return q.broker.consume(q.name, q.prefetch, callback)
 }
 
 func (q *queueMiddleware) StopConsuming() error {

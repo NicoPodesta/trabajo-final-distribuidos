@@ -163,7 +163,7 @@ YAML
 
   worker q1_filter_0 q1filter
   worker q2_filter_0 q2filter
-  worker q2_image_fetcher_0 q2imagefetcher CHUNK_SIZE=65536
+  worker q2_image_fetcher_0 q2imagefetcher CHUNK_SIZE=65536 'Q2_MAX_PENDING_REQUESTS=${Q2_MAX_PENDING_REQUESTS:-4}'
 
   for id in $(seq 0 $((tokenizer_count - 1))); do
     worker "tokenizer_${id}" tokenizer "TOKENIZER_ID=${id}" "TOKENIZER_AMOUNT=${tokenizer_count}" "Q4_WORD_COUNTER_AMOUNT=${q4_counter_count}"

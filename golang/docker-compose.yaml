@@ -154,6 +154,7 @@ services:
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
     - CHUNK_SIZE=65536
+    - Q2_MAX_PENDING_REQUESTS=${Q2_MAX_PENDING_REQUESTS:-4}
     - LOG_LEVEL=info
 
   tokenizer_0:

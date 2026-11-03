@@ -5,53 +5,54 @@ import (
 	"errors"
 	"log/slog"
 	"time"
-
-	"trabajo-final-distribuidos/common/middleware"
 )
 
 func (f *Fetcher) Run(ctx context.Context) (err error) {
 	defer func() {
 		err = errors.Join(err, f.downloadsQueue.Close(), f.publisher.Close())
 	}()
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 
 	consumingDone := make(chan struct{})
 	stopperDone := make(chan struct{})
+	jobs := make(chan downloadJob, 1)
+	events := make(chan pipelineEvent, f.maxPendingRequests)
+	receiverDone := make(chan error, 1)
+	downloaderDone := make(chan error, 1)
+	publisherDone := make(chan error, 1)
 	go func() {
 		defer close(stopperDone)
 		f.stopOnCancellation(ctx, consumingDone)
 	}()
 
-	slog.Info("Consuming Q2 image downloads", "queue", imageDownloadsQueueName, "chunkSize", f.chunkSize)
-	var processingErr error
-	err = f.downloadsQueue.StartConsuming(func(msg middleware.Message, ack func(), nack func()) {
-		if processingErr != nil || ctx.Err() != nil {
-			nack()
-			return
-		}
-		if processingErr = f.handleMessage(ctx, msg); processingErr != nil {
-			cancel()
-			nack()
-			return
-		}
-		// Imagen publicada o descartada por un fallo del origen
-		// Una cancelación posterior a completar la publicación permite el ACK
-		ack()
-	})
-	close(consumingDone)
+	slog.Info("Consuming Q2 image downloads", "queue", imageDownloadsQueueName, "chunkSize", f.chunkSize,
+		"maxPendingRequests", f.maxPendingRequests, "downloaders", 1)
+	go func() {
+		receiverErr := f.receiveRequests(ctx, cancel, jobs, events)
+		close(jobs)
+		close(consumingDone)
+		receiverDone <- receiverErr
+	}()
+	go func() { downloaderDone <- f.downloadImages(ctx, cancel, jobs, events) }()
+	go func() { publisherDone <- f.publishImages(ctx, cancel, events) }()
+
+	// Ambos productores tienen que terminar antes de cerrar los eventos. El publicador
+	// sigue recibiendo durante el apagado para limpiar archivos temporales y resolver NACKs
+	receiverErr := <-receiverDone
+	downloaderErr := <-downloaderDone
+	close(events)
+	publisherErr := <-publisherDone
 	<-stopperDone
 
-	if processingErr != nil {
-		return processingErr
+	err = errors.Join(receiverErr, downloaderErr, publisherErr)
+	if cause := context.Cause(ctx); cause != nil && !errors.Is(err, cause) {
+		err = errors.Join(err, cause)
 	}
-	if err != nil {
-		return err
-	}
-	return ctx.Err()
+	return err
 }
 
 func (f *Fetcher) stopOnCancellation(ctx context.Context, consumingDone <-chan struct{}) {

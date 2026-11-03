@@ -13,15 +13,6 @@ import (
 	"trabajo-final-distribuidos/common/result"
 )
 
-// Coordina secuencialmente la descarga y la publicación de una imagen
-func (f *Fetcher) sendImage(ctx context.Context, clientID, imageID string, request inner.ImageDownloadRequest) error {
-	image, err := DownloadImage(ctx, clientID, imageID, request.ImageRef)
-	if err != nil {
-		return err
-	}
-	return f.publishDownloadedImage(ctx, clientID, imageID, request, image)
-}
-
 // Asume la responsabilidad del archivo temporal recibido, lo abre para publicar sus
 // chunks e intenta cerrarlo y borrarlo tanto ante éxito como ante error
 func (f *Fetcher) publishDownloadedImage(ctx context.Context, clientID, imageID string, request inner.ImageDownloadRequest, image *DownloadedImage) (err error) {
