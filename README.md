@@ -144,7 +144,7 @@ limitar reintentos, si agregamos url e bytes de imagen para poder verificar (no 
 
 - Entrega virtual, 20:30 hs - 45 mins
 - Presenten el sistema, presenten el sistema a nivel arquitectura, respuestas del sistema, 3 clientes, 3 replicas en todo minimo, empezar a procesar antes de lanzar
-Si quieren meter mas mejor, pero mejor procesar mas DATA, corrida en 20 minutos standarizada. 
+Si quieren meter mas mejor, pero mejor procesar mas DATA, corrida en 20 minutos standarizada.
 - Scripts para comparar los resultados de notebook para realizar la verificacion
-- Presentacion no a nivel codigo, sino convenciendo que esto funciona. 
+- Presentacion no a nivel codigo, sino convenciendo que esto funciona.
 - No es una evalucion oral de la materia, sino del TP
