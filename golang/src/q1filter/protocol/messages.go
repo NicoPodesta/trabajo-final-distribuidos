@@ -11,9 +11,9 @@ import (
 	"trabajo-final-distribuidos/common/result"
 )
 
-// Nombres de colas de entrada y salida (a definir si cambio o no)
+// Colas Q1
 const (
-	InputQueue  = "q1_sequence_input"
+	InputQueue  = "article_dates"
 	OutputQueue = "q1_batches"
 )
 
