@@ -5,23 +5,22 @@ import (
 
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/common/result"
+	"trabajo-final-distribuidos/q1filter/protocol"
 )
 
-func (filter *Filter) handleArticlesMessage(articleMsg *inner.Q1ArticlesMessage) error {
-	stats := filter.statsByClient[articleMsg.ClientID]
-	var results []result.Q1Result
-	for _, articleRecord := range articleMsg.Records {
+func (filter *Filter) handleArticlesMessage(articleMsg protocol.Input) error {
+	batch := &protocol.Batch{Results: make([]result.Q1Result, 0)}
+	for _, articleRecord := range articleMsg.Payload {
 		matched := filterArticle(articleRecord)
 		if matched != nil {
-			results = append(results, *matched)
+			batch.Results = append(batch.Results, *matched)
 		}
-		stats.recordArticle(articleMsg.ClientID, matched != nil)
 	}
-	filter.statsByClient[articleMsg.ClientID] = stats
-	if len(results) == 0 {
-		return nil
+	batch.Stats = protocol.Stats{
+		Received: uint64(len(articleMsg.Payload)),
+		Matched:  uint64(len(batch.Results)),
 	}
-	return filter.publishResults(articleMsg.ClientID, results)
+	return filter.publishOutput(protocol.Output{Metadata: articleMsg.Metadata, Payload: batch})
 }
 
 func filterArticle(articleRecord inner.Q1ArticleItem) *result.Q1Result {

@@ -3,15 +3,12 @@ package q1filter
 import (
 	"fmt"
 	"log/slog"
-	"strings"
 
-	"trabajo-final-distribuidos/common/messageprotocol/inner"
+	"trabajo-final-distribuidos/common/messageprotocol/sequence"
 	"trabajo-final-distribuidos/common/middleware"
-	"trabajo-final-distribuidos/common/resultpublisher"
 	"trabajo-final-distribuidos/common/shutdown"
+	"trabajo-final-distribuidos/q1filter/protocol"
 )
-
-const articlesQueueName = "article_dates"
 
 type FilterConfig struct {
 	MOMHost string
@@ -19,22 +16,22 @@ type FilterConfig struct {
 }
 
 type Filter struct {
-	articlesQueue    middleware.Middleware
-	resultsPublisher *resultpublisher.Publisher
-	statsByClient    map[string]clientStats
+	articlesQueue middleware.Middleware
+	outputQueue   middleware.Middleware
 }
 
 func NewFilter(config FilterConfig) (*Filter, error) {
 	settings := middleware.ConnSettings{Hostname: config.MOMHost, Port: config.MOMPort}
-	articlesQueue, err := middleware.CreateQueueWithRetry(articlesQueueName, settings)
+	articlesQueue, err := middleware.CreateQueueWithRetry(protocol.InputQueue, settings)
 	if err != nil {
 		return nil, err
 	}
-	return &Filter{
-		articlesQueue:    articlesQueue,
-		resultsPublisher: resultpublisher.New(settings),
-		statsByClient:    make(map[string]clientStats),
-	}, nil
+	outputQueue, err := middleware.CreateQueueWithRetry(protocol.OutputQueue, settings)
+	if err != nil {
+		_ = articlesQueue.Close()
+		return nil, err
+	}
+	return &Filter{articlesQueue: articlesQueue, outputQueue: outputQueue}, nil
 }
 
 func (filter *Filter) Run() error {
@@ -44,8 +41,8 @@ func (filter *Filter) Run() error {
 		}
 	}()
 	defer func() {
-		if err := filter.resultsPublisher.Close(); err != nil {
-			slog.Error("While closing results publishers", "err", err)
+		if err := filter.outputQueue.Close(); err != nil {
+			slog.Error("While closing Q1 output queue", "err", err)
 		}
 	}()
 
@@ -55,7 +52,7 @@ func (filter *Filter) Run() error {
 		}
 	})
 
-	slog.Info("Consuming articles from RabbitMQ...", "queue", articlesQueueName)
+	slog.Info("Consuming sequenced Q1 articles", "queue", protocol.InputQueue)
 	var processingErr error
 	err := filter.articlesQueue.StartConsuming(func(msg middleware.Message, ack func(), nack func()) {
 		if processingErr != nil {
@@ -81,20 +78,16 @@ func (filter *Filter) Run() error {
 }
 
 func (filter *Filter) handleGatewayMessage(msg middleware.Message) error {
-	articleMsg, err := inner.DeserializeQ1Articles(&msg)
+	articleMsg, err := protocol.DecodeInput(msg)
 	if err != nil {
 		return err
 	}
-	if strings.TrimSpace(articleMsg.ClientID) == "" {
-		return fmt.Errorf("Q1 articles message has no client_id")
-	}
-
 	switch articleMsg.Type {
-	case inner.MsgData:
+	case sequence.Data:
 		return filter.handleArticlesMessage(articleMsg)
-	case inner.MsgEOF:
-		return filter.handleEndOfRecordsMessage(articleMsg.ClientID)
+	case sequence.EOF:
+		return filter.publishOutput(protocol.Output{Metadata: articleMsg.Metadata})
 	default:
-		return fmt.Errorf("unexpected Q1 message type: %d", articleMsg.Type)
+		return fmt.Errorf("unexpected Q1 message type: %s", articleMsg.Type)
 	}
 }
