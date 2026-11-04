@@ -9,22 +9,23 @@ type clientStats struct {
 	matched  int
 }
 
-func (stats *clientStats) recordArticle(clientID string, matched bool) {
-	if matched {
-		stats.matched++
-	}
-	stats.received++
-	if stats.received%progressLogInterval == 0 {
-		slog.Info("Received articles", "clientID", clientID, "articles", stats.received)
+func (stats *clientStats) recordBatch(clientID string, filterID, received, matched int) {
+	previous := stats.received
+	stats.received += received
+	stats.matched += matched
+	if stats.received/progressLogInterval > previous/progressLogInterval {
+		slog.Info("Processed Q1 articles locally", "clientID", clientID, "filterID", filterID, "articles", stats.received)
 	}
 }
 
 func (filter *Filter) handleEndOfRecordsMessage(clientID string) error {
+	filter.mu.Lock()
+	defer filter.mu.Unlock()
 	if err := filter.publishEOF(clientID); err != nil {
 		return err
 	}
 	stats := filter.statsByClient[clientID]
-	slog.Info("Received end of input", "clientID", clientID, "articles", stats.received, "matches", stats.matched)
+	slog.Info("Closed Q1 client locally", "clientID", clientID, "filterID", filter.id, "articles", stats.received, "matches", stats.matched)
 	delete(filter.statsByClient, clientID)
 	return nil
 }

@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"errors"
+	"fmt"
 	"net"
 	"sync"
 	"time"
@@ -22,6 +23,7 @@ type clientSession struct {
 	expectedEOFs    map[inner.QueryID]int
 	receivedEOFs    map[inner.QueryID]int
 	completedCount  int
+	q1EOFs          map[int]bool
 	sessionLock     sync.Mutex
 	ackChan         chan struct{}
 }
@@ -48,9 +50,22 @@ func (s *clientSession) eofsExpectedFor(queryID inner.QueryID) int {
 	return 1
 }
 
-func (s *clientSession) registerEOF(queryID inner.QueryID) (bool, error) {
+func (s *clientSession) registerEOF(queryID inner.QueryID, filterID *int) (bool, error) {
 	s.sessionLock.Lock()
 	defer s.sessionLock.Unlock()
+
+	if queryID == inner.Q1 {
+		if filterID == nil || *filterID < 0 || *filterID >= s.eofsExpectedFor(inner.Q1) {
+			return false, fmt.Errorf("missing or invalid Q1 filter_id")
+		}
+		if s.q1EOFs[*filterID] {
+			return false, nil
+		}
+		if s.q1EOFs == nil {
+			s.q1EOFs = make(map[int]bool)
+		}
+		s.q1EOFs[*filterID] = true
+	}
 
 	s.receivedEOFs[queryID]++
 	if s.receivedEOFs[queryID] == s.eofsExpectedFor(queryID) {

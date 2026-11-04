@@ -27,7 +27,12 @@ func (c *ResultCollector) Start(running *atomic.Bool) {
 	resultsQueue := fmt.Sprintf("results_%s", c.gatewayID)
 	slog.Info("Starting results consumer on queue...", "queue", resultsQueue)
 
+	var processingErr error
 	err := c.resultsQueue.StartConsuming(func(msg middleware.Message, ack func(), nack func()) {
+		if processingErr != nil {
+			nack()
+			return
+		}
 		header, err := inner.DeserializeResultHeader(&msg)
 		if err != nil {
 			slog.Error("While deserializing result header", "err", err)
@@ -44,9 +49,15 @@ func (c *ResultCollector) Start(running *atomic.Bool) {
 
 		if header.IsEOF() {
 			slog.Info("Results EOF received from workers for client", "clientID", header.ClientID, "query", header.QueryID)
-			allDone, err := session.registerEOF(header.QueryID)
+			allDone, err := session.registerEOF(header.QueryID, header.FilterID)
 			if err != nil {
 				slog.Error("While writing END_OF_RECORDS to client", "clientID", header.ClientID, "err", err)
+				if header.QueryID == inner.Q1 {
+					processingErr = err
+					nack()
+					_ = c.resultsQueue.StopConsuming()
+					return
+				}
 			}
 			if allDone {
 				slog.Info("All expected query EOFs received for client", "clientID", header.ClientID)
@@ -58,6 +69,12 @@ func (c *ResultCollector) Start(running *atomic.Bool) {
 		if err := c.handleResultRecord(session, header, &msg); err != nil {
 			slog.Error("While handling result record", "clientID", header.ClientID, "queryID", header.QueryID, "err", err)
 			session.finish()
+			if header.QueryID == inner.Q1 {
+				processingErr = err
+				nack()
+				_ = c.resultsQueue.StopConsuming()
+				return
+			}
 			ack()
 			return
 		}

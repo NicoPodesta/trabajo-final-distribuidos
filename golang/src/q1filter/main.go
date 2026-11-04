@@ -20,9 +20,25 @@ func loadConfig() (q1filter.FilterConfig, error) {
 		return q1filter.FilterConfig{}, err
 	}
 
+	filterID, err := config.OptionalInt("Q1_FILTER_ID", 0)
+	if err != nil {
+		return q1filter.FilterConfig{}, err
+	}
+	filterAmount, err := config.OptionalInt("Q1_FILTER_AMOUNT", 1)
+	if err != nil {
+		return q1filter.FilterConfig{}, err
+	}
+	prefetch, err := config.OptionalInt("Q1_PREFETCH", 1)
+	if err != nil {
+		return q1filter.FilterConfig{}, err
+	}
+
 	return q1filter.FilterConfig{
-		MOMHost: momHost,
-		MOMPort: momPort,
+		MOMHost:      momHost,
+		MOMPort:      momPort,
+		FilterID:     filterID,
+		FilterAmount: filterAmount,
+		Prefetch:     prefetch,
 	}, nil
 }
 

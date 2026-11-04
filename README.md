@@ -49,7 +49,7 @@ cd golang && make up
 - Cola única por Gateway `results_<gatewayID>`: los mensajes incluyen un header con `type`, `client_id` y `query_id`. Collector los reenvía por el socket de la sesión correspondiente.
 - Las cinco consultas usan `common/resultpublisher` para publicar resultados y EOF, reutilizando conexiones por Gateway.
 - Gateway espera el EOF de cada consulta (configurable con `EXPECTED_QUERIES`) antes de enviar el `EndOfRecords` final al cliente y cerrar la sesión. Cuenta consultas terminadas, no réplicas.
-- Una consulta puede cerrar con más de un EOF: uno por réplica de su última etapa. `Q5_FILTER_AMOUNT` indica cuántos espera de Q5. Como cada réplica publica sus datos y después su EOF por la misma cola, cuando llega el último EOF ya llegaron todos los datos.
+- Una consulta puede cerrar con más de un EOF: uno por réplica de su última etapa. `Q1_FILTER_AMOUNT` y `Q5_FILTER_AMOUNT` indican cuántos espera de cada consulta. En Q1 valida y deduplica por `filter_id`. Cada réplica publica sus datos y después su EOF por el mismo canal hacia la cola de resultados.
 
 ### Tokenizer
 
@@ -68,8 +68,14 @@ cd golang && make up
 - Publica `url` y `date_modified` de las coincidencias de cada batch. Un batch sin coincidencias no genera resultados ni termina la consulta.
 - No elimina URLs repetidas ni descarta URLs vacías. Un timestamp igual a 0 se interpreta como 1970.
 - Si ocurre un error, envía NACK y detiene el consumo.
-- Al recibir EOF, publica el EOF de Q1 incluso si no hubo coincidencias y libera las estadísticas del cliente, mantenidas en memoria.
-- Actualmente se ejecuta un filtro, todavía falta coordinar el cierre entre réplicas de Q1.
+- Al recibir EOF inicia la coordinación y sigue consumiendo. Cuenta cada batch después de publicar sus resultados, incluso si no tuvo coincidencias. Las estadísticas son locales por cliente y réplica, y se liberan después de publicar su EOF exitosamente.
+- `Q1_FILTER_ID` identifica la réplica entre 0 y `Q1_FILTER_AMOUNT - 1`. Los valores predeterminados son ID 0, cantidad 1 y `Q1_PREFETCH=1`. Gateway usa la misma cantidad. Compose conserva un filtro.
+
+### Coordinación de Q1
+
+- Gateway cuenta los batches publicados en `article_dates` y envía `total_batches` en su EOF. Cero indica entrada vacía; un total ausente es un error. Gateway y Q1 deben actualizarse juntos.
+- Los filtros esperan que todas las réplicas estén suscriptas a `q1_filter_control` antes de consumir datos. El coordinador reúne los conteos acumulados de todas y autoriza el cierre cuando su suma coincide con el total esperado. Cada filtro publica su propio EOF identificado, después de sus resultados.
+- La cantidad de réplicas queda fija durante la ejecución. El estado permanece en memoria; se deduplican reportes de control y EOF, no entregas de batches. No se agrega finalizador ni cola de resultados intermedia.
 
 ### Q2
 

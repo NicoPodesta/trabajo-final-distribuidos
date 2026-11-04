@@ -8,20 +8,20 @@ import (
 )
 
 func (filter *Filter) handleArticlesMessage(articleMsg *inner.Q1ArticlesMessage) error {
-	stats := filter.statsByClient[articleMsg.ClientID]
 	var results []result.Q1Result
 	for _, articleRecord := range articleMsg.Records {
 		matched := filterArticle(articleRecord)
 		if matched != nil {
 			results = append(results, *matched)
 		}
-		stats.recordArticle(articleMsg.ClientID, matched != nil)
 	}
+	if err := filter.publishResults(articleMsg.ClientID, results); err != nil {
+		return err
+	}
+	stats := filter.statsByClient[articleMsg.ClientID]
+	stats.recordBatch(articleMsg.ClientID, filter.id, len(articleMsg.Records), len(results))
 	filter.statsByClient[articleMsg.ClientID] = stats
-	if len(results) == 0 {
-		return nil
-	}
-	return filter.publishResults(articleMsg.ClientID, results)
+	return filter.coordinator.OnBatchProcessed(articleMsg.ClientID)
 }
 
 func filterArticle(articleRecord inner.Q1ArticleItem) *result.Q1Result {

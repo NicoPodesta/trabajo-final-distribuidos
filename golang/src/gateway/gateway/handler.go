@@ -60,6 +60,7 @@ func (h *ClientHandler) Handle(conn net.Conn, shutdownChannel <-chan struct{}) {
 	reader := external.NewReader(conn)
 	received := 0
 	var abstractBatches uint64
+	var q1Batches uint64
 	endOfRecordsReceived := false
 
 	for {
@@ -88,6 +89,7 @@ func (h *ClientHandler) Handle(conn net.Conn, shutdownChannel <-chan struct{}) {
 			received += count
 			if count > 0 {
 				abstractBatches++
+				q1Batches++
 			}
 
 		case external.EndOfRecords:
@@ -96,7 +98,7 @@ func (h *ClientHandler) Handle(conn net.Conn, shutdownChannel <-chan struct{}) {
 				return
 			}
 			endOfRecordsReceived = true
-			if err := h.handleEndOfRecords(session, clientID, received, abstractBatches); err != nil {
+			if err := h.handleEndOfRecords(session, clientID, received, abstractBatches, q1Batches); err != nil {
 				slog.Error("While handling end of records message", "clientID", clientID, "err", err)
 				return
 			}
@@ -161,14 +163,14 @@ func (h *ClientHandler) handleArticleBatch(session *clientSession, reader *exter
 	return len(records), session.sendAck()
 }
 
-func (h *ClientHandler) handleEndOfRecords(session *clientSession, clientID string, received int, abstractBatches uint64) error {
+func (h *ClientHandler) handleEndOfRecords(session *clientSession, clientID string, received int, abstractBatches, q1Batches uint64) error {
 	slog.Info("Received END_OF_RECORDS message from client", "clientID", clientID, "articles", received)
 
 	if err := session.sendAck(); err != nil {
 		return err
 	}
 
-	if err := h.sendQ1Articles(clientID, []inner.Q1ArticleItem{}); err != nil {
+	if err := h.sendQ1EOF(clientID, q1Batches); err != nil {
 		return err
 	}
 	if err := h.sendQ2Articles(clientID, []inner.Q2ArticleItem{}); err != nil {
@@ -183,6 +185,14 @@ func (h *ClientHandler) handleEndOfRecords(session *clientSession, clientID stri
 
 func (h *ClientHandler) sendQ1Articles(clientID string, items []inner.Q1ArticleItem) error {
 	msg, err := inner.SerializeQ1Articles(clientID, items)
+	if err != nil {
+		return err
+	}
+	return h.articleDatesQueue.Send(*msg)
+}
+
+func (h *ClientHandler) sendQ1EOF(clientID string, totalBatches uint64) error {
+	msg, err := inner.SerializeQ1ArticlesEOF(clientID, totalBatches)
 	if err != nil {
 		return err
 	}

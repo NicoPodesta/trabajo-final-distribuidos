@@ -18,7 +18,7 @@ func (filter *Filter) publishResults(clientID string, records []result.Q1Result)
 }
 
 func (filter *Filter) publishEOF(clientID string) error {
-	msg, err := inner.SerializeQ1ResultsEOF(clientID)
+	msg, err := inner.SerializeQ1ResultsEOF(clientID, filter.id)
 	if err != nil {
 		return err
 	}

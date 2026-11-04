@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log/slog"
 	"os"
 
@@ -45,6 +46,14 @@ func loadConfig() (gateway.GatewayConfig, error) {
 		return gateway.GatewayConfig{}, err
 	}
 
+	q1FilterAmount, err := config.OptionalInt("Q1_FILTER_AMOUNT", 1)
+	if err != nil {
+		return gateway.GatewayConfig{}, err
+	}
+	if q1FilterAmount < 1 {
+		return gateway.GatewayConfig{}, fmt.Errorf("Q1_FILTER_AMOUNT must be positive")
+	}
+
 	return gateway.GatewayConfig{
 		ID:              id,
 		ServerHost:      serverHost,
@@ -52,7 +61,7 @@ func loadConfig() (gateway.GatewayConfig, error) {
 		MOMHost:         momHost,
 		MOMPort:         momPort,
 		ExpectedQueries: expectedQueries,
-		ExpectedEOFs:    map[inner.QueryID]int{inner.Q5: q5FilterAmount},
+		ExpectedEOFs:    map[inner.QueryID]int{inner.Q1: q1FilterAmount, inner.Q5: q5FilterAmount},
 	}, nil
 }
 
