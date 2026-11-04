@@ -14,7 +14,7 @@ func (filter *Filter) handleRecentArticles(msg middleware.Message) error {
 	}
 
 	if recentArticlesMsg.IsEOF() {
-		return filter.broadcaster.Broadcast(recentArticlesMsg.ClientID)
+		return filter.coordinator.Broadcast(recentArticlesMsg.ClientID)
 	}
 
 	return filter.processArticles(recentArticlesMsg.ClientID, recentArticlesMsg.Records)

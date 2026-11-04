@@ -4,7 +4,7 @@ import (
 	"log/slog"
 	"sync"
 
-	"trabajo-final-distribuidos/common/eofbroadcaster"
+	"trabajo-final-distribuidos/common/eofcoordinator"
 	"trabajo-final-distribuidos/common/eofcounter"
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/common/middleware"
@@ -41,7 +41,7 @@ type AvgPartial struct {
 	conns                 *middleware.Connections
 	historicalCountsQueue middleware.Middleware
 	avgPartialsQueue      middleware.Middleware
-	broadcaster           *eofbroadcaster.Broadcaster
+	coordinator           *eofcoordinator.EOFCoordinator
 	mu                    sync.Mutex
 	totalsByClient        map[string]totals
 	eofs                  *eofcounter.Counter
@@ -65,7 +65,7 @@ func NewAvgPartial(config AvgPartialConfig) (partial *AvgPartial, err error) {
 		return nil, err
 	}
 
-	broadcaster, err := eofbroadcaster.New(controlExchangeName, config.AvgPartialID, config.AvgPartialAmount, conns.Settings)
+	coordinator, err := eofcoordinator.New(controlExchangeName, config.AvgPartialID, config.AvgPartialAmount, conns.Settings)
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +74,7 @@ func NewAvgPartial(config AvgPartialConfig) (partial *AvgPartial, err error) {
 		conns:                 conns,
 		historicalCountsQueue: historicalCountsQueue,
 		avgPartialsQueue:      avgPartialsQueue,
-		broadcaster:           broadcaster,
+		coordinator:           coordinator,
 		totalsByClient:        make(map[string]totals),
 		eofs:                  eofcounter.New(config.TokenizerAmount),
 	}, nil
@@ -83,14 +83,14 @@ func NewAvgPartial(config AvgPartialConfig) (partial *AvgPartial, err error) {
 func (partial *AvgPartial) Run() error {
 	defer partial.conns.Close()
 	defer func() {
-		if err := partial.broadcaster.Close(); err != nil {
-			slog.Error("While closing EOF broadcaster", "err", err)
+		if err := partial.coordinator.Close(); err != nil {
+			slog.Error("While closing EOF coordinator", "err", err)
 		}
 	}()
 
 	shutdown.OnSignal(func() {
 		_ = partial.historicalCountsQueue.StopConsuming()
-		_ = partial.broadcaster.Stop()
+		_ = partial.coordinator.Stop()
 	})
 
 	go partial.consumeControl()
@@ -105,7 +105,7 @@ func (partial *AvgPartial) Run() error {
 }
 
 func (partial *AvgPartial) consumeControl() {
-	if err := partial.broadcaster.Start(partial.handleBroadcastEOF); err != nil {
+	if err := partial.coordinator.Start(partial.handleBroadcastEOF); err != nil {
 		slog.Error("Control consumer stopped with error", "err", err)
 	}
 }
@@ -123,7 +123,7 @@ func (partial *AvgPartial) handleMessage(msg middleware.Message) error {
 	}
 
 	if historicalCountsMsg.IsEOF() {
-		return partial.broadcaster.Broadcast(historicalCountsMsg.ClientID)
+		return partial.coordinator.Broadcast(historicalCountsMsg.ClientID)
 	}
 
 	partial.handleCounts(historicalCountsMsg.ClientID, historicalCountsMsg.Records)

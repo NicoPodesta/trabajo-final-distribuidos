@@ -4,7 +4,7 @@ import (
 	"log/slog"
 	"sync"
 
-	"trabajo-final-distribuidos/common/eofbroadcaster"
+	"trabajo-final-distribuidos/common/eofcoordinator"
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/common/middleware"
 	"trabajo-final-distribuidos/common/shutdown"
@@ -35,7 +35,7 @@ type Tokenizer struct {
 	vocabularyQueue       middleware.Middleware
 	historicalCountsQueue middleware.Middleware
 	recentArticlesQueue   middleware.Middleware
-	broadcaster           *eofbroadcaster.Broadcaster
+	coordinator           *eofcoordinator.EOFCoordinator
 	mu                    sync.Mutex
 	received              int
 }
@@ -73,7 +73,7 @@ func NewTokenizer(config TokenizerConfig) (tokenizer *Tokenizer, err error) {
 		return nil, err
 	}
 
-	broadcaster, err := eofbroadcaster.New(controlExchangeName, config.TokenizerID, config.TokenizerAmount, conns.Settings)
+	coordinator, err := eofcoordinator.New(controlExchangeName, config.TokenizerID, config.TokenizerAmount, conns.Settings)
 	if err != nil {
 		return nil, err
 	}
@@ -85,25 +85,25 @@ func NewTokenizer(config TokenizerConfig) (tokenizer *Tokenizer, err error) {
 		vocabularyQueue:       vocabularyQueue,
 		historicalCountsQueue: historicalCountsQueue,
 		recentArticlesQueue:   recentArticlesQueue,
-		broadcaster:           broadcaster,
+		coordinator:           coordinator,
 	}, nil
 }
 
 func (tokenizer *Tokenizer) Run() error {
 	defer tokenizer.conns.Close()
 	defer func() {
-		if err := tokenizer.broadcaster.Close(); err != nil {
-			slog.Error("While closing EOF broadcaster", "err", err)
+		if err := tokenizer.coordinator.Close(); err != nil {
+			slog.Error("While closing EOF coordinator", "err", err)
 		}
 	}()
 
 	shutdown.OnSignal(func() {
 		_ = tokenizer.abstractsQueue.StopConsuming()
-		_ = tokenizer.broadcaster.Stop()
+		_ = tokenizer.coordinator.Stop()
 	})
 
 	go func() {
-		if err := tokenizer.broadcaster.Start(func(clientID string) error {
+		if err := tokenizer.coordinator.Start(func(clientID string) error {
 			tokenizer.mu.Lock()
 			defer tokenizer.mu.Unlock()
 			return tokenizer.publishEOF(clientID)
@@ -128,15 +128,20 @@ func (tokenizer *Tokenizer) handleGatewayMessage(msg middleware.Message) error {
 	}
 
 	if abstractMsg.IsEOF() {
-		slog.Info("Received end of input", "clientID", abstractMsg.ClientID)
-		return tokenizer.broadcaster.Broadcast(abstractMsg.ClientID)
+		slog.Info("Received end of input", "clientID", abstractMsg.ClientID, "totalBatches", abstractMsg.TotalBatches)
+		return tokenizer.coordinator.BroadcastWithTotal(abstractMsg.ClientID, abstractMsg.TotalBatches)
 	}
 
 	tokenizer.mu.Lock()
-	defer tokenizer.mu.Unlock()
 	result := tokenizeBatch(abstractMsg.Records)
 	tokenizer.logProgress(abstractMsg.ClientID, len(abstractMsg.Records))
-	return tokenizer.publish(abstractMsg.ClientID, result)
+	err = tokenizer.publish(abstractMsg.ClientID, result)
+	tokenizer.mu.Unlock()
+	if err != nil {
+		return err
+	}
+
+	return tokenizer.coordinator.OnBatchProcessed(abstractMsg.ClientID)
 }
 
 func (tokenizer *Tokenizer) logProgress(clientID string, processed int) {

@@ -4,7 +4,7 @@ import (
 	"log/slog"
 	"sync"
 
-	"trabajo-final-distribuidos/common/eofbroadcaster"
+	"trabajo-final-distribuidos/common/eofcoordinator"
 	"trabajo-final-distribuidos/common/eofcounter"
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/common/middleware"
@@ -29,7 +29,7 @@ type FilterConfig struct {
 type Filter struct {
 	recentArticlesQueue middleware.Middleware
 	averageExchange     middleware.Middleware
-	broadcaster         *eofbroadcaster.Broadcaster
+	coordinator         *eofcoordinator.EOFCoordinator
 	resultsPublisher    *resultpublisher.Publisher
 	mu                  sync.Mutex
 	clients             map[string]*clientState
@@ -51,7 +51,7 @@ func NewFilter(config FilterConfig) (*Filter, error) {
 		return nil, err
 	}
 
-	broadcaster, err := eofbroadcaster.New(controlExchangeName, config.FilterID, config.FilterAmount, settings)
+	coordinator, err := eofcoordinator.New(controlExchangeName, config.FilterID, config.FilterAmount, settings)
 	if err != nil {
 		_ = recentArticlesQueue.Close()
 		_ = averageExchange.Close()
@@ -61,7 +61,7 @@ func NewFilter(config FilterConfig) (*Filter, error) {
 	return &Filter{
 		recentArticlesQueue: recentArticlesQueue,
 		averageExchange:     averageExchange,
-		broadcaster:         broadcaster,
+		coordinator:         coordinator,
 		resultsPublisher:    resultpublisher.New(settings),
 		clients:             make(map[string]*clientState),
 		pending:             pending.NewMemory(),
@@ -86,19 +86,19 @@ func (filter *Filter) Run() error {
 		}
 	}()
 	defer func() {
-		if err := filter.broadcaster.Close(); err != nil {
-			slog.Error("While closing EOF broadcaster", "err", err)
+		if err := filter.coordinator.Close(); err != nil {
+			slog.Error("While closing EOF coordinator", "err", err)
 		}
 	}()
 
 	shutdown.OnSignal(func() {
 		_ = filter.recentArticlesQueue.StopConsuming()
 		_ = filter.averageExchange.StopConsuming()
-		_ = filter.broadcaster.Stop()
+		_ = filter.coordinator.Stop()
 	})
 
 	go func() {
-		if err := filter.broadcaster.Start(filter.processTokenizersDone); err != nil {
+		if err := filter.coordinator.Start(filter.processTokenizersDone); err != nil {
 			slog.Error("Control consumer stopped with error", "err", err)
 		}
 	}()

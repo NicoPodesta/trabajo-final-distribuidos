@@ -14,9 +14,10 @@ type AbstractItem struct {
 }
 
 type AbstractsMessage struct {
-	Type     MsgType        `json:"type"`
-	ClientID string         `json:"client_id"`
-	Records  []AbstractItem `json:"records,omitempty"`
+	Type         MsgType        `json:"type"`
+	ClientID     string         `json:"client_id"`
+	Records      []AbstractItem `json:"records,omitempty"`
+	TotalBatches uint64         `json:"total_batches,omitempty"`
 }
 
 func (m *AbstractsMessage) IsEOF() bool {
@@ -35,10 +36,11 @@ func NewAbstractsMessage(clientID string, records []AbstractItem) *AbstractsMess
 	}
 }
 
-func NewAbstractsEOF(clientID string) *AbstractsMessage {
+func NewAbstractsEOF(clientID string, totalBatches uint64) *AbstractsMessage {
 	return &AbstractsMessage{
-		Type:     MsgEOF,
-		ClientID: clientID,
+		Type:         MsgEOF,
+		ClientID:     clientID,
+		TotalBatches: totalBatches,
 	}
 }
 
@@ -54,8 +56,8 @@ func SerializeAbstracts(clientID string, records []AbstractItem) (*middleware.Me
 	return NewAbstractsMessage(clientID, records).Serialize()
 }
 
-func SerializeAbstractsEOF(clientID string) (*middleware.Message, error) {
-	return NewAbstractsEOF(clientID).Serialize()
+func SerializeAbstractsEOF(clientID string, totalBatches uint64) (*middleware.Message, error) {
+	return NewAbstractsEOF(clientID, totalBatches).Serialize()
 }
 
 func DeserializeAbstracts(message *middleware.Message) (*AbstractsMessage, error) {

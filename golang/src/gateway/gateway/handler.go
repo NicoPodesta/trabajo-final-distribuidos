@@ -62,6 +62,7 @@ func (h *ClientHandler) Handle(conn net.Conn, shutdownChannel <-chan struct{}) {
 	reader := external.NewReader(conn)
 	received := 0
 	var q1Seq uint64
+	var abstractBatches uint64
 	endOfRecordsReceived := false
 
 	for {
@@ -90,6 +91,7 @@ func (h *ClientHandler) Handle(conn net.Conn, shutdownChannel <-chan struct{}) {
 			received += count
 			if count > 0 {
 				q1Seq++
+				abstractBatches++
 			}
 
 		case external.EndOfRecords:
@@ -98,7 +100,7 @@ func (h *ClientHandler) Handle(conn net.Conn, shutdownChannel <-chan struct{}) {
 				return
 			}
 			endOfRecordsReceived = true
-			if err := h.handleEndOfRecords(session, clientID, received, q1Seq); err != nil {
+			if err := h.handleEndOfRecords(session, clientID, received, q1Seq, abstractBatches); err != nil {
 				slog.Error("While handling end of records message", "clientID", clientID, "err", err)
 				return
 			}
@@ -163,7 +165,7 @@ func (h *ClientHandler) handleArticleBatch(session *clientSession, reader *exter
 	return len(records), session.sendAck()
 }
 
-func (h *ClientHandler) handleEndOfRecords(session *clientSession, clientID string, received int, q1FinalSeq uint64) error {
+func (h *ClientHandler) handleEndOfRecords(session *clientSession, clientID string, received int, q1FinalSeq uint64, abstractBatches uint64) error {
 	slog.Info("Received END_OF_RECORDS message from client", "clientID", clientID, "articles", received)
 
 	if err := session.sendAck(); err != nil {
@@ -176,7 +178,7 @@ func (h *ClientHandler) handleEndOfRecords(session *clientSession, clientID stri
 	if err := h.sendQ2Articles(clientID, []inner.Q2ArticleItem{}); err != nil {
 		return err
 	}
-	if err := h.sendAbstracts(clientID, []inner.AbstractItem{}); err != nil {
+	if err := h.sendAbstractsEOF(clientID, abstractBatches); err != nil {
 		return err
 	}
 
@@ -219,6 +221,14 @@ func (h *ClientHandler) sendQ2Articles(clientID string, items []inner.Q2ArticleI
 
 func (h *ClientHandler) sendAbstracts(clientID string, items []inner.AbstractItem) error {
 	msg, err := inner.SerializeAbstracts(clientID, items)
+	if err != nil {
+		return err
+	}
+	return h.abstractsQueue.Send(*msg)
+}
+
+func (h *ClientHandler) sendAbstractsEOF(clientID string, totalBatches uint64) error {
+	msg, err := inner.SerializeAbstractsEOF(clientID, totalBatches)
 	if err != nil {
 		return err
 	}
