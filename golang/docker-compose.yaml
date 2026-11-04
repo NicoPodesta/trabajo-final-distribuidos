@@ -129,32 +129,6 @@ services:
     - MOM_PORT=5672
     - LOG_LEVEL=info
 
-  q1_filter_1:
-    build:
-      context: ./src/
-      dockerfile: q1filter/Dockerfile
-    container_name: q1_filter_1
-    depends_on:
-      rabbitmq:
-        condition: service_healthy
-    environment:
-    - MOM_HOST=rabbitmq
-    - MOM_PORT=5672
-    - LOG_LEVEL=info
-
-  q1_finalizer_0:
-    build:
-      context: ./src/
-      dockerfile: q1filter/finalizer/Dockerfile
-    container_name: q1_finalizer_0
-    depends_on:
-      rabbitmq:
-        condition: service_healthy
-    environment:
-    - MOM_HOST=rabbitmq
-    - MOM_PORT=5672
-    - LOG_LEVEL=info
-
   q2_filter_0:
     build:
       context: ./src/

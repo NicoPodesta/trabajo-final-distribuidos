@@ -119,14 +119,6 @@ cd golang && make up
 - Validar la ejecución completa con varios clientes, gateways, tokenizers y comprobando que los resultados y cierres correspondan a cada cliente.
 - Carrera en el cierre de los Tokenizers, q5AvgPartial, q5Filter: el EOF de control puede llegar antes de que se procese un lote ya entregado a esa réplica, y ese lote se publica después del EOF.
 
-### Coordinación por secuencias
-
-- Se desarrollo una base común de mensajes (`common/messageprotocol/sequence`) y seguimiento de trabajo terminado (`common/completion`), todavía sin integrar a las consultas.
-- Cada mensaje identifica al cliente, al flujo de origen y al lote dentro de ese flujo. Dos filtros que consumen lotes del mismo productor comparten el flujo, aunque procesen lotes distintos.
-- Cada productor numera sus lotes desde 1 y anuncia el último número al terminar. Cero indica que no envió lotes; un lote vacío sigue siendo un lote. Los reintentos conservan identidad y contenido.
-- El tracker recuerda qué trabajo terminó y qué falta. Recibir el anuncio de fin no alcanza para cerrar: deben completarse todos los números del intervalo, sin contar duplicados ni ignorar huecos.
-- Se admite llegada fuera de orden y se rechazan finales contradictorios o números fuera de rango, incluso cuando el anuncio de fin llega después de los datos.
-
 ## Consultas
 
 - Se puede utilizar la libreria externa parquet-go? -> solo para la parte de lectura

@@ -1,11 +1,26 @@
 package q1filter
 
-import "trabajo-final-distribuidos/q1filter/protocol"
+import (
+	"trabajo-final-distribuidos/common/messageprotocol/inner"
+	"trabajo-final-distribuidos/common/result"
+)
 
-func (filter *Filter) publishOutput(output protocol.Output) error {
-	msg, err := protocol.EncodeOutput(output)
+func (filter *Filter) publishResults(clientID string, records []result.Q1Result) error {
+	// Un batch sin coincidencias no termina la consulta
+	if len(records) == 0 {
+		return nil
+	}
+	msg, err := inner.SerializeQ1Results(clientID, records)
 	if err != nil {
 		return err
 	}
-	return filter.outputQueue.Send(msg)
+	return filter.resultsPublisher.Publish(clientID, *msg)
+}
+
+func (filter *Filter) publishEOF(clientID string) error {
+	msg, err := inner.SerializeQ1ResultsEOF(clientID)
+	if err != nil {
+		return err
+	}
+	return filter.resultsPublisher.Publish(clientID, *msg)
 }

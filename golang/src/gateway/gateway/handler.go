@@ -1,7 +1,6 @@
 package gateway
 
 import (
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net"
@@ -9,7 +8,6 @@ import (
 
 	"trabajo-final-distribuidos/common/messageprotocol/external"
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
-	"trabajo-final-distribuidos/common/messageprotocol/sequence"
 	"trabajo-final-distribuidos/common/middleware"
 )
 
@@ -61,7 +59,6 @@ func (h *ClientHandler) Handle(conn net.Conn, shutdownChannel <-chan struct{}) {
 
 	reader := external.NewReader(conn)
 	received := 0
-	var q1Seq uint64
 	var abstractBatches uint64
 	endOfRecordsReceived := false
 
@@ -83,14 +80,13 @@ func (h *ClientHandler) Handle(conn net.Conn, shutdownChannel <-chan struct{}) {
 				slog.Error("Unexpected ArticleBatch after EndOfRecords", "clientID", clientID)
 				return
 			}
-			count, err := h.handleArticleBatch(session, reader, clientID, q1Seq+1)
+			count, err := h.handleArticleBatch(session, reader, clientID)
 			if err != nil {
 				slog.Error("While handling article batch message", "clientID", clientID, "err", err)
 				return
 			}
 			received += count
 			if count > 0 {
-				q1Seq++
 				abstractBatches++
 			}
 
@@ -100,7 +96,7 @@ func (h *ClientHandler) Handle(conn net.Conn, shutdownChannel <-chan struct{}) {
 				return
 			}
 			endOfRecordsReceived = true
-			if err := h.handleEndOfRecords(session, clientID, received, q1Seq, abstractBatches); err != nil {
+			if err := h.handleEndOfRecords(session, clientID, received, abstractBatches); err != nil {
 				slog.Error("While handling end of records message", "clientID", clientID, "err", err)
 				return
 			}
@@ -117,7 +113,7 @@ func (h *ClientHandler) Handle(conn net.Conn, shutdownChannel <-chan struct{}) {
 	}
 }
 
-func (h *ClientHandler) handleArticleBatch(session *clientSession, reader *external.Reader, clientID string, q1Seq uint64) (int, error) {
+func (h *ClientHandler) handleArticleBatch(session *clientSession, reader *external.Reader, clientID string) (int, error) {
 	records, err := reader.ReadArticleBatch()
 	if err != nil {
 		return 0, err
@@ -152,7 +148,7 @@ func (h *ClientHandler) handleArticleBatch(session *clientSession, reader *exter
 		}
 	}
 
-	if err := h.sendQ1Articles(clientID, q1Seq, q1Items); err != nil {
+	if err := h.sendQ1Articles(clientID, q1Items); err != nil {
 		return 0, err
 	}
 	if err := h.sendQ2Articles(clientID, q2Items); err != nil {
@@ -165,14 +161,14 @@ func (h *ClientHandler) handleArticleBatch(session *clientSession, reader *exter
 	return len(records), session.sendAck()
 }
 
-func (h *ClientHandler) handleEndOfRecords(session *clientSession, clientID string, received int, q1FinalSeq uint64, abstractBatches uint64) error {
+func (h *ClientHandler) handleEndOfRecords(session *clientSession, clientID string, received int, abstractBatches uint64) error {
 	slog.Info("Received END_OF_RECORDS message from client", "clientID", clientID, "articles", received)
 
 	if err := session.sendAck(); err != nil {
 		return err
 	}
 
-	if err := h.sendQ1EOF(clientID, q1FinalSeq); err != nil {
+	if err := h.sendQ1Articles(clientID, []inner.Q1ArticleItem{}); err != nil {
 		return err
 	}
 	if err := h.sendQ2Articles(clientID, []inner.Q2ArticleItem{}); err != nil {
@@ -185,30 +181,12 @@ func (h *ClientHandler) handleEndOfRecords(session *clientSession, clientID stri
 	return nil
 }
 
-func (h *ClientHandler) sendQ1Articles(clientID string, seq uint64, items []inner.Q1ArticleItem) error {
-	stream := sequence.Stream{ClientID: clientID, StreamID: articleDatesQueueName + "/gateway-" + h.gatewayID}
-	msg, err := sequence.NewData(stream, seq, items)
+func (h *ClientHandler) sendQ1Articles(clientID string, items []inner.Q1ArticleItem) error {
+	msg, err := inner.SerializeQ1Articles(clientID, items)
 	if err != nil {
 		return err
 	}
-	return h.sendQ1Message(msg)
-}
-
-func (h *ClientHandler) sendQ1EOF(clientID string, finalSeq uint64) error {
-	stream := sequence.Stream{ClientID: clientID, StreamID: articleDatesQueueName + "/gateway-" + h.gatewayID}
-	msg, err := sequence.NewEOF[[]inner.Q1ArticleItem](stream, finalSeq)
-	if err != nil {
-		return err
-	}
-	return h.sendQ1Message(msg)
-}
-
-func (h *ClientHandler) sendQ1Message(msg sequence.Message[[]inner.Q1ArticleItem]) error {
-	body, err := json.Marshal(msg)
-	if err != nil {
-		return err
-	}
-	return h.articleDatesQueue.Send(middleware.Message{Body: string(body)})
+	return h.articleDatesQueue.Send(*msg)
 }
 
 func (h *ClientHandler) sendQ2Articles(clientID string, items []inner.Q2ArticleItem) error {
