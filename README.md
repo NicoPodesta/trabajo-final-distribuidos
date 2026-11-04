@@ -30,7 +30,7 @@ cd golang && make up
 - El cliente obtiene del Load Balancer la dirección del Gateway y se conecta directamente a él.
 - El client lee .parquet de a hasta 100 rows y envía los artículos en batchs (`ArticleBatch`) por TCP al Gateway, esperando un ACK por batch.
 - Cliente envia articulos y recibe resultados concurrentemente por TCP (full duplex).
-- El cliente no manda ACKs al recibir resultados para no complicar el protocolo: el propio TCP ya regula la velocidad si el cliente lee lento.
+- El cliente envía un ACK por cada resultado recibido y escrito, o por cada chunk de Q2 procesado. Gateway espera ese ACK antes de enviar el siguiente resultado o chunk.
 - Al terminar de enviar los archivos, manda `EndOfRecords` y espera su ACK. Sigue recibiendo resultados hasta el `EndOfRecords` del Gateway.
 
 ### Load Balancer
@@ -87,10 +87,14 @@ cd golang && make up
 
 ### Q3
 
-- Consume pares `(word, language)` de `vocabulary_0` y mantiene en memoria, por cliente y palabra, su presencia en inglés y francés.
-- Publica cada palabra una sola vez cuando aparece en ambos idiomas, sin esperar al cierre de la consulta.
-- Espera la cantidad de EOF indicada por `TOKENIZER_AMOUNT`, publica el EOF de Q3 y libera el estado del cliente, incluso si no hubo palabras compartidas.
-- Actualmente usa una cola y una instancia de Vocabulary Join. El reparto por palabra entre varias particiones sigue pendiente.
+- Recorrido: Tokenizer → `vocabulary_0` → Vocabulary Join → `results_<gatewayID>` → Gateway → cliente. Actualmente hay una cola de vocabulario y un Join.
+- Tokenizer elimina pares `(word, language)` repetidos por lote. Q3 conserva `english`, `french` y `sent` por cliente y palabra.
+- Una palabra coincide al aparecer en inglés y francés, en cualquier orden, dentro del mismo lote o en lotes distintos.
+- `selectedWords` evita duplicados dentro del lote; `sent` evita repetir palabras entre lotes del mismo cliente.
+- Publica una lista con las coincidencias nuevas al terminar cada lote, sin esperar EOF. Si no hay coincidencias nuevas, no publica datos.
+- Conserva todo el vocabulario en memoria hasta contar `TOKENIZER_AMOUNT` EOF y publicar el EOF de Q3 sin error. También cierra clientes sin coincidencias o sin vocabulario.
+- Valida mensajes, cliente, palabras e idiomas. Hace ACK al procesar correctamente; ante errores, NACK con reencolado y detención. Al salir cierra la cola y el publicador.
+- Gateway envía cada palabra por TCP y espera su ACK individual. El cliente escribe `q3_results.csv`; recibe el cierre final cuando terminan las consultas esperadas.
 
 ### Q4
 
