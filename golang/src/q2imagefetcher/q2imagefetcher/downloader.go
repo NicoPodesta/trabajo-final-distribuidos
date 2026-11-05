@@ -13,8 +13,8 @@ import (
 )
 
 const (
-	downloadTimeout    = 1 * time.Minute
-	downloadRetries    = 10
+	downloadTimeout    = 10 * time.Second
+	downloadRetries    = 5
 	downloadRetryDelay = 1 * time.Second
 )
 
