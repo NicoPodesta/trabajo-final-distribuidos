@@ -15,6 +15,7 @@ type FetcherConfig struct {
 	MOMPort            int
 	ChunkSize          int
 	MaxPendingRequests int
+	FilterAmount       int
 }
 
 type Fetcher struct {
@@ -22,6 +23,7 @@ type Fetcher struct {
 	publisher          imagePublisher
 	chunkSize          int
 	maxPendingRequests int
+	filterAmount       int
 }
 
 type imagePublisher interface {
@@ -30,6 +32,9 @@ type imagePublisher interface {
 }
 
 func NewFetcher(config FetcherConfig) (*Fetcher, error) {
+	if config.FilterAmount < 1 {
+		return nil, fmt.Errorf("Q2_FILTER_AMOUNT must be positive")
+	}
 	if config.ChunkSize <= 0 || uint64(config.ChunkSize) > math.MaxUint32 {
 		return nil, fmt.Errorf("CHUNK_SIZE must be positive and fit in uint32")
 	}
@@ -46,5 +51,6 @@ func NewFetcher(config FetcherConfig) (*Fetcher, error) {
 		publisher:          resultpublisher.New(settings),
 		chunkSize:          config.ChunkSize,
 		maxPendingRequests: config.MaxPendingRequests,
+		filterAmount:       config.FilterAmount,
 	}, nil
 }

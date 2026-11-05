@@ -11,10 +11,11 @@ import (
 
 // Solo la goroutine de publicación modifica este estado y usa el Publisher
 type clientPending struct {
-	images   map[string]requestReceipt
-	eofs     []requestReceipt
-	eofSeen  bool
-	finished bool
+	images    map[string]requestReceipt
+	eofs      []requestReceipt
+	producers map[int]bool
+	eofSeen   bool
+	finished  bool
 }
 
 func (f *Fetcher) publishImages(ctx context.Context, cancel context.CancelCauseFunc, events <-chan pipelineEvent) error {
@@ -35,7 +36,7 @@ func (f *Fetcher) publishImages(ctx context.Context, cancel context.CancelCauseF
 
 		state := clients[event.job.clientID]
 		if state == nil {
-			state = &clientPending{images: make(map[string]requestReceipt)}
+			state = &clientPending{images: make(map[string]requestReceipt), producers: make(map[int]bool)}
 			clients[event.job.clientID] = state
 		}
 		var err error
@@ -48,7 +49,14 @@ func (f *Fetcher) publishImages(ctx context.Context, cancel context.CancelCauseF
 				state.images[event.job.imageID] = event.receipt
 			}
 		case eofReceived:
-			if state.finished {
+			if state.finished || state.producers[event.filterID] {
+				event.receipt.ack()
+				continue
+			}
+			state.producers[event.filterID] = true
+			slog.Debug("Received Q2 producer EOF", "clientID", event.job.clientID, "filterID", event.filterID, "closedFilters", len(state.producers))
+			if len(state.producers) < f.filterAmount {
+				// Libera prefetch para recibir pedidos y cierres de otros filtros
 				event.receipt.ack()
 				continue
 			}
@@ -71,7 +79,7 @@ func (f *Fetcher) publishImages(ctx context.Context, cancel context.CancelCauseF
 	// También quedan aca los pedidos registrados que nunca llegaron al
 	// download worker, y los EOF cuyo trabajo no pudo terminar
 	for clientID, state := range clients {
-		if (len(state.images) != 0 || len(state.eofs) != 0) && ctx.Err() == nil {
+		if !state.finished && ctx.Err() == nil {
 			err := fmt.Errorf("Q2 pipeline ended with pending work for client %q", clientID)
 			processingErr = errors.Join(processingErr, err)
 			cancel(err)
@@ -133,6 +141,8 @@ func (f *Fetcher) publishClientEOF(ctx context.Context, clientID string, state *
 		receipt.ack()
 	}
 	state.eofs = nil
+	state.producers = nil
+	state.images = nil
 	slog.Info("Published Q2 EOF", "clientID", clientID)
 	return nil
 }

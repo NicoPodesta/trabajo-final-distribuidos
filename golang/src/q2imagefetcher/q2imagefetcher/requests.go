@@ -33,11 +33,12 @@ const (
 
 // Para enviar metadatos y la ruta del archivo temporal
 type pipelineEvent struct {
-	kind    eventKind
-	job     downloadJob
-	receipt requestReceipt
-	image   *DownloadedImage
-	err     error
+	kind     eventKind
+	filterID int
+	job      downloadJob
+	receipt  requestReceipt
+	image    *DownloadedImage
+	err      error
 }
 
 func (f *Fetcher) receiveRequests(ctx context.Context, cancel context.CancelCauseFunc, jobs chan<- downloadJob, events chan<- pipelineEvent) error {
@@ -48,7 +49,7 @@ func (f *Fetcher) receiveRequests(ctx context.Context, cancel context.CancelCaus
 			nack()
 			return
 		}
-		event, err := readRequest(msg, &nextImage)
+		event, err := f.readRequest(msg, &nextImage)
 		if err != nil {
 			processingErr = err
 			cancel(err)
@@ -77,7 +78,7 @@ func (f *Fetcher) receiveRequests(ctx context.Context, cancel context.CancelCaus
 	return errors.Join(processingErr, consumeErr)
 }
 
-func readRequest(msg middleware.Message, nextImage *uint64) (pipelineEvent, error) {
+func (f *Fetcher) readRequest(msg middleware.Message, nextImage *uint64) (pipelineEvent, error) {
 	request, err := inner.DeserializeImageDownload(&msg)
 	if err != nil {
 		return pipelineEvent{}, err
@@ -88,7 +89,7 @@ func readRequest(msg middleware.Message, nextImage *uint64) (pipelineEvent, erro
 	event := pipelineEvent{job: downloadJob{clientID: request.ClientID}}
 	switch request.Type {
 	case inner.MsgData:
-		if request.Request == nil || strings.TrimSpace(request.Request.ImageRef) == "" {
+		if request.Request == nil || strings.TrimSpace(request.Request.ImageRef) == "" || request.FilterID != nil {
 			return pipelineEvent{}, fmt.Errorf("image download requires a request with image_ref")
 		}
 		if *nextImage == math.MaxUint64 {
@@ -102,7 +103,11 @@ func readRequest(msg middleware.Message, nextImage *uint64) (pipelineEvent, erro
 		if request.Request != nil {
 			return pipelineEvent{}, fmt.Errorf("image downloads EOF must not contain a request")
 		}
+		if request.FilterID == nil || *request.FilterID < 0 || *request.FilterID >= f.filterAmount {
+			return pipelineEvent{}, fmt.Errorf("missing or invalid Q2 filter_id")
+		}
 		event.kind = eofReceived
+		event.filterID = *request.FilterID
 	default:
 		return pipelineEvent{}, fmt.Errorf("unexpected image download message type: %d", request.Type)
 	}

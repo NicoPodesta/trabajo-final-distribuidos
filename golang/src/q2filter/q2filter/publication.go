@@ -24,13 +24,15 @@ func (filter *Filter) publishImageDownload(clientID string, article inner.Q2Arti
 }
 
 func (filter *Filter) publishEOF(clientID string) error {
-	msg, err := inner.SerializeImageDownloadsEOF(clientID)
+	filter.mu.Lock()
+	defer filter.mu.Unlock()
+	msg, err := inner.SerializeImageDownloadsProducerEOF(clientID, filter.id)
 	if err != nil {
 		return err
 	}
 	if err := filter.downloadsQueue.Send(*msg); err != nil {
 		return fmt.Errorf("publishing image downloads EOF for client %q: %w", clientID, err)
 	}
-	slog.Info("Published end of image download requests", "clientID", clientID)
+	slog.Info("Published end of image download requests", "clientID", clientID, "filterID", filter.id)
 	return nil
 }

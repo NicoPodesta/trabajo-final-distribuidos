@@ -24,7 +24,22 @@ func loadConfig() (q2filter.FilterConfig, error) {
 		return q2filter.FilterConfig{}, fmt.Errorf("MOM_PORT must be between 1 and 65535: %d", momPort)
 	}
 
-	return q2filter.FilterConfig{MOMHost: momHost, MOMPort: momPort}, nil
+	filterID, err := config.OptionalInt("Q2_FILTER_ID", 0)
+	if err != nil {
+		return q2filter.FilterConfig{}, err
+	}
+	filterAmount, err := config.OptionalInt("Q2_FILTER_AMOUNT", 1)
+	if err != nil {
+		return q2filter.FilterConfig{}, err
+	}
+	prefetch, err := config.OptionalInt("Q2_PREFETCH", 1)
+	if err != nil {
+		return q2filter.FilterConfig{}, err
+	}
+	return q2filter.FilterConfig{
+		MOMHost: momHost, MOMPort: momPort,
+		FilterID: filterID, FilterAmount: filterAmount, Prefetch: prefetch,
+	}, nil
 }
 
 func run() int {

@@ -28,12 +28,8 @@ func (m *Q2ArticlesMessage) IsEOF() bool {
 }
 
 func NewQ2ArticlesMessage(clientID string, records []Q2ArticleItem) *Q2ArticlesMessage {
-	msgType := MsgData
-	if len(records) == 0 {
-		msgType = MsgEOF
-	}
 	return &Q2ArticlesMessage{
-		Type:     msgType,
+		Type:     MsgData,
 		ClientID: clientID,
 		Records:  records,
 	}
