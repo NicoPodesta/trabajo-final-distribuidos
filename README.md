@@ -56,6 +56,7 @@ cd golang && make up
 - Consume batches de `abstracts` desde una cola compartida entre sus réplicas.
 - Convierte el texto a minúsculas y elimina stopwords y tokens compuestos solo por números.
 - Con `İ` (I turca con punto) `strings.ToLower` de Go da `i`, mientras que `lower()` de Python da `i` más un punto combinante y la palabra se parte en dos (`İdris` pasa a `i` y `dris`). Se conserva el comportamiento de Go. Se modifica el notebook se reemplaza `İ` por `i` antes de pasar a minúsculas.
+- Con la `Σ` griega mayúscula pasa algo parecido: `lower()` de Python aplica la regla del sigma final y da `ς` al final de palabra (`ΕΛΛΑΣ` pasa a `ελλας`), mientras que `strings.ToLower` de Go siempre da `σ` (`ελλασ`). Una `ς` que ya viene en minúscula queda igual en los dos. Se conserva el comportamiento de Go y para comparar contra el notebook se reemplaza `Σ` por `σ` antes de pasar a minúsculas. Afecta a unas pocas palabras de Q3 por cada cientos de miles.
 - Usa las mismas listas de stopwords de NLTK que el notebook, incluidas en `tokenizer/text/stopwords.go` para mantener el mismo criterio de filtrado.
 - Para Q3 publica los pares `(word, language)` sin repetirlos dentro del batch, en `vocabulary_0`.
 - Para Q4 cuenta en cuántos abstracts del batch aparece cada palabra. Cada abstract aporta como máximo 1 por palabra.
