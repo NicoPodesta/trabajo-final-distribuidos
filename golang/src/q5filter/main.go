@@ -30,11 +30,17 @@ func loadConfig() (q5filter.FilterConfig, error) {
 		return q5filter.FilterConfig{}, err
 	}
 
+	pendingDir, err := config.RequiredString("Q5_PENDING_DIR")
+	if err != nil {
+		return q5filter.FilterConfig{}, err
+	}
+
 	return q5filter.FilterConfig{
 		MOMHost:      momHost,
 		MOMPort:      momPort,
 		FilterID:     filterID,
 		FilterAmount: filterAmount,
+		PendingDir:   pendingDir,
 	}, nil
 }
 

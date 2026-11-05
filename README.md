@@ -118,7 +118,7 @@ cd golang && make up
 - Cuenta las palabras después del filtrado del Tokenizer, incluyendo las repetidas. Omite los abstracts vacíos. Un abstract no vacío que queda sin palabras después del filtrado cuenta como 0.
 - Avg Partial consume `historical_counts` y acumula suma de palabras y cantidad de artículos. Varias réplicas compiten por la cola. Recibe un único EOF con `total_batches`, cierra por conteo con las demás réplicas (`q5_avg_partial_control`) y recién entonces publica su parcial y su EOF en `avg_partials`.
 - Avg Aggregator espera los EOF de los parciales y calcula el promedio como entero truncado. Si el cliente no tiene artículos históricos, usa 0. Publica el promedio mediante el exchange `q5_average` hacia los filtros.
-- Q5 Filter consume `recent_articles` y guarda los candidatos en memoria hasta recibir el promedio (el objetivo es guardarlos en disco). Selecciona los artículos cuya cantidad de palabras es estrictamente mayor al promedio y publica `url` y `word_count`.
+- Q5 Filter consume `recent_articles` y guarda los candidatos hasta recibir el promedio. Los guarda en disco: un archivo por cliente (`<client_id>.jsonl`, una línea por artículo) en `Q5_PENDING_DIR/filter_<id>`, con `Q5_PENDING_DIR` obligatoria. Cuando llega el promedio lee el archivo por tandas de 1000 artículos, publica los que superan el promedio y lo borra. Selecciona los artículos cuya cantidad de palabras es estrictamente mayor al promedio y publica `url` y `word_count`.
 - Las réplicas del Filter compiten por `recent_articles`, así que cada artículo lo recibe una sola réplica, y el promedio llega a todas por una clave de enrutamiento propia (`q5_filter_<id>`). Recibe un único EOF con `total_batches` y cierra por conteo con las demás réplicas (`q5_filter_control`).
 - Cada réplica publica el EOF de Q5 cuando ya recibió el promedio y el cierre por conteo de los artículos recientes, y libera el estado del cliente. Con varias réplicas el Gateway recibe varios EOF de Q5.
 
@@ -133,7 +133,6 @@ cd golang && make up
 ## Pendientes
 
 - Validar la ejecución completa con varios clientes, gateways, tokenizers y comprobando que los resultados y cierres correspondan a cada cliente.
-- Q5 Filter guarda los candidatos en memoria (el objetivo es disco).
 
 ## Consultas
 

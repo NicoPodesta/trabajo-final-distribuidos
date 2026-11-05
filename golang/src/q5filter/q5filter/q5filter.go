@@ -3,7 +3,9 @@ package q5filter
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
+	"path/filepath"
 	"sync"
 
 	"trabajo-final-distribuidos/common/eofcoordinator"
@@ -24,6 +26,7 @@ type FilterConfig struct {
 	MOMPort      int
 	FilterID     int
 	FilterAmount int
+	PendingDir   string
 }
 
 type Filter struct {
@@ -37,6 +40,11 @@ type Filter struct {
 }
 
 func NewFilter(config FilterConfig) (*Filter, error) {
+	store, err := pending.NewDisk(filepath.Join(config.PendingDir, fmt.Sprintf("filter_%d", config.FilterID)))
+	if err != nil {
+		return nil, err
+	}
+
 	settings := middleware.ConnSettings{Hostname: config.MOMHost, Port: config.MOMPort}
 	recentArticlesQueue, err := middleware.CreateQueueMiddleware(recentArticlesQueueName, settings)
 	if err != nil {
@@ -63,7 +71,7 @@ func NewFilter(config FilterConfig) (*Filter, error) {
 		coordinator:         coordinator,
 		resultsPublisher:    resultpublisher.New(settings),
 		clients:             make(map[string]*clientState),
-		pending:             pending.NewMemory(),
+		pending:             store,
 	}, nil
 }
 
