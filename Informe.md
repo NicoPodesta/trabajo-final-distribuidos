@@ -257,3 +257,24 @@ El sistema asegura un apagado ordenado frente a señales `SIGTERM` o `SIGINT`:
 * Se permite que los mensajes actualmente en procesamiento dentro de los workers terminen de ejecutarse y hagan su respectivo ACK/NACK.
 * Se cierran ordenadamente los canales y conexiones de RabbitMQ y sockets TCP con los clientes.
 * Se eliminan los archivos temporales remanentes en disco (imágenes en tránsito y candidatos de Q5), asegurando que el host quede en un estado limpio.
+
+
+## 8. Aclaraciones sobre las decisiones
+
+### Coordinación por consulta
+
+- **Q1:** Contamos cada batch después de publicar sus resultados, incluso si no hubo coincidencias. Los reportes son acumulados por réplica: recibir uno repetido no aumenta el total.
+- **Q2:** Cada filtro manda su EOF a todos los fetchers. Cada fetcher espera esos cierres y termina sus imágenes pendientes antes de cerrar. Confirma los EOFs parciales para que no ocupen el cupo e impidan recibir los restantes.
+- **Q3:** Cada tokenizer manda su EOF a todos los joins, aunque no les haya enviado palabras. Los joins cuentan cierres por cantidad; a diferencia de Q1 y Q2, no identifican cierres duplicados.
+- **Q4:** Alcanza con reunir los tops locales: una palabra fuera del top 20 de su contador ya tiene veinte palabras por delante y no puede entrar al global.
+- **Q5:** Sumamos palabras y cantidad de artículos, no promediamos los promedios parciales. Cada filtro espera tanto el promedio como el cierre de recientes y la evaluación de sus pendientes.
+
+### Protocolos y sesiones
+
+- TCP lleva mensajes binarios con tipo y longitudes; completamos las lecturas porque un mensaje puede llegar en partes. RabbitMQ lleva JSON para poder inspeccionar los mensajes con facilidad.
+- El ACK del Gateway confirma la publicación del batch; el del fetcher, la publicación del resultado; el del cliente, su escritura. Son pasos distintos.
+- Hay una cola de resultados por Gateway y sesiones en memoria para encontrar el socket de cada cliente. El EOF de entrada no cierra la conexión: esperamos a que terminen todas las consultas. Si el cliente se desconecta, los resultados posteriores se descartan.
+
+### Límites
+
+- RabbitMQ, el Collector y los servidores de imágenes pueden limitar el rendimiento. Más réplicas no garantizan una mejora proporcional. Las cantidades de réplicas son fijas en el docker compose.
