@@ -254,7 +254,6 @@ services:
     - MOM_PORT=5672
     - Q5_AVG_PARTIAL_ID=0
     - Q5_AVG_PARTIAL_AMOUNT=3
-    - TOKENIZER_AMOUNT=3
     - LOG_LEVEL=info
 
   q5_avg_partial_1:
@@ -270,7 +269,6 @@ services:
     - MOM_PORT=5672
     - Q5_AVG_PARTIAL_ID=1
     - Q5_AVG_PARTIAL_AMOUNT=3
-    - TOKENIZER_AMOUNT=3
     - LOG_LEVEL=info
 
   q5_avg_partial_2:
@@ -286,7 +284,6 @@ services:
     - MOM_PORT=5672
     - Q5_AVG_PARTIAL_ID=2
     - Q5_AVG_PARTIAL_AMOUNT=3
-    - TOKENIZER_AMOUNT=3
     - LOG_LEVEL=info
 
   q5_filter_0:
@@ -302,7 +299,6 @@ services:
     - MOM_PORT=5672
     - Q5_FILTER_ID=0
     - Q5_FILTER_AMOUNT=3
-    - TOKENIZER_AMOUNT=3
     - LOG_LEVEL=info
 
   q5_filter_1:
@@ -318,7 +314,6 @@ services:
     - MOM_PORT=5672
     - Q5_FILTER_ID=1
     - Q5_FILTER_AMOUNT=3
-    - TOKENIZER_AMOUNT=3
     - LOG_LEVEL=info
 
   q5_filter_2:
@@ -334,7 +329,6 @@ services:
     - MOM_PORT=5672
     - Q5_FILTER_ID=2
     - Q5_FILTER_AMOUNT=3
-    - TOKENIZER_AMOUNT=3
     - LOG_LEVEL=info
 
   q5_avg_aggregator_0:

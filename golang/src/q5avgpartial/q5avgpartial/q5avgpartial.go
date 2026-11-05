@@ -22,7 +22,6 @@ const (
 type AvgPartialConfig struct {
 	MOMHost          string
 	MOMPort          int
-	TokenizerAmount  int
 	AvgPartialID     int
 	AvgPartialAmount int
 }

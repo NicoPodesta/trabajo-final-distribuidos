@@ -20,11 +20,10 @@ const (
 )
 
 type FilterConfig struct {
-	MOMHost         string
-	MOMPort         int
-	FilterID        int
-	FilterAmount    int
-	TokenizerAmount int
+	MOMHost      string
+	MOMPort      int
+	FilterID     int
+	FilterAmount int
 }
 
 type Filter struct {

@@ -20,11 +20,6 @@ func loadConfig() (q5avgpartial.AvgPartialConfig, error) {
 		return q5avgpartial.AvgPartialConfig{}, err
 	}
 
-	tokenizerAmount, err := config.RequiredInt("TOKENIZER_AMOUNT")
-	if err != nil {
-		return q5avgpartial.AvgPartialConfig{}, err
-	}
-
 	avgPartialID, err := config.RequiredInt("Q5_AVG_PARTIAL_ID")
 	if err != nil {
 		return q5avgpartial.AvgPartialConfig{}, err
@@ -38,7 +33,6 @@ func loadConfig() (q5avgpartial.AvgPartialConfig, error) {
 	return q5avgpartial.AvgPartialConfig{
 		MOMHost:          momHost,
 		MOMPort:          momPort,
-		TokenizerAmount:  tokenizerAmount,
 		AvgPartialID:     avgPartialID,
 		AvgPartialAmount: avgPartialAmount,
 	}, nil
