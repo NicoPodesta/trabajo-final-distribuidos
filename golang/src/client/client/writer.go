@@ -64,9 +64,12 @@ func (w *ResultWriter) WriteQ1(res *result.Q1Result) error {
 	return err
 }
 
-// TODO: consultar con el profe el formato de archivo (csv o json) 
-// para relacionar nombre, URL y archivo de cada imagen.
+// Relaciona nombre, URL y archivo de cada imagen.
 func (w *ResultWriter) WriteQ2(res *result.Q2Result, index int) error {
+	if len(res.Image) == 0 {
+		// Una descarga fallida conserva el artículo, sin crear un archivo vacío
+		return w.q2Chunks.writeCSVRecord([]string{"", res.Name, res.Url, ""})
+	}
 	filename := sanitizeFilename(res.Name)
 	if filename == "" {
 		filename = fmt.Sprintf("image_%d", index)
