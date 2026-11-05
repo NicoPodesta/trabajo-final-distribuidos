@@ -35,12 +35,18 @@ func loadConfig() (tokenizer.TokenizerConfig, error) {
 		return tokenizer.TokenizerConfig{}, err
 	}
 
+	vocabularyJoinAmount, err := config.OptionalInt("Q3_JOIN_AMOUNT", 1)
+	if err != nil {
+		return tokenizer.TokenizerConfig{}, err
+	}
+
 	return tokenizer.TokenizerConfig{
-		MOMHost:           momHost,
-		MOMPort:           momPort,
-		TokenizerID:       id,
-		TokenizerAmount:   amount,
-		WordCounterAmount: wordCounterAmount,
+		MOMHost:              momHost,
+		MOMPort:              momPort,
+		TokenizerID:          id,
+		TokenizerAmount:      amount,
+		WordCounterAmount:    wordCounterAmount,
+		VocabularyJoinAmount: vocabularyJoinAmount,
 	}, nil
 }
 

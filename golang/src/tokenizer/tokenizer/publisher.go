@@ -14,11 +14,8 @@ func wordShard(word string, amount int) int {
 }
 
 func (tokenizer *Tokenizer) publish(clientID string, result batchResult) error {
-	if len(result.vocabulary) > 0 {
-		msg, err := inner.SerializeVocabulary(clientID, result.vocabulary)
-		if err := send(tokenizer.vocabularyQueue, msg, err); err != nil {
-			return err
-		}
+	if err := tokenizer.publishVocabulary(clientID, result.vocabulary); err != nil {
+		return err
 	}
 	if err := tokenizer.publishWordCounts(clientID, result.wordCounts); err != nil {
 		return err
@@ -29,6 +26,25 @@ func (tokenizer *Tokenizer) publish(clientID string, result batchResult) error {
 	}
 	msg, err = inner.SerializeRecentArticles(clientID, result.recentArticles)
 	return send(tokenizer.recentArticlesQueue, msg, err)
+}
+
+func (tokenizer *Tokenizer) publishVocabulary(clientID string, vocabulary []inner.VocabularyItem) error {
+	byShard := make([][]inner.VocabularyItem, len(tokenizer.vocabularyQueues))
+	for _, item := range vocabulary {
+		shard := wordShard(item.Word, len(byShard))
+		byShard[shard] = append(byShard[shard], item)
+	}
+
+	for shard, items := range byShard {
+		if len(items) == 0 {
+			continue
+		}
+		msg, err := inner.SerializeVocabulary(clientID, items)
+		if err := send(tokenizer.vocabularyQueues[shard], msg, err); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (tokenizer *Tokenizer) publishWordCounts(clientID string, wordCounts []inner.WordCountItem) error {
@@ -51,13 +67,15 @@ func (tokenizer *Tokenizer) publishWordCounts(clientID string, wordCounts []inne
 }
 
 func (tokenizer *Tokenizer) publishEOF(clientID string, totalBatches uint64, coordinated bool) error {
-	msg, err := inner.SerializeVocabularyEOF(clientID)
-	if err := send(tokenizer.vocabularyQueue, msg, err); err != nil {
-		return err
+	for _, queue := range tokenizer.vocabularyQueues {
+		msg, err := inner.SerializeVocabularyEOF(clientID)
+		if err := send(queue, msg, err); err != nil {
+			return err
+		}
 	}
 
 	for _, queue := range tokenizer.wordCountsQueues {
-		msg, err = inner.SerializeWordCountsEOF(clientID)
+		msg, err := inner.SerializeWordCountsEOF(clientID)
 		if err := send(queue, msg, err); err != nil {
 			return err
 		}
@@ -67,7 +85,7 @@ func (tokenizer *Tokenizer) publishEOF(clientID string, totalBatches uint64, coo
 		return nil
 	}
 
-	msg, err = inner.SerializeHistoricalCountsEOF(clientID, totalBatches)
+	msg, err := inner.SerializeHistoricalCountsEOF(clientID, totalBatches)
 	if err := send(tokenizer.historicalCountsQueue, msg, err); err != nil {
 		return err
 	}
