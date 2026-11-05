@@ -154,6 +154,16 @@ func (c *EOFCoordinator) ClosingTotal(clientID string) (uint64, bool) {
 	return 0, false
 }
 
+func (c *EOFCoordinator) IsCoordinator(clientID string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if info, ok := c.closing[clientID]; ok {
+		return info.coordinator == c.id
+	}
+	info, ok := c.closed[clientID]
+	return ok && info.coordinator == c.id
+}
+
 func countMessage(kind msgType, clientID string, info closeInfo, count uint64) controlMessage {
 	return controlMessage{Type: kind, ClientID: clientID, Coordinator: &info.coordinator, Total: &info.total, Count: count}
 }

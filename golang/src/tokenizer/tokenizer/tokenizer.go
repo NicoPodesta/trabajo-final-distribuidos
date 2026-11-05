@@ -111,7 +111,7 @@ func (tokenizer *Tokenizer) Run() error {
 			if !ok {
 				return fmt.Errorf("closing total of client %q is unknown", clientID)
 			}
-			return tokenizer.publishEOF(clientID, totalBatches)
+			return tokenizer.publishEOF(clientID, totalBatches, tokenizer.coordinator.IsCoordinator(clientID))
 		}); err != nil {
 			slog.Error("Control consumer stopped with error", "err", err)
 		}

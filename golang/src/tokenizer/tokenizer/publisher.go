@@ -50,7 +50,7 @@ func (tokenizer *Tokenizer) publishWordCounts(clientID string, wordCounts []inne
 	return nil
 }
 
-func (tokenizer *Tokenizer) publishEOF(clientID string, totalBatches uint64) error {
+func (tokenizer *Tokenizer) publishEOF(clientID string, totalBatches uint64, coordinated bool) error {
 	msg, err := inner.SerializeVocabularyEOF(clientID)
 	if err := send(tokenizer.vocabularyQueue, msg, err); err != nil {
 		return err
@@ -63,9 +63,11 @@ func (tokenizer *Tokenizer) publishEOF(clientID string, totalBatches uint64) err
 		}
 	}
 
-	msg, err = inner.SerializeHistoricalCountsEOF(clientID, totalBatches)
-	if err := send(tokenizer.historicalCountsQueue, msg, err); err != nil {
-		return err
+	if coordinated {
+		msg, err = inner.SerializeHistoricalCountsEOF(clientID, totalBatches)
+		if err := send(tokenizer.historicalCountsQueue, msg, err); err != nil {
+			return err
+		}
 	}
 
 	msg, err = inner.SerializeRecentArticlesEOF(clientID, totalBatches)

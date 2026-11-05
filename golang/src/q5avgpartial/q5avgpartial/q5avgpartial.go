@@ -1,11 +1,13 @@
 package q5avgpartial
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 
 	"trabajo-final-distribuidos/common/eofcoordinator"
-	"trabajo-final-distribuidos/common/eofcounter"
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/common/middleware"
 	"trabajo-final-distribuidos/common/shutdown"
@@ -44,7 +46,6 @@ type AvgPartial struct {
 	coordinator           *eofcoordinator.EOFCoordinator
 	mu                    sync.Mutex
 	totalsByClient        map[string]totals
-	eofs                  *eofcounter.Counter
 }
 
 func NewAvgPartial(config AvgPartialConfig) (partial *AvgPartial, err error) {
@@ -76,7 +77,6 @@ func NewAvgPartial(config AvgPartialConfig) (partial *AvgPartial, err error) {
 		avgPartialsQueue:      avgPartialsQueue,
 		coordinator:           coordinator,
 		totalsByClient:        make(map[string]totals),
-		eofs:                  eofcounter.New(config.TokenizerAmount),
 	}, nil
 }
 
@@ -88,12 +88,22 @@ func (partial *AvgPartial) Run() error {
 		}
 	}()
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	shutdown.OnSignal(func() {
+		cancel()
 		_ = partial.historicalCountsQueue.StopConsuming()
 		_ = partial.coordinator.Stop()
 	})
 
 	go partial.consumeControl()
+
+	if err := partial.coordinator.WaitReady(ctx); err != nil {
+		if errors.Is(err, context.Canceled) {
+			return nil
+		}
+		return err
+	}
 
 	slog.Info("Consuming historical counts from RabbitMQ...", "queue", historicalCountsQueueName)
 	return partial.historicalCountsQueue.StartConsuming(func(msg middleware.Message, ack func(), nack func()) {
@@ -105,15 +115,19 @@ func (partial *AvgPartial) Run() error {
 }
 
 func (partial *AvgPartial) consumeControl() {
-	if err := partial.coordinator.Start(partial.handleBroadcastEOF); err != nil {
+	if err := partial.coordinator.Start(partial.handleCountedEOF); err != nil {
 		slog.Error("Control consumer stopped with error", "err", err)
 	}
 }
 
-func (partial *AvgPartial) handleBroadcastEOF(clientID string) error {
+func (partial *AvgPartial) handleCountedEOF(clientID string) error {
 	partial.mu.Lock()
 	defer partial.mu.Unlock()
-	return partial.handleTokenizerEOF(clientID)
+
+	clientTotals := partial.takeTotals(clientID)
+	slog.Info("All historical counts received", "clientID", clientID, "sum", clientTotals.sum, "count", clientTotals.count)
+
+	return partial.publishPartial(clientID, clientTotals)
 }
 
 func (partial *AvgPartial) handleMessage(msg middleware.Message) error {
@@ -123,11 +137,14 @@ func (partial *AvgPartial) handleMessage(msg middleware.Message) error {
 	}
 
 	if historicalCountsMsg.IsEOF() {
-		return partial.coordinator.Broadcast(historicalCountsMsg.ClientID)
+		if historicalCountsMsg.TotalBatches == nil {
+			return fmt.Errorf("historical counts EOF of client %s has no total_batches", historicalCountsMsg.ClientID)
+		}
+		return partial.coordinator.BroadcastWithTotal(historicalCountsMsg.ClientID, *historicalCountsMsg.TotalBatches)
 	}
 
 	partial.handleCounts(historicalCountsMsg.ClientID, historicalCountsMsg.Records)
-	return nil
+	return partial.coordinator.OnBatchProcessed(historicalCountsMsg.ClientID)
 }
 
 func (partial *AvgPartial) handleCounts(clientID string, wordCounts []uint32) {
@@ -142,17 +159,6 @@ func (partial *AvgPartial) takeTotals(clientID string) totals {
 	clientTotals := partial.totalsByClient[clientID]
 	delete(partial.totalsByClient, clientID)
 	return clientTotals
-}
-
-func (partial *AvgPartial) handleTokenizerEOF(clientID string) error {
-	if !partial.eofs.Add(clientID) {
-		return nil
-	}
-
-	clientTotals := partial.takeTotals(clientID)
-	slog.Info("All tokenizers finished", "clientID", clientID, "sum", clientTotals.sum, "count", clientTotals.count)
-
-	return partial.publishPartial(clientID, clientTotals)
 }
 
 func (partial *AvgPartial) publishPartial(clientID string, clientTotals totals) error {
