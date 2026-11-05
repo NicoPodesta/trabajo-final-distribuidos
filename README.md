@@ -143,16 +143,30 @@ make logs
 
 ### Q3
 
-- Recorrido: Tokenizer → `vocabulary_<k>` → Vocabulary Join `k` → `results_<gatewayID>` → Gateway → cliente. Hay `Q3_JOIN_AMOUNT` colas y Joins; cada Join (`Q3_JOIN_ID`) consume solo su cola.
-- El Tokenizer envía todos los pares de una palabra al mismo Join (`fnv32a(palabra) % Q3_JOIN_AMOUNT`), así que el inglés y el francés de una palabra siempre se encuentran. Una palabra solo vive en un Join y los resultados de los Joins no se repiten.
-- Cada Join envía su propio EOF al terminar de contar `TOKENIZER_AMOUNT` EOF en su cola, y el Gateway espera `Q3_JOIN_AMOUNT` EOF de Q3 (igual que con Q1 y Q5).
-- Tokenizer elimina pares `(word, language)` repetidos por batch. Q3 conserva `english`, `french` y `sent` por cliente y palabra.
-- Una palabra coincide al aparecer en inglés y francés, en cualquier orden, dentro del mismo batch o en batches distintos.
-- `selectedWords` evita duplicados dentro del batch; `sent` evita repetir palabras entre batches del mismo cliente.
-- Publica una lista con las coincidencias nuevas al terminar cada batch, sin esperar EOF. Si no hay coincidencias nuevas, no publica datos.
-- Conserva todo el vocabulario en memoria hasta contar `TOKENIZER_AMOUNT` EOF y publicar el EOF de Q3 sin error. También cierra clientes sin coincidencias o sin vocabulario.
-- Valida mensajes, cliente, palabras e idiomas. Hace ACK al procesar correctamente; ante errores, NACK con reencolado y detención. Al salir cierra la cola y el publicador.
-- Gateway envía cada palabra por TCP y espera su ACK individual. El cliente escribe `q3_results.csv`; recibe el EOF final cuando terminan las consultas esperadas.
+#### Tokenizers y reparto de palabras
+
+- Busca palabras que aparezcan en abstracts en inglés y en francés para un mismo cliente, sin filtrar por fecha.
+- Los tokenizers procesan los abstracts y envían las palabras junto con su idioma. Dentro de cada batch eliminan los pares repetidos de palabra e idioma.
+- Reparten las palabras entre los joins usando un hash de la palabra. Todas las apariciones de una misma palabra van al mismo join, sin importar el idioma ni qué tokenizer las procesó.
+- Cada join tiene su propia cola. La cantidad de joins se mantiene fija durante la ejecución para que una palabra no cambie de destino.
+
+#### Joins y publicación
+
+- Cada join consume su cola de forma secuencial y guarda, por cliente y palabra, si apareció en inglés, en francés y si ya fue enviada como resultado.
+- Una palabra coincide cuando aparece en ambos idiomas. Pueden llegar en cualquier orden, en el mismo batch o en batches distintos.
+- Publica las coincidencias nuevas al terminar cada batch, sin esperar al EOF. Si no hay coincidencias nuevas, no publica datos.
+- Evita repetir una palabra dentro del batch y entre batches del mismo cliente. Conserva el vocabulario en memoria hasta terminar la consulta para recordar qué palabras ya publicó.
+- Confirma el mensaje después de procesarlo y publicar sus resultados. Ante un mensaje inválido o un error de publicación, lo rechaza con reencolado y detiene el consumo.
+- El Gateway envía cada palabra al cliente y espera su confirmación. El cliente guarda las palabras recibidas en el CSV de Q3.
+
+#### Coordinación del EOF
+
+- Los tokenizers coordinan sus batches por conteo, como los filtros de Q1. El que recibe el EOF del Gateway reúne los conteos y autoriza el cierre cuando todos reportaron y la suma coincide con el total esperado.
+- Cada tokenizer cuenta un batch después de publicar todas sus salidas. Una vez autorizado el cierre, envía su EOF a **todos los joins**, aunque no les haya enviado palabras.
+- Cada join espera tantos EOFs como tokenizers haya. No necesita otro coordinador: tiene un único consumidor y cada tokenizer publica sus palabras antes de su EOF por la misma cola.
+- Al recibir todos los EOFs, el join publica el suyo y libera el vocabulario del cliente. También cierra si no recibió palabras o no encontró coincidencias.
+- El Gateway espera tantos EOFs de Q3 como joins haya. El cliente recibe el EOF final cuando terminan todas las consultas esperadas.
+- En Q3 los EOFs se cuentan por cantidad, sin identificar al emisor. A diferencia de Q1 y Q2, este cierre no tolera EOFs duplicados.
 
 ### Q4
 
