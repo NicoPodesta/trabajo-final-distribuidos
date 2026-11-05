@@ -17,13 +17,13 @@ Por ejemplo, con 2 clientes, 2 gateways, 3 tokenizers, 2 contadores de Q4, 2 Avg
 cd golang && make up
 ```
 
-`cd golang && make switch` permite elegir entre cinco escenarios. Los escenarios 2, 3 y 4 usan tres filtros Q2; el escenario 5 es igual al 4 pero con dos filtros Q2. El escenario mínimo conserva uno. Luego se levanta con `make up`.
+`cd golang && make switch` permite elegir entre cinco escenarios. Los escenarios 2, 3 y 4 usan tres filtros y tres Fetchers de Q2; el 4 agrega tres Joins de Q3 (los escenarios 1 a 3 tienen uno). El escenario 5 es igual al 4 pero con 25 Fetchers de Q2. El escenario mínimo conserva uno de cada uno. Luego se levanta con `make up`.
 
 ## Decisiones - estado actual
 
 ### Ejecución
 
-- Ejecucion con cantidades configurables de clientes, gateways, tokenizers, contadores de Q4, Avg Partial y Filter de Q5 y filtros de Q1 y Q2. Un load balancer y una instancia del Fetcher de Q2, Q3, el Merger de Q4 y el Aggregator de Q5.
+- Ejecucion con cantidades configurables de clientes, gateways, tokenizers, contadores de Q4, Avg Partial y Filter de Q5 filtros de Q1 y Q2, Fetchers de Q2 y Joins de Q3. Un load balancer, el Merger de Q4 y el Aggregator de Q5.
 
 ### Cliente
 
@@ -58,11 +58,11 @@ cd golang && make up
 - Con `İ` (I turca con punto) `strings.ToLower` de Go da `i`, mientras que `lower()` de Python da `i` más un punto combinante y la palabra se parte en dos (`İdris` pasa a `i` y `dris`). Se conserva el comportamiento de Go. Se modifica el notebook se reemplaza `İ` por `i` antes de pasar a minúsculas.
 - Con la `Σ` griega mayúscula pasa algo parecido: `lower()` de Python aplica la regla del sigma final y da `ς` al final de palabra (`ΕΛΛΑΣ` pasa a `ελλας`), mientras que `strings.ToLower` de Go siempre da `σ` (`ελλασ`). Una `ς` que ya viene en minúscula queda igual en los dos. Se conserva el comportamiento de Go y para comparar contra el notebook se reemplaza `Σ` por `σ` antes de pasar a minúsculas. Afecta a unas pocas palabras de Q3 por cada cientos de miles.
 - Usa las mismas listas de stopwords de NLTK que el notebook, incluidas en `tokenizer/text/stopwords.go` para mantener el mismo criterio de filtrado.
-- Para Q3 publica los pares `(word, language)` sin repetirlos dentro del batch, en `vocabulary_0`.
+- Para Q3 publica los pares `(word, language)` sin repetirlos dentro del batch, y los reparte entre las colas `vocabulary_<k>` con `fnv32a(palabra) % Q3_JOIN_AMOUNT`.
 - Para Q4 cuenta en cuántos abstracts del batch aparece cada palabra. Cada abstract aporta como máximo 1 por palabra.
 - Para Q5 publica la cantidad de palabras de cada artículo, separando históricos hasta 2020 inclusive y posteriores a 2020. Omite los abstracts vacíos. Por cada batch envía **siempre un mensaje** a `historical_counts` y otro a `recent_articles`, vacío si el batch no tiene históricos o recientes, para que el total de mensajes de cada cola sea el de batches.
 - El cierre usa el mismo coordinador por conteo que Q1 (ver "Cierre por conteo"). La réplica que recibe el EOF del Gateway, con `total_batches`, coordina; las demás reportan cuántos batches procesaron y publicaron. Cuando la suma coincide con el total, cada réplica publica sus EOF. Antes de consumir datos espera a que todas las réplicas estén suscriptas a `tokenizer_control`.
-- Hacia `vocabulary_0` y `word_counts_<k>` cada réplica publica su propio EOF (llegan tantos como Tokenizers). Hacia `historical_counts` y `recent_articles` publica un solo EOF, el de la réplica coordinadora, con `total_batches`.
+- Hacia `vocabulary_<k>` y `word_counts_<k>` cada réplica publica su propio EOF (llegan tantos como Tokenizers). Hacia `historical_counts` y `recent_articles` publica un solo EOF, el de la réplica coordinadora, con `total_batches`.
 
 ### Q1
 
@@ -97,7 +97,9 @@ cd golang && make up
 
 ### Q3
 
-- Recorrido: Tokenizer → `vocabulary_0` → Vocabulary Join → `results_<gatewayID>` → Gateway → cliente. Actualmente hay una cola de vocabulario y un Join.
+- Recorrido: Tokenizer → `vocabulary_<k>` → Vocabulary Join `k` → `results_<gatewayID>` → Gateway → cliente. Hay `Q3_JOIN_AMOUNT` colas y Joins; cada Join (`Q3_JOIN_ID`) consume solo su cola.
+- El Tokenizer envía todos los pares de una palabra al mismo Join (`fnv32a(palabra) % Q3_JOIN_AMOUNT`), así que el inglés y el francés de una palabra siempre se encuentran. Una palabra solo vive en un Join y los resultados de los Joins no se repiten.
+- Cada Join envía su propio EOF al terminar de contar `TOKENIZER_AMOUNT` EOF en su cola, y el Gateway espera `Q3_JOIN_AMOUNT` EOF de Q3 (igual que con Q1 y Q5).
 - Tokenizer elimina pares `(word, language)` repetidos por lote. Q3 conserva `english`, `french` y `sent` por cliente y palabra.
 - Una palabra coincide al aparecer en inglés y francés, en cualquier orden, dentro del mismo lote o en lotes distintos.
 - `selectedWords` evita duplicados dentro del lote; `sent` evita repetir palabras entre lotes del mismo cliente.
@@ -130,7 +132,7 @@ cd golang && make up
 - El coordinador supone un único EOF con total por cliente. Por eso el Tokenizer publica un solo EOF hacia `historical_counts` y `recent_articles`: si cada réplica del Tokenizer publicara el suyo, varias réplicas del Avg Partial se declararían coordinadoras del mismo cliente y el cierre fallaría.
 - Cada componente espera a que todas sus réplicas estén suscriptas al canal de control antes de consumir datos. Un mensaje de control que llega a una réplica que todavía no se suscribió se pierde, y el cierre no llegaría nunca. Si una réplica no arranca, las demás no procesan.
 - La cantidad de réplicas queda fija durante la ejecución. El estado permanece en memoria. Se cuentan batches procesados, no distintos: una reentrega por una caída no está soportada.
-- Q4 y Q3 no lo necesitan: cada contador de Q4 tiene su cola y un solo consumidor, y Q3 tiene una sola réplica, así que lo que se publica antes del EOF se procesa antes en ambos.
+- Q4 y Q3 no lo necesitan: cada contador de Q4 tiene su cola y un solo consumidor, y cada Join de Q3 tiene su cola y un solo consumidor, así que lo que se publica antes del EOF se procesa antes en ambos.
 
 ## Pendientes
 
