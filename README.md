@@ -4,26 +4,26 @@
 
 Los datos de cada cliente van en `input/client_N/` (archivos `.parquet`) y sus resultados quedan en `output/client_N/`.
 
-El `docker-compose.yaml` se genera con `generar-compose.sh`, que recibe el archivo de salida, la cantidad de clientes y, opcionalmente, las cantidades de gateways, tokenizers, contadores de Q4, Avg Partial y Filter de Q5 y Filter de Q1 (por defecto 3 cada una, salvo Avg Partial y Filter de Q5 y Filter de Q1, que son 1):
+El `docker-compose.yaml` se genera con `generar-compose.sh`, que recibe el archivo de salida, la cantidad de clientes y, opcionalmente, las cantidades de gateways, tokenizers, contadores de Q4, Avg Partial y Filter de Q5 y filtros de Q1 y Q2 (por defecto 3 cada una, salvo Avg Partial y Filter de Q5 y filtros de Q1 y Q2, que son 1):
 
 ```bash
-./generar-compose.sh <archivo-salida> <clientes> [gateways] [tokenizers] [q4-wordcounters] [q5-avgpartials] [q5-filters] [q1-filters]
+./generar-compose.sh <archivo-salida> <clientes> [gateways] [tokenizers] [q4-wordcounters] [q5-avgpartials] [q5-filters] [q1-filters] [q2-filters]
 ```
 
-Por ejemplo, con 2 clientes, 2 gateways, 3 tokenizers, 2 contadores de Q4, 2 Avg Partial y 2 Filter de Q5 y 2 Filter de Q1:
+Por ejemplo, con 2 clientes, 2 gateways, 3 tokenizers, 2 contadores de Q4, 2 Avg Partial y 2 Filter de Q5 y 2 filtros de Q1 y 3 filtros de Q2:
 
 ```bash
-./generar-compose.sh golang/docker-compose.yaml 2 2 3 2 2 2 2
+./generar-compose.sh golang/docker-compose.yaml 2 2 3 2 2 2 2 3
 cd golang && make up
 ```
 
-`cd golang && make switch` permite generar la configuración eligiendo entre cuatro escenarios fijos. Luego se levanta con `make up`.
+`cd golang && make switch` permite elegir entre cinco escenarios. Los escenarios 2, 3 y 4 usan tres filtros Q2; el escenario 5 es igual al 4 pero con dos filtros Q2. El escenario mínimo conserva uno. Luego se levanta con `make up`.
 
 ## Decisiones - estado actual
 
 ### Ejecución
 
-- Ejecucion con cantidades configurables de clientes, gateways, tokenizers, contadores de Q4, Avg Partial y Filter de Q5 y Filter de Q1. Un load balancer y una instancia de Q2, Q3, el Merger de Q4 y el Aggregator de Q5.
+- Ejecucion con cantidades configurables de clientes, gateways, tokenizers, contadores de Q4, Avg Partial y Filter de Q5 y filtros de Q1 y Q2. Un load balancer y una instancia del Fetcher de Q2, Q3, el Merger de Q4 y el Aggregator de Q5.
 
 ### Cliente
 
@@ -80,7 +80,8 @@ cd golang && make up
 
 ### Q2
 
-- Se preparan cierres explícitos con `total_batches` para los lotes de entrada y `filter_id` para identificar al filtro que terminó de publicar pedidos. Cero se distingue de un campo ausente. Los mensajes actuales se conservan; la integración con Gateway, filtros y Fetcher queda pendiente.
+- Gateway envía `total_batches` en el EOF de entrada. Los filtros coordinan sus lotes completados y cada uno publica su EOF con `filter_id` después de sus pedidos. Cero se distingue de un campo ausente; Gateway, filtros y Fetcher deben actualizarse juntos.
+- `make switch` actualiza la cantidad tanto en los filtros como en el Fetcher.
 - El filtro consume batches de `article_sections` y selecciona artículos con año de modificación hasta 2020 inclusive (UTC) y una sección `biography` o `biographie`, ignorando mayúsculas y espacios en los extremos del nombre de la sección.
 - Los artículos sin imagen se omiten y el procesamiento continúa, sin tratarlos como error.
 - Cada coincidencia con imagen genera un pedido individual en `image_downloads`, con nombre, URL del artículo e `image_ref`. El Fetcher descarga directamente esa imagen a un archivo temporal y luego publica chunks de hasta 64 KiB con la configuración actual.
@@ -88,7 +89,7 @@ cd golang && make up
 - Después de publicar todos los chunks, el Fetcher cierra y borra el temporal y confirma el pedido con ACK. Este ACK no confirma que el cliente haya guardado la imagen.
 - El Fetcher usa un receptor, un descargador y un publicador concurrentes dentro de una sola instancia. Puede descargar una imagen mientras publica otra. El canal de pedidos tiene capacidad 1; entre descarga y publicación circulan la ruta y los metadatos del temporal, no sus bytes.
 - `Q2_MAX_PENDING_REQUESTS` limita los mensajes de `image_downloads` entregados sin ACK, incluyendo EOF, y fija la capacidad del canal de eventos del publicador. Se configura antes del arranque, vale 4 por defecto y admite valores entre 2 y 65535. Los demás consumidores mantienen su prefetch anterior. Este límite no cambia la cantidad de descargadores ni limita los bytes en disco.
-- El publicador registra los pendientes por cliente y es el único que publica chunks y EOF. Recibir EOF marca el fin de entrada; el EOF Q2 se publica cuando no quedan imágenes pendientes de ese cliente, incluso si no hubo imágenes. El ACK del EOF espera esa publicación.
+- El publicador registra los pendientes por cliente y es el único que publica chunks y EOF. Valida y deduplica los EOF por filtro; confirma los cierres parciales para liberar prefetch y sigue recibiendo pedidos de los otros filtros. Publica un único EOF Q2 cuando cerraron todos y no quedan imágenes pendientes, incluso si no hubo imágenes. El ACK del último EOF espera esa publicación.
 - Los fallos del origen se omiten tras los reintentos (404 no reintenta). Los errores internos cancelan el pipeline: se detiene el consumo, se limpian los temporales pendientes y se hace NACK del trabajo no resuelto. Las imágenes ya publicadas conservan su ACK, aunque falle su limpieza posterior. Las conexiones se cierran después de terminar las etapas.
 - Si el cliente recibe el `EndOfRecords` final del Gateway y todavía tiene una imagen sin su último chunk (`last=true`), informa un error. Al cerrar, borra los archivos de las imágenes que quedaron a medio recibir en esa ejecución y conserva las que ya recibió completas.
 - El cliente guarda las imágenes en `output/client_N/q2_images/run-*/` y el archivo `q2_results.csv`, con columnas `image_id,name,url,file`, en `output/client_N/`. Mientras recibe los chunks, escribe cada imagen en un archivo `.part`. Al recibir el último chunk, cambia esa extensión por `.jpg`, `.png`, etc., según el formato detectado en los bytes recibidos. Si no reconoce el formato, usa `.bin`.

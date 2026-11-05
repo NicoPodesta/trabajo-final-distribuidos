@@ -162,6 +162,41 @@ services:
     environment:
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
+    - Q2_FILTER_ID=0
+    - Q2_FILTER_AMOUNT=3
+    - Q2_PREFETCH=${Q2_PREFETCH:-4}
+    - LOG_LEVEL=info
+
+  q2_filter_1:
+    build:
+      context: ./src/
+      dockerfile: q2filter/Dockerfile
+    container_name: q2_filter_1
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - Q2_FILTER_ID=1
+    - Q2_FILTER_AMOUNT=3
+    - Q2_PREFETCH=${Q2_PREFETCH:-4}
+    - LOG_LEVEL=info
+
+  q2_filter_2:
+    build:
+      context: ./src/
+      dockerfile: q2filter/Dockerfile
+    container_name: q2_filter_2
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - Q2_FILTER_ID=2
+    - Q2_FILTER_AMOUNT=3
+    - Q2_PREFETCH=${Q2_PREFETCH:-4}
     - LOG_LEVEL=info
 
   q2_image_fetcher_0:
@@ -177,6 +212,7 @@ services:
     - MOM_PORT=5672
     - CHUNK_SIZE=65536
     - Q2_MAX_PENDING_REQUESTS=${Q2_MAX_PENDING_REQUESTS:-4}
+    - Q2_FILTER_AMOUNT=3
     - LOG_LEVEL=info
 
   tokenizer_0:
