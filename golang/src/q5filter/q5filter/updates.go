@@ -29,13 +29,9 @@ func (filter *Filter) processAverage(clientID string, average uint64) error {
 	return filter.finishIfComplete(clientID, state)
 }
 
-func (filter *Filter) processTokenizersDone(clientID string) error {
+func (filter *Filter) processCountedEOF(clientID string) error {
 	filter.mu.Lock()
 	defer filter.mu.Unlock()
-	if !filter.eofs.Add(clientID) {
-		return nil
-	}
-
 	state := filter.stateOf(clientID)
 	state.markRecentsEOF()
 	return filter.finishIfComplete(clientID, state)

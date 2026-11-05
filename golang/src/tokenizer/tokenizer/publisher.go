@@ -63,11 +63,13 @@ func (tokenizer *Tokenizer) publishEOF(clientID string, totalBatches uint64, coo
 		}
 	}
 
-	if coordinated {
-		msg, err = inner.SerializeHistoricalCountsEOF(clientID, totalBatches)
-		if err := send(tokenizer.historicalCountsQueue, msg, err); err != nil {
-			return err
-		}
+	if !coordinated {
+		return nil
+	}
+
+	msg, err = inner.SerializeHistoricalCountsEOF(clientID, totalBatches)
+	if err := send(tokenizer.historicalCountsQueue, msg, err); err != nil {
+		return err
 	}
 
 	msg, err = inner.SerializeRecentArticlesEOF(clientID, totalBatches)

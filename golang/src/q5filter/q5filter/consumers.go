@@ -14,10 +14,16 @@ func (filter *Filter) handleRecentArticles(msg middleware.Message) error {
 	}
 
 	if recentArticlesMsg.IsEOF() {
-		return filter.coordinator.Broadcast(recentArticlesMsg.ClientID)
+		if recentArticlesMsg.TotalBatches == nil {
+			return fmt.Errorf("recent articles EOF of client %s has no total_batches", recentArticlesMsg.ClientID)
+		}
+		return filter.coordinator.BroadcastWithTotal(recentArticlesMsg.ClientID, *recentArticlesMsg.TotalBatches)
 	}
 
-	return filter.processArticles(recentArticlesMsg.ClientID, recentArticlesMsg.Records)
+	if err := filter.processArticles(recentArticlesMsg.ClientID, recentArticlesMsg.Records); err != nil {
+		return err
+	}
+	return filter.coordinator.OnBatchProcessed(recentArticlesMsg.ClientID)
 }
 
 func (filter *Filter) handleAverage(msg middleware.Message) error {

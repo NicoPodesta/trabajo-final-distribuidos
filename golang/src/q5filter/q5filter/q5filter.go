@@ -1,11 +1,12 @@
 package q5filter
 
 import (
+	"context"
+	"errors"
 	"log/slog"
 	"sync"
 
 	"trabajo-final-distribuidos/common/eofcoordinator"
-	"trabajo-final-distribuidos/common/eofcounter"
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/common/middleware"
 	"trabajo-final-distribuidos/common/resultpublisher"
@@ -34,7 +35,6 @@ type Filter struct {
 	mu                  sync.Mutex
 	clients             map[string]*clientState
 	pending             pendingStore
-	eofs                *eofcounter.Counter
 }
 
 func NewFilter(config FilterConfig) (*Filter, error) {
@@ -65,7 +65,6 @@ func NewFilter(config FilterConfig) (*Filter, error) {
 		resultsPublisher:    resultpublisher.New(settings),
 		clients:             make(map[string]*clientState),
 		pending:             pending.NewMemory(),
-		eofs:                eofcounter.New(config.TokenizerAmount),
 	}, nil
 }
 
@@ -91,14 +90,17 @@ func (filter *Filter) Run() error {
 		}
 	}()
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	shutdown.OnSignal(func() {
+		cancel()
 		_ = filter.recentArticlesQueue.StopConsuming()
 		_ = filter.averageExchange.StopConsuming()
 		_ = filter.coordinator.Stop()
 	})
 
 	go func() {
-		if err := filter.coordinator.Start(filter.processTokenizersDone); err != nil {
+		if err := filter.coordinator.Start(filter.processCountedEOF); err != nil {
 			slog.Error("Control consumer stopped with error", "err", err)
 		}
 	}()
@@ -116,6 +118,13 @@ func (filter *Filter) Run() error {
 			_ = filter.recentArticlesQueue.StopConsuming()
 		}
 	}()
+
+	if err := filter.coordinator.WaitReady(ctx); err != nil {
+		if errors.Is(err, context.Canceled) {
+			return nil
+		}
+		return err
+	}
 
 	slog.Info("Consuming recent articles from RabbitMQ...", "queue", recentArticlesQueueName)
 	err := filter.recentArticlesQueue.StartConsuming(func(msg middleware.Message, ack func(), nack func()) {
