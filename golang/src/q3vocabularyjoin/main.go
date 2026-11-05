@@ -33,9 +33,17 @@ func loadConfig() (q3vocabularyjoin.VocabularyJoinConfig, error) {
 	if tokenizerAmount < 1 {
 		return q3vocabularyjoin.VocabularyJoinConfig{}, fmt.Errorf("TOKENIZER_AMOUNT must be a positive integer")
 	}
+	joinID, err := config.OptionalInt("Q3_JOIN_ID", 0)
+	if err != nil {
+		return q3vocabularyjoin.VocabularyJoinConfig{}, err
+	}
+	if joinID < 0 {
+		return q3vocabularyjoin.VocabularyJoinConfig{}, fmt.Errorf("Q3_JOIN_ID must not be negative")
+	}
 	return q3vocabularyjoin.VocabularyJoinConfig{
 		MOMHost:         momHost,
 		MOMPort:         momPort,
+		JoinID:          joinID,
 		TokenizerAmount: tokenizerAmount,
 	}, nil
 }
