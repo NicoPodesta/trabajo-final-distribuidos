@@ -18,10 +18,9 @@ func (state *clientState) addArticles(articles []inner.RecentArticleItem) (selec
 	return state.selectAboveAverage(articles), nil
 }
 
-func (state *clientState) setAverage(average uint64, pending []inner.RecentArticleItem) []inner.RecentArticleItem {
+func (state *clientState) setAverage(average uint64) {
 	state.average = average
 	state.hasAverage = true
-	return state.selectAboveAverage(pending)
 }
 
 func (state *clientState) markRecentsEOF() {

@@ -12,7 +12,9 @@ func (filter *Filter) processArticles(clientID string, articles []inner.RecentAr
 	state := filter.stateOf(clientID)
 
 	selected, retained := state.addArticles(articles)
-	filter.pending.Append(clientID, retained)
+	if err := filter.pending.Append(clientID, retained); err != nil {
+		return err
+	}
 	return filter.publishSelected(clientID, selected)
 }
 
@@ -23,7 +25,11 @@ func (filter *Filter) processAverage(clientID string, average uint64) error {
 
 	slog.Info("Received average", "clientID", clientID, "average", average, "pending", filter.pending.Count(clientID))
 
-	if err := filter.publishSelected(clientID, state.setAverage(average, filter.pending.Take(clientID))); err != nil {
+	state.setAverage(average)
+	err := filter.pending.Drain(clientID, func(articles []inner.RecentArticleItem) error {
+		return filter.publishSelected(clientID, state.selectAboveAverage(articles))
+	})
+	if err != nil {
 		return err
 	}
 	return filter.finishIfComplete(clientID, state)
