@@ -16,10 +16,12 @@ func (filter *Filter) publishImageDownload(clientID string, article inner.Q2Arti
 	if err != nil {
 		return err
 	}
-	if err := filter.downloadsQueue.Send(*msg); err != nil {
+	fetcherID := filter.nextFetcher
+	if err := filter.downloadsQueues[fetcherID].Send(*msg); err != nil {
 		return fmt.Errorf("publishing image download for client %q, article %q: %w", clientID, article.Url, err)
 	}
-	slog.Debug("Published image download request", "clientID", clientID, "url", article.Url)
+	filter.nextFetcher = (fetcherID + 1) % len(filter.downloadsQueues)
+	slog.Debug("Published image download request", "clientID", clientID, "url", article.Url, "fetcherID", fetcherID)
 	return nil
 }
 
@@ -30,8 +32,10 @@ func (filter *Filter) publishEOF(clientID string) error {
 	if err != nil {
 		return err
 	}
-	if err := filter.downloadsQueue.Send(*msg); err != nil {
-		return fmt.Errorf("publishing image downloads EOF for client %q: %w", clientID, err)
+	for fetcherID, queue := range filter.downloadsQueues {
+		if err := queue.Send(*msg); err != nil {
+			return fmt.Errorf("publishing image downloads EOF for client %q, fetcher %d: %w", clientID, fetcherID, err)
+		}
 	}
 	slog.Info("Published end of image download requests", "clientID", clientID, "filterID", filter.id)
 	return nil

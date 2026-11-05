@@ -39,6 +39,14 @@ func loadConfig() (q2imagefetcher.FetcherConfig, error) {
 	if err != nil {
 		return q2imagefetcher.FetcherConfig{}, err
 	}
+	fetcherID, err := config.OptionalInt("Q2_FETCHER_ID", 0)
+	if err != nil {
+		return q2imagefetcher.FetcherConfig{}, err
+	}
+	fetcherAmount, err := config.OptionalInt("Q2_FETCHER_AMOUNT", 1)
+	if err != nil {
+		return q2imagefetcher.FetcherConfig{}, err
+	}
 
 	return q2imagefetcher.FetcherConfig{
 		MOMHost:            momHost,
@@ -46,6 +54,8 @@ func loadConfig() (q2imagefetcher.FetcherConfig, error) {
 		ChunkSize:          chunkSize,
 		MaxPendingRequests: maxPendingRequests,
 		FilterAmount:       filterAmount,
+		FetcherID:          fetcherID,
+		FetcherAmount:      fetcherAmount,
 	}, nil
 }
 

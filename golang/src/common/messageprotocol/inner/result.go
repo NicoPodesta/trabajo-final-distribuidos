@@ -7,10 +7,11 @@ import (
 )
 
 type ResultHeader struct {
-	Type     MsgType `json:"type"`
-	ClientID string  `json:"client_id"`
-	QueryID  QueryID `json:"query_id"`
-	FilterID *int    `json:"filter_id,omitempty"`
+	Type      MsgType `json:"type"`
+	ClientID  string  `json:"client_id"`
+	QueryID   QueryID `json:"query_id"`
+	FilterID  *int    `json:"filter_id,omitempty"`
+	FetcherID *int    `json:"fetcher_id,omitempty"`
 }
 
 func (h *ResultHeader) IsEOF() bool {

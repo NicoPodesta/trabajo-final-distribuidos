@@ -29,7 +29,7 @@ func (f *Fetcher) Run(ctx context.Context) (err error) {
 		f.stopOnCancellation(ctx, consumingDone)
 	}()
 
-	slog.Info("Consuming Q2 image downloads", "queue", imageDownloadsQueueName, "chunkSize", f.chunkSize,
+	slog.Info("Consuming Q2 image downloads", "queue", f.queueName, "fetcherID", f.id, "chunkSize", f.chunkSize,
 		"maxPendingRequests", f.maxPendingRequests, "downloaders", 1)
 	go func() {
 		receiverErr := f.receiveRequests(ctx, cancel, jobs, events)

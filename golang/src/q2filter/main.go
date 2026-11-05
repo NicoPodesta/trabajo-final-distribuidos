@@ -36,9 +36,14 @@ func loadConfig() (q2filter.FilterConfig, error) {
 	if err != nil {
 		return q2filter.FilterConfig{}, err
 	}
+	fetcherAmount, err := config.OptionalInt("Q2_FETCHER_AMOUNT", 1)
+	if err != nil {
+		return q2filter.FilterConfig{}, err
+	}
 	return q2filter.FilterConfig{
 		MOMHost: momHost, MOMPort: momPort,
 		FilterID: filterID, FilterAmount: filterAmount, Prefetch: prefetch,
+		FetcherAmount: fetcherAmount,
 	}, nil
 }
 

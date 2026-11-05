@@ -24,6 +24,7 @@ type clientSession struct {
 	receivedEOFs    map[inner.QueryID]int
 	completedCount  int
 	q1EOFs          map[int]bool
+	q2EOFs          map[int]bool
 	sessionLock     sync.Mutex
 	ackChan         chan struct{}
 }
@@ -50,7 +51,7 @@ func (s *clientSession) eofsExpectedFor(queryID inner.QueryID) int {
 	return 1
 }
 
-func (s *clientSession) registerEOF(queryID inner.QueryID, filterID *int) (bool, error) {
+func (s *clientSession) registerEOF(queryID inner.QueryID, filterID, fetcherID *int) (bool, error) {
 	s.sessionLock.Lock()
 	defer s.sessionLock.Unlock()
 
@@ -65,6 +66,18 @@ func (s *clientSession) registerEOF(queryID inner.QueryID, filterID *int) (bool,
 			s.q1EOFs = make(map[int]bool)
 		}
 		s.q1EOFs[*filterID] = true
+	}
+	if queryID == inner.Q2 {
+		if fetcherID == nil || *fetcherID < 0 || *fetcherID >= s.eofsExpectedFor(inner.Q2) {
+			return false, fmt.Errorf("missing or invalid Q2 fetcher_id")
+		}
+		if s.q2EOFs[*fetcherID] {
+			return false, nil
+		}
+		if s.q2EOFs == nil {
+			s.q2EOFs = make(map[int]bool)
+		}
+		s.q2EOFs[*fetcherID] = true
 	}
 
 	s.receivedEOFs[queryID]++

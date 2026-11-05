@@ -81,6 +81,7 @@ services:
     - MOM_PORT=5672
     - EXPECTED_QUERIES=5
     - Q1_FILTER_AMOUNT=2
+    - Q2_FETCHER_AMOUNT=3
     - Q5_FILTER_AMOUNT=3
 
   gateway_1:
@@ -99,6 +100,7 @@ services:
     - MOM_PORT=5672
     - EXPECTED_QUERIES=5
     - Q1_FILTER_AMOUNT=2
+    - Q2_FETCHER_AMOUNT=3
     - Q5_FILTER_AMOUNT=3
 
   gateway_2:
@@ -117,6 +119,7 @@ services:
     - MOM_PORT=5672
     - EXPECTED_QUERIES=5
     - Q1_FILTER_AMOUNT=2
+    - Q2_FETCHER_AMOUNT=3
     - Q5_FILTER_AMOUNT=3
 
   q1_filter_0:
@@ -165,6 +168,7 @@ services:
     - Q2_FILTER_ID=0
     - Q2_FILTER_AMOUNT=3
     - Q2_PREFETCH=${Q2_PREFETCH:-4}
+    - Q2_FETCHER_AMOUNT=3
     - LOG_LEVEL=info
 
   q2_filter_1:
@@ -181,6 +185,7 @@ services:
     - Q2_FILTER_ID=1
     - Q2_FILTER_AMOUNT=3
     - Q2_PREFETCH=${Q2_PREFETCH:-4}
+    - Q2_FETCHER_AMOUNT=3
     - LOG_LEVEL=info
 
   q2_filter_2:
@@ -197,6 +202,7 @@ services:
     - Q2_FILTER_ID=2
     - Q2_FILTER_AMOUNT=3
     - Q2_PREFETCH=${Q2_PREFETCH:-4}
+    - Q2_FETCHER_AMOUNT=3
     - LOG_LEVEL=info
 
   q2_image_fetcher_0:
@@ -213,6 +219,44 @@ services:
     - CHUNK_SIZE=65536
     - Q2_MAX_PENDING_REQUESTS=${Q2_MAX_PENDING_REQUESTS:-4}
     - Q2_FILTER_AMOUNT=3
+    - Q2_FETCHER_ID=0
+    - Q2_FETCHER_AMOUNT=3
+    - LOG_LEVEL=info
+
+  q2_image_fetcher_1:
+    build:
+      context: ./src/
+      dockerfile: q2imagefetcher/Dockerfile
+    container_name: q2_image_fetcher_1
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - CHUNK_SIZE=65536
+    - Q2_MAX_PENDING_REQUESTS=${Q2_MAX_PENDING_REQUESTS:-4}
+    - Q2_FILTER_AMOUNT=3
+    - Q2_FETCHER_ID=1
+    - Q2_FETCHER_AMOUNT=3
+    - LOG_LEVEL=info
+
+  q2_image_fetcher_2:
+    build:
+      context: ./src/
+      dockerfile: q2imagefetcher/Dockerfile
+    container_name: q2_image_fetcher_2
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - CHUNK_SIZE=65536
+    - Q2_MAX_PENDING_REQUESTS=${Q2_MAX_PENDING_REQUESTS:-4}
+    - Q2_FILTER_AMOUNT=3
+    - Q2_FETCHER_ID=2
+    - Q2_FETCHER_AMOUNT=3
     - LOG_LEVEL=info
 
   tokenizer_0:

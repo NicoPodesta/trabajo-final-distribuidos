@@ -21,22 +21,27 @@ const (
 )
 
 type FilterConfig struct {
-	MOMHost      string
-	MOMPort      int
-	FilterID     int
-	FilterAmount int
-	Prefetch     int
+	MOMHost       string
+	MOMPort       int
+	FilterID      int
+	FilterAmount  int
+	Prefetch      int
+	FetcherAmount int
 }
 
 type Filter struct {
-	id             int
-	mu             sync.Mutex
-	coordinator    *eofcoordinator.EOFCoordinator
-	articlesQueue  middleware.Middleware
-	downloadsQueue middleware.Middleware
+	id              int
+	mu              sync.Mutex
+	coordinator     *eofcoordinator.EOFCoordinator
+	articlesQueue   middleware.Middleware
+	downloadsQueues []middleware.Middleware
+	nextFetcher     int
 }
 
 func NewFilter(config FilterConfig) (*Filter, error) {
+	if config.FetcherAmount < 1 {
+		return nil, fmt.Errorf("Q2_FETCHER_AMOUNT must be positive")
+	}
 	if config.FilterAmount < 1 || config.FilterID < 0 || config.FilterID >= config.FilterAmount || config.Prefetch < 1 || config.Prefetch > 65535 {
 		return nil, fmt.Errorf("invalid Q2 filter identity, amount or prefetch")
 	}
@@ -45,23 +50,37 @@ func NewFilter(config FilterConfig) (*Filter, error) {
 	if err != nil {
 		return nil, err
 	}
-	downloadsQueue, err := middleware.CreateQueueWithRetry(imageDownloadsQueueName, settings)
-	if err != nil {
-		_ = articlesQueue.Close()
-		return nil, err
+	filter := &Filter{id: config.FilterID, articlesQueue: articlesQueue, nextFetcher: config.FilterID % config.FetcherAmount}
+	for id := 0; id < config.FetcherAmount; id++ {
+		queueName := imageDownloadsQueueName
+		if config.FetcherAmount > 1 {
+			queueName = fmt.Sprintf("%s_%d", imageDownloadsQueueName, id)
+		}
+		queue, err := middleware.CreateQueueWithRetry(queueName, settings)
+		if err != nil {
+			return nil, errors.Join(err, filter.closeDownloads(), articlesQueue.Close())
+		}
+		filter.downloadsQueues = append(filter.downloadsQueues, queue)
 	}
 	coordinator, err := eofcoordinator.New("q2_filter_control", config.FilterID, config.FilterAmount, settings)
 	if err != nil {
-		_ = articlesQueue.Close()
-		_ = downloadsQueue.Close()
-		return nil, err
+		return nil, errors.Join(err, filter.closeDownloads(), articlesQueue.Close())
 	}
-	return &Filter{id: config.FilterID, coordinator: coordinator, articlesQueue: articlesQueue, downloadsQueue: downloadsQueue}, nil
+	filter.coordinator = coordinator
+	return filter, nil
+}
+
+func (filter *Filter) closeDownloads() error {
+	var err error
+	for _, queue := range filter.downloadsQueues {
+		err = errors.Join(err, queue.Close())
+	}
+	return err
 }
 
 func (filter *Filter) Run() (runErr error) {
 	defer func() {
-		runErr = errors.Join(runErr, filter.coordinator.Close(), filter.downloadsQueue.Close(), filter.articlesQueue.Close())
+		runErr = errors.Join(runErr, filter.coordinator.Close(), filter.closeDownloads(), filter.articlesQueue.Close())
 	}()
 	ctx, cancel := context.WithCancel(context.Background())
 	shutdown.OnSignal(cancel)

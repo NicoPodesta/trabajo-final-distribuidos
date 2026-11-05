@@ -49,10 +49,10 @@ func (c *ResultCollector) Start(running *atomic.Bool) {
 
 		if header.IsEOF() {
 			slog.Info("Results EOF received from workers for client", "clientID", header.ClientID, "query", header.QueryID)
-			allDone, err := session.registerEOF(header.QueryID, header.FilterID)
+			allDone, err := session.registerEOF(header.QueryID, header.FilterID, header.FetcherID)
 			if err != nil {
 				slog.Error("While writing END_OF_RECORDS to client", "clientID", header.ClientID, "err", err)
-				if header.QueryID == inner.Q1 {
+				if header.QueryID == inner.Q1 || header.QueryID == inner.Q2 {
 					processingErr = err
 					nack()
 					_ = c.resultsQueue.StopConsuming()

@@ -129,7 +129,7 @@ func (f *Fetcher) publishClientEOF(ctx context.Context, clientID string, state *
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	msg, err := inner.SerializeQ2ResultsEOF(clientID)
+	msg, err := inner.SerializeQ2ResultsFetcherEOF(clientID, f.id)
 	if err != nil {
 		return err
 	}
@@ -143,6 +143,6 @@ func (f *Fetcher) publishClientEOF(ctx context.Context, clientID string, state *
 	state.eofs = nil
 	state.producers = nil
 	state.images = nil
-	slog.Info("Published Q2 EOF", "clientID", clientID)
+	slog.Info("Published Q2 EOF", "clientID", clientID, "fetcherID", f.id)
 	return nil
 }

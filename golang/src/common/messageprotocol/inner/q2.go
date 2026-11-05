@@ -90,6 +90,12 @@ func SerializeQ2ResultsEOF(clientID string) (*middleware.Message, error) {
 	return NewQ2ResultsEOF(clientID).Serialize()
 }
 
+func SerializeQ2ResultsFetcherEOF(clientID string, fetcherID int) (*middleware.Message, error) {
+	msg := NewQ2ResultsEOF(clientID)
+	msg.FetcherID = &fetcherID
+	return msg.Serialize()
+}
+
 func DeserializeQ2Results(message *middleware.Message) (*Q2ResultsMessage, error) {
 	return deserializeResults[result.Q2Result](message)
 }

@@ -53,6 +53,13 @@ func loadConfig() (gateway.GatewayConfig, error) {
 	if q1FilterAmount < 1 {
 		return gateway.GatewayConfig{}, fmt.Errorf("Q1_FILTER_AMOUNT must be positive")
 	}
+	q2FetcherAmount, err := config.OptionalInt("Q2_FETCHER_AMOUNT", 1)
+	if err != nil {
+		return gateway.GatewayConfig{}, err
+	}
+	if q2FetcherAmount < 1 {
+		return gateway.GatewayConfig{}, fmt.Errorf("Q2_FETCHER_AMOUNT must be positive")
+	}
 
 	return gateway.GatewayConfig{
 		ID:              id,
@@ -61,7 +68,7 @@ func loadConfig() (gateway.GatewayConfig, error) {
 		MOMHost:         momHost,
 		MOMPort:         momPort,
 		ExpectedQueries: expectedQueries,
-		ExpectedEOFs:    map[inner.QueryID]int{inner.Q1: q1FilterAmount, inner.Q5: q5FilterAmount},
+		ExpectedEOFs:    map[inner.QueryID]int{inner.Q1: q1FilterAmount, inner.Q2: q2FetcherAmount, inner.Q5: q5FilterAmount},
 	}, nil
 }
 

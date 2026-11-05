@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"strconv"
 	"strings"
 
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
@@ -97,7 +96,7 @@ func (f *Fetcher) readRequest(msg middleware.Message, nextImage *uint64) (pipeli
 		}
 		*nextImage += 1
 		event.kind = requestReceived
-		event.job.imageID = strconv.FormatUint(*nextImage, 10)
+		event.job.imageID = fmt.Sprintf("%d_%d", f.id, *nextImage)
 		event.job.request = *request.Request
 	case inner.MsgEOF:
 		if request.Request != nil {
