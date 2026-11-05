@@ -1,52 +1,83 @@
 ---
 config:
+  theme: base
+  themeVariables:
+    fontFamily: Arial, sans-serif
+    fontSize: 14px
+    clusterBkg: '#ffffff'
+    clusterBorder: '#aab8c8'
+    lineColor: '#687b91'
   flowchart:
+    curve: linear
+    nodeSpacing: 24
+    rankSpacing: 55
     subGraphTitleMargin:
       top: 12
-      bottom: 30
+      bottom: 24
 ---
-%% P2: variante de P1 con protocolos de aplicación separados.
-%% protocolo.interno adapta mensajes del TP a la API genérica de middleware.
-%% Middleware no importa los paquetes del TP ni sus reglas de negocio.
-%% A -.-> B indica uso de código; los recuadros son agrupaciones lógicas.
-%% SERVICE -> COMM resume el uso de los paquetes compartidos.
-%% Cada control usa los subpaquetes que necesita; no importa todos.
+%% Vista lógica de los paquetes de golang/src.
+%% Q1, Q2, Q3, Q4 y Q5 agrupan los paquetes de cada consulta.
+%% Las flechas punteadas indican dependencias de código, no flujo de mensajes.
+%% Las dependencias desde un grupo resumen la unión de sus importaciones:
+%% cada componente usa solamente los paquetes compartidos que necesita.
+%% Gateway contiene proyección, sesiones y collector; no son paquetes separados.
+%% Los temporales de Q2 son locales; Q5 contiene el subpaquete pending.
 flowchart LR
-    CLIENT["«package» cliente<br/>Client: lee archivos,<br/>envía batches y recibe resultados"]
-    subgraph SERVICE["Controles del TP"]
+    subgraph APPS["Aplicaciones"]
         direction TB
-        BOOT["«package» arranque<br/>configuración, inicio y SIGTERM"]
-        ING["«package» ingreso<br/>TCP Handler y Gateway<br/>conexiones de clientes y sesiones"]
-        PRE["«package» preparacion<br/>Parser / Projector y Tokenizer<br/>lectura de artículos y texto"]
-        Q["«package» consultas<br/>workers Q1..Q5<br/>estado y cierre de cada etapa"]
-        COL["«package» resultados<br/>Result Collector<br/>usado dentro del Gateway"]
-        BOOT -.-> ING
-        BOOT -.-> PRE
-        BOOT -.-> Q
-        ING -.-> COL
+        CLIENT["«package» Cliente<br/>Parquet, TCP y resultados"]
+        LB["«package» Load Balancer<br/>Asignación de Gateways"]
+        GW["«package» Gateway<br/>Sesiones, proyección y collector"]
+        TOK["«package» Tokenizer<br/>Limpieza y particionado"]
+        subgraph QUERIES["Consultas · agrupaciones lógicas"]
+            direction TB
+            Q1["«package» Q1 - Filter<br/>Idioma y fecha"]
+            Q2["«package» Q2 - Filter - Fetcher<br/>Biografías e imágenes"]
+            Q3["«package» Q3 - Vocabulary Join<br/>Intersección EN / FR"]
+            Q4["«package» Q4 - Counter - Merger<br/>Top 20 de palabras"]
+            Q5["«package» Q5 - Avg - Filter<br/>Promedio y artículos recientes"]
+        end
     end
-    subgraph COMM["Comunicación compartida"]
-        EXT["«package» protocolo.externo<br/>sesión, batches y EOF<br/>resultados, errores y fin"]
-        INT["«package» protocolo.interno<br/>mensajes entre componentes<br/>client_id, destino, datos y cierre"]
-        MW["«package» middleware<br/>grupos de workers y reparto<br/>regula envíos y avisa el fin"]
-        SER["«package» serializacion<br/>codificar / decodificar datos"]
-        CONN["«package» conexiones<br/>TCP y transporte interno<br/>abrir, leer, escribir y cerrar"]
-        DATA["«package» contratos.datos<br/>Article, word, Partial y Result<br/>tipos compartidos del TP"]
-        FILES["«package» archivos_temporales<br/>crear, leer, escribir y borrar<br/>archivos de Q2 y Q5"]
+
+    subgraph COMMON["Paquetes compartidos · common"]
+        direction TB
+        subgraph SUPPORT["Soporte de ejecución"]
+            CFG["«package» config<br/>Configuración"]
+            LOG["«package» logger<br/>Logs"]
+            SHUT["«package» shutdown<br/>Cierre de procesos"]
+        end
+        subgraph COMMS["Comunicación y finalización"]
+            EXT["«package» messageprotocol.external<br/>TCP binario"]
+            PUB["«package» resultpublisher<br/>Envío al Gateway"]
+            EOF["«package» eofcoordinator<br/>Barrera por lotes"]
+            COUNT["«package» eofcounter<br/>Conteo de cierres"]
+            INT["«package» messageprotocol.inner<br/>JSON interno"]
+            MW["«package» middleware<br/>Colas y exchanges RabbitMQ"]
+        end
+        subgraph DATA["Contratos de datos"]
+            ART["«package» article<br/>Artículos"]
+            RES["«package» result<br/>Resultados y chunks"]
+        end
+        PUB -.-> INT
+        PUB -.-> MW
+        EOF -.-> MW
+        INT -.-> MW
+        INT -.-> RES
+        EXT -.-> ART
+        EXT -.-> RES
     end
-    SERVICE -.->|usa| COMM
-    CLIENT -.-> EXT
-    EXT -.-> SER
-    INT -.-> SER
-    EXT -.->|sesión TCP externa| CONN
-    INT -.-> MW
-    MW -.->|transporte interno| CONN
-    MW -.->|envoltorio de transporte| SER
-    EXT -.-> DATA
-    INT -.-> DATA
-    classDef pkg fill:#f3f7fc,stroke:#5b7395,color:#233b5a;
+
+    APPS -.->|"usa según el componente"| COMMON
+
+    classDef app fill:#f3f7fc,stroke:#5b7395,color:#233b5a;
+    classDef query fill:#edf7f3,stroke:#438d78,color:#244f43;
     classDef communication fill:#eef0f8,stroke:#707796,color:#3c4365;
+    classDef support fill:#f6f6f6,stroke:#8a939e,color:#414c59;
     classDef data fill:#fff5dc,stroke:#b18a39,color:#6b5122;
-    class BOOT,CLIENT,ING,PRE,Q,COL pkg;
-    class EXT,INT,MW,SER,CONN,FILES communication;
-    class DATA data;
+    classDef client fill:#e3f1ff,stroke:#2463a0,stroke-width:3px,color:#183f68;
+    class CLIENT client;
+    class LB,GW,TOK app;
+    class Q1,Q2,Q3,Q4,Q5 query;
+    class EXT,INT,PUB,EOF,COUNT,MW communication;
+    class CFG,LOG,SHUT support;
+    class ART,RES data;
