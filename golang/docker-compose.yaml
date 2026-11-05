@@ -80,6 +80,7 @@ services:
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
     - EXPECTED_QUERIES=5
+    - Q1_FILTER_AMOUNT=2
     - Q5_FILTER_AMOUNT=3
 
   gateway_1:
@@ -97,6 +98,7 @@ services:
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
     - EXPECTED_QUERIES=5
+    - Q1_FILTER_AMOUNT=2
     - Q5_FILTER_AMOUNT=3
 
   gateway_2:
@@ -114,6 +116,7 @@ services:
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
     - EXPECTED_QUERIES=5
+    - Q1_FILTER_AMOUNT=2
     - Q5_FILTER_AMOUNT=3
 
   q1_filter_0:
@@ -127,6 +130,25 @@ services:
     environment:
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
+    - Q1_FILTER_ID=0
+    - Q1_FILTER_AMOUNT=2
+    - Q1_PREFETCH=${Q1_PREFETCH:-4}
+    - LOG_LEVEL=info
+
+  q1_filter_1:
+    build:
+      context: ./src/
+      dockerfile: q1filter/Dockerfile
+    container_name: q1_filter_1
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+    - MOM_HOST=rabbitmq
+    - MOM_PORT=5672
+    - Q1_FILTER_ID=1
+    - Q1_FILTER_AMOUNT=2
+    - Q1_PREFETCH=${Q1_PREFETCH:-4}
     - LOG_LEVEL=info
 
   q2_filter_0:
