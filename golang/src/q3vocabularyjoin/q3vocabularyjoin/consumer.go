@@ -26,7 +26,7 @@ func (join *VocabularyJoin) Run(ctx context.Context) (err error) {
 		join.stopOnCancellation(ctx, consumingDone)
 	}()
 
-	slog.Info("Consuming Q3 vocabulary", "queue", vocabularyQueueName)
+	slog.Info("Consuming Q3 vocabulary", "queue", join.queueName)
 	var processingErr error
 	err = join.vocabularyQueue.StartConsuming(func(msg middleware.Message, ack func(), nack func()) {
 		if processingErr != nil || ctx.Err() != nil {

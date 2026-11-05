@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -lt 1 || $# -gt 10 ]]; then
-  echo "Uso: $0 <archivo-salida> [cantidad-clientes] [cantidad-gateways] [cantidad-tokenizers] [cantidad-q4-wordcounters] [cantidad-q5-avgpartials] [cantidad-q5-filters] [cantidad-q1-filters] [cantidad-q2-filters] [cantidad-q2-fetchers]" >&2
+if [[ $# -lt 1 || $# -gt 11 ]]; then
+  echo "Uso: $0 <archivo-salida> [cantidad-clientes] [cantidad-gateways] [cantidad-tokenizers] [cantidad-q4-wordcounters] [cantidad-q5-avgpartials] [cantidad-q5-filters] [cantidad-q1-filters] [cantidad-q2-filters] [cantidad-q2-fetchers] [cantidad-q3-joins]" >&2
   exit 1
 fi
 
@@ -16,8 +16,9 @@ q5_filter_count="${7:-1}"
 q1_filter_count="${8:-1}"
 q2_filter_count="${9:-1}"
 q2_fetcher_count="${10:-1}"
+q3_join_count="${11:-1}"
 
-for val in "$client_count" "$gateway_count" "$tokenizer_count" "$q4_counter_count" "$q5_avg_partial_count" "$q5_filter_count" "$q1_filter_count" "$q2_filter_count" "$q2_fetcher_count"; do
+for val in "$client_count" "$gateway_count" "$tokenizer_count" "$q4_counter_count" "$q5_avg_partial_count" "$q5_filter_count" "$q1_filter_count" "$q2_filter_count" "$q2_fetcher_count" "$q3_join_count"; do
   if ! [[ "$val" =~ ^[0-9]+$ ]] || [[ "$val" -lt 1 ]]; then
     echo "Error: los conteos deben ser enteros positivos" >&2
     exit 1
@@ -103,6 +104,7 @@ gateway() {
     - EXPECTED_QUERIES=5
     - Q1_FILTER_AMOUNT=${q1_filter_count}
     - Q2_FETCHER_AMOUNT=${q2_fetcher_count}
+    - Q3_JOIN_AMOUNT=${q3_join_count}
     - Q5_FILTER_AMOUNT=${q5_filter_count}
 
 YAML
@@ -177,10 +179,12 @@ YAML
   done
 
   for id in $(seq 0 $((tokenizer_count - 1))); do
-    worker "tokenizer_${id}" tokenizer "TOKENIZER_ID=${id}" "TOKENIZER_AMOUNT=${tokenizer_count}" "Q4_WORD_COUNTER_AMOUNT=${q4_counter_count}"
+    worker "tokenizer_${id}" tokenizer "TOKENIZER_ID=${id}" "TOKENIZER_AMOUNT=${tokenizer_count}" "Q4_WORD_COUNTER_AMOUNT=${q4_counter_count}" "Q3_JOIN_AMOUNT=${q3_join_count}"
   done
 
-  worker q3_vocabulary_join_0 q3vocabularyjoin "TOKENIZER_AMOUNT=${tokenizer_count}"
+  for id in $(seq 0 $((q3_join_count - 1))); do
+    worker "q3_vocabulary_join_${id}" q3vocabularyjoin "Q3_JOIN_ID=${id}" "TOKENIZER_AMOUNT=${tokenizer_count}"
+  done
   for id in $(seq 0 $((q5_avg_partial_count - 1))); do
     worker "q5_avg_partial_${id}" q5avgpartial "Q5_AVG_PARTIAL_ID=${id}" "Q5_AVG_PARTIAL_AMOUNT=${q5_avg_partial_count}"
   done
@@ -197,4 +201,4 @@ YAML
   rabbitmq
 } > "$output_file"
 
-echo "Docker Compose generado en $output_file con $client_count cliente(s), $gateway_count gateway(s), $tokenizer_count tokenizer(s), $q4_counter_count q4-counter(s), $q5_avg_partial_count q5-avgpartial(s), $q5_filter_count q5-filter(s), $q1_filter_count q1-filter(s), $q2_filter_count q2-filter(s) y $q2_fetcher_count q2-fetcher(s)."
+echo "Docker Compose generado en $output_file con $client_count cliente(s), $gateway_count gateway(s), $tokenizer_count tokenizer(s), $q4_counter_count q4-counter(s), $q5_avg_partial_count q5-avgpartial(s), $q5_filter_count q5-filter(s), $q1_filter_count q1-filter(s), $q2_filter_count q2-filter(s), $q2_fetcher_count q2-fetcher(s) y $q3_join_count q3-join(s)."

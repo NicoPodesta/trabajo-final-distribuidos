@@ -16,7 +16,7 @@ import (
 const (
 	abstractsQueueName        = "abstracts"
 	wordCountsQueuePrefix     = "word_counts_"
-	vocabularyQueueName       = "vocabulary_0"
+	vocabularyQueuePrefix     = "vocabulary_"
 	historicalCountsQueueName = "historical_counts"
 	recentArticlesQueueName   = "recent_articles"
 	controlExchangeName       = "tokenizer_control"
@@ -24,18 +24,19 @@ const (
 )
 
 type TokenizerConfig struct {
-	MOMHost           string
-	MOMPort           int
-	TokenizerID       int
-	TokenizerAmount   int
-	WordCounterAmount int
+	MOMHost              string
+	MOMPort              int
+	TokenizerID          int
+	TokenizerAmount      int
+	WordCounterAmount    int
+	VocabularyJoinAmount int
 }
 
 type Tokenizer struct {
 	conns                 *middleware.Connections
 	abstractsQueue        middleware.Middleware
 	wordCountsQueues      []middleware.Middleware
-	vocabularyQueue       middleware.Middleware
+	vocabularyQueues      []middleware.Middleware
 	historicalCountsQueue middleware.Middleware
 	recentArticlesQueue   middleware.Middleware
 	coordinator           *eofcoordinator.EOFCoordinator
@@ -61,7 +62,7 @@ func NewTokenizer(config TokenizerConfig) (tokenizer *Tokenizer, err error) {
 		return nil, err
 	}
 
-	vocabularyQueue, err := conns.Queue(vocabularyQueueName)
+	vocabularyQueues, err := conns.Queues(vocabularyQueuePrefix, config.VocabularyJoinAmount)
 	if err != nil {
 		return nil, err
 	}
@@ -85,7 +86,7 @@ func NewTokenizer(config TokenizerConfig) (tokenizer *Tokenizer, err error) {
 		conns:                 conns,
 		abstractsQueue:        abstractsQueue,
 		wordCountsQueues:      wordCountsQueues,
-		vocabularyQueue:       vocabularyQueue,
+		vocabularyQueues:      vocabularyQueues,
 		historicalCountsQueue: historicalCountsQueue,
 		recentArticlesQueue:   recentArticlesQueue,
 		coordinator:           coordinator,

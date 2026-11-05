@@ -10,16 +10,18 @@ import (
 	"trabajo-final-distribuidos/common/resultpublisher"
 )
 
-const vocabularyQueueName = "vocabulary_0"
+const vocabularyQueuePrefix = "vocabulary_"
 
 type VocabularyJoinConfig struct {
 	MOMHost         string
 	MOMPort         int
+	JoinID          int
 	TokenizerAmount int
 }
 
 type VocabularyJoin struct {
 	vocabularyQueue  middleware.Middleware
+	queueName        string
 	resultsPublisher *resultpublisher.Publisher
 	wordsByClient    map[string]map[string]*wordPresence
 	eofs             *eofcounter.Counter
@@ -27,12 +29,14 @@ type VocabularyJoin struct {
 
 func NewVocabularyJoin(config VocabularyJoinConfig) (*VocabularyJoin, error) {
 	settings := middleware.ConnSettings{Hostname: config.MOMHost, Port: config.MOMPort}
-	queue, err := middleware.CreateQueueWithRetry(vocabularyQueueName, settings)
+	queueName := fmt.Sprintf("%s%d", vocabularyQueuePrefix, config.JoinID)
+	queue, err := middleware.CreateQueueWithRetry(queueName, settings)
 	if err != nil {
 		return nil, err
 	}
 	return &VocabularyJoin{
 		vocabularyQueue:  queue,
+		queueName:        queueName,
 		resultsPublisher: resultpublisher.New(settings),
 		wordsByClient:    make(map[string]map[string]*wordPresence),
 		eofs:             eofcounter.New(config.TokenizerAmount),
