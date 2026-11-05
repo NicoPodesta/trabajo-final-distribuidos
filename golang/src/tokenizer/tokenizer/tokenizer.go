@@ -1,6 +1,8 @@
 package tokenizer
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -98,7 +100,10 @@ func (tokenizer *Tokenizer) Run() error {
 		}
 	}()
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	shutdown.OnSignal(func() {
+		cancel()
 		_ = tokenizer.abstractsQueue.StopConsuming()
 		_ = tokenizer.coordinator.Stop()
 	})
@@ -116,6 +121,13 @@ func (tokenizer *Tokenizer) Run() error {
 			slog.Error("Control consumer stopped with error", "err", err)
 		}
 	}()
+
+	if err := tokenizer.coordinator.WaitReady(ctx); err != nil {
+		if errors.Is(err, context.Canceled) {
+			return nil
+		}
+		return err
+	}
 
 	slog.Info("Consuming abstracts from RabbitMQ...", "queue", abstractsQueueName)
 	return tokenizer.abstractsQueue.StartConsuming(func(msg middleware.Message, ack func(), nack func()) {
