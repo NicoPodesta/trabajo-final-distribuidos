@@ -1,17 +1,74 @@
 @startuml
-title Secuencia · Difusión del EOF entre los Tokenizers
+autonumber
+skinparam shadowing false
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
 
-participant "Gateway" as GW
-queue "abstracts\n(cola compartida)" as A
-participant "Tokenizer 0" as T0
-participant "Tokenizer 1" as T1
-queue "tokenizer_control\n(exchange)" as CTRL
+title Secuencia · Protocolo Genérico de Barrera Distribuida de EOF (EOFCoordinator)
 
-GW -> A : EOF del cliente (un solo mensaje)
-A -> T0 : lo recibe una sola réplica
+queue "Cola Compartida" as Q_IN
+participant "Worker 0\n(Coordinador dinámico)" as W0
+queue "Exchange de Control" as CTRL
+participant "Worker 1\n(Worker réplica)" as W1
+queue "Cola Downstream" as Q_OUT
 
+== 1. Recepción de EOF y Asunción de Coordinador ==
+Q_IN -> W0 : EOF(clientID, totalBatches: 150)
+note over W0 #LightYellow
+  RabbitMQ entrega el mensaje de fin a una sola réplica.
+  Worker 0 asume el rol de Coordinador para este cliente.
+  Worker 1 todavía tiene 1 lote retenido en memoria (prefetch).
+end note
 
-T0 -> CTRL : difunde el EOF del cliente
-CTRL -> T0
-CTRL -> T1
+== 2. Sondeo y Reportes de Conteo ==
+W0 -> CTRL : BroadcastWithTotal() -> msgAskCounts(total: 150)
+CTRL -> W0 : msgAskCounts
+CTRL -> W1 : msgAskCounts
+
+W0 -> CTRL : msgReportCount(replica: 0, count: 80)
+W1 -> CTRL : msgReportCount(replica: 1, count: 69)
+
+CTRL -> W0 : msgReportCount(replica: 0, count: 80)
+CTRL -> W0 : msgReportCount(replica: 1, count: 69)
+
+note over W0 #Pink
+  El Coordinador suma los lotes reportados:
+  80 + 69 = 149 lotes (de 150 esperados).
+  Aún falta 1 lote pendiente en el prefetch de Worker 1.
+end note
+
+== 3. Manejo de Prefetch Residual (+1) ==
+note over W1
+  Worker 1 termina de procesar el lote residual
+  que tenía retenido en memoria por prefetch.
+  Emite los resultados a downstream antes de notificar su nuevo conteo.
+end note
+W1 -> Q_OUT : batch de datos
+W1 -> CTRL : OnBatchProcessed() -> msgReportCount(replica: 1, count: 70)
+CTRL -> W0 : msgReportCount(replica: 1, count: 70)
+
+== 4. Cumplimiento de Barrera y Commit ==
+note over W0 #LightGreen
+  Suma actualizada: 80 + 70 = 150 lotes.
+  Todas las réplicas reportaron y la suma coincide con el total.
+  Garantía de que no quedan datos pendientes.
+end note
+
+W0 -> CTRL : msgCountedEOF(coord: 0, total: 150)
+CTRL -> W0 : msgCountedEOF
+CTRL -> W1 : msgCountedEOF
+
+== 5. Propagación de EOF Downstream y Limpieza ==
+
+par onEOF(clientID) en Worker 0
+    W0 -> Q_OUT : EOF(clientID)
+else onEOF(clientID) en Worker 1
+    W1 -> Q_OUT : EOF(clientID)
+end
+
+note over W0, W1
+  Al recibir la confirmación de cierre:
+  Ambos workers emiten el EOF hacia downstream.
+  Se libera la memoria y el estado local del cliente.
+end note
 @enduml
