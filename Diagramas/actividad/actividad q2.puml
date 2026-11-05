@@ -6,35 +6,58 @@ title Actividad · Q2 · Filtrado, Descarga y Publicación de Imágenes
 |Q2 Filter|
 start
 :Llega batch de artículos (`article_sections`);
-:Filtrar artículos históricos (hasta 2020 inclusive)\ncon sección biografía e imagen referenciada;
+:Filtrar artículos modificados hasta 2020 inclusive\ncon sección biography / biographie e imagen referenciada;
 
 if (¿Hay artículos que califican?) then (sí)
   :Generar pedidos de descarga (nombre, URL, imagen);
-  :Distribuir pedidos por turno (*round-robin*)\nentre las colas de los fetchers (`image_downloads_[i]`);
+  :Distribuir pedidos por turno (round-robin)\nentre las colas de los fetchers (`image_downloads_[i]`);
 else (no)
-  :No se generan pedidos de descarga;
+  :Contabilizar batch y confirmar mensaje\nsin generar pedidos de descarga;
+  stop
 endif
 
 :Contabilizar batch procesado y confirmar mensaje;
+note left
+  Al finalizar la entrada, los filtros coordinan
+  el conteo de batches. Cada filtro envía
+  su EOF a todos los fetchers.
+end note
 
 |Image Fetcher|
 :Consumir pedido desde `image_downloads_[i]`;
-:Reservar cupo en el pool de descargadores concurrentes;
+:Registrar el pedido como pendiente\ny asignarlo a un descargador;
+note right
+  Varios descargadores y un único publicador.
+  Mientras se publica una imagen,
+  se pueden descargar otras.
+end note
 
-if (¿Host en pausa por rate limit HTTP 429?) then (sí)
-  :Resolver de inmediato sin imagen;
-else (no)
-  :Descargar imagen a archivo temporal en disco\n(timeout 5s, hasta 3 reintentos);
-  if (¿Descarga exitosa?) then (sí)
-    :Leer archivo local y fragmentar en chunks de hasta 64 KiB;
-    :Emitir chunks numerados y EOF de imagen hacia el Gateway;
-    :Eliminar archivo temporal local;
-  else (error 404 o fallo de red)
-    :Emitir fila CSV vacía (nombre y URL sin imagen);
-  endif
+:Descargar imagen a archivo temporal en disco\n(presupuesto total de 5 s, hasta 3 reintentos);
+if (¿Descarga exitosa?) then (sí)
+  :Leer archivo local y fragmentar en chunks\n(64 KiB por defecto);
+  :Publicar chunks numerados hacia el Gateway\ncon el último marcado como final;
+  :Eliminar archivo temporal local;
+else (fallo del origen: HTTP / red)
+  :Publicar nombre y URL sin imagen\npara conservar la fila en el CSV del cliente;
 endif
 
-:Liberar cupo del pool y confirmar mensaje (ACK);
+:Confirmar pedido (ACK), quitarlo de pendientes\ny liberar cupo;
+note right
+  El ACK confirma la publicación.
+  Gateway entrega los resultados al cliente,
+  que reconstruye las imágenes y escribe el CSV.
+
+  El fetcher emite su EOF cuando recibió los EOFs
+  de todos los filtros y no quedan pendientes,
+  incluso si no recibió pedidos de imágenes.
+  Gateway espera a todos los fetchers para cerrar Q2.
+end note
 stop
+
+note left
+  Los errores internos detienen el fetcher.
+  Al apagar, se detiene el procesamiento,
+  se limpian temporales y se cierran conexiones.
+end note
 
 @enduml

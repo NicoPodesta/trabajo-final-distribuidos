@@ -150,9 +150,9 @@ El código en Go se organiza desacoplando responsabilidades:
 
 Complementa a los diagramas [actividad q2.png](Diagramas/actividad/actividad%20q2.png) y [actividad q5-filter.png](Diagramas/actividad/actividad%20q5-filter.png) (cuyas fuentes `.puml` se ubican en el mismo directorio).
 
-* **Actividad de Q2 — Filtrado y descarga de imágenes**:
-  El ciclo de vida de la consulta comprende dos etapas: el **Q2 Filter**, que evalúa las biografías históricas y distribuye los pedidos por turno (*round-robin*) hacia las colas de los fetchers; y el **Image Fetcher**, que administra un pool concurrente de descargas con presupuesto y pausas por *rate limiting* (`HTTP 429`), fragmenta el archivo local en chunks de hasta 64 KiB y los transmite al Gateway, liberando el temporal y confirmando el mensaje.
-
+* **Actividad de Q2 — Descarga y envío de imágenes**:
+  Conserva el recorrido por las etapas Q2 Filter e Image Fetcher: selección de artículos, reparto de pedidos entre fetchers, descarga a un temporal, publicación de chunks con el último marcado como final (o nombre y URL sin imagen si falla el origen), eliminación del temporal y confirmación del pedido. Cada fetcher tiene descargadores concurrentes y un único publicador. Las notas resumen el cierre: los filtros coordinan el conteo de batches y cada uno envía su EOF a todos los fetchers; cada fetcher espera esos cierres y resuelve sus pendientes antes de emitir su EOF al Gateway. Los errores internos detienen el fetcher; al apagar se limpian temporales y se cierran conexiones.
+  
 * **Actividad de Q5 — Filtrado de candidatos**:
   Modela la concurrencia asíncrona sobre tres canales: la llegada de artículos recientes (retenidos en el `pendingStore` en disco hasta contar con el promedio), el arribo del promedio global por el exchange `q5_average` (que dispara la lectura por lotes de 1000 artículos, publicación de coincidencias y eliminación del archivo en disco) y la barrera de control de eof de recientes. Finaliza únicamente al converger el promedio recibido y el EOF de recientes confirmado (`hasAverage && recentsEOF`).
 
