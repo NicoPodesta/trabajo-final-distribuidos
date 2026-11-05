@@ -22,6 +22,7 @@ type FetcherConfig struct {
 }
 
 type Fetcher struct {
+	downloader         imageDownloader
 	id                 int
 	queueName          string
 	downloadsQueue     middleware.Middleware

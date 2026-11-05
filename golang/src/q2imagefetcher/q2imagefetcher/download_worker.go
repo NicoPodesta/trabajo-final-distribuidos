@@ -13,7 +13,7 @@ func (f *Fetcher) downloadImages(ctx context.Context, cancel context.CancelCause
 			continue
 		}
 		slog.Debug("Starting Q2 image download", "clientID", job.clientID, "imageID", job.imageID)
-		image, err := DownloadImage(ctx, job.clientID, job.imageID, job.request.ImageRef)
+		image, err := f.downloader.download(ctx, job.clientID, job.imageID, job.request.ImageRef)
 		if err != nil && (ctx.Err() != nil || !isImageSourceError(err)) {
 			workerErr = errors.Join(workerErr, err)
 			cancel(err)

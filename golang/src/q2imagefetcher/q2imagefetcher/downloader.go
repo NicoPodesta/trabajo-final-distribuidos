@@ -8,7 +8,9 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -17,9 +19,11 @@ const (
 	downloadBudget     = 5 * time.Second
 	downloadRetries    = 3
 	downloadRetryDelay = 1 * time.Second
+	defaultServerPause = 5 * time.Second
 )
 
 var errImageNotFound = errors.New("image not found")
+var errImageRateLimited = errors.New("image server rate limited")
 
 type DownloadedImage struct {
 	Path string
@@ -30,8 +34,18 @@ type imageFileWriter struct {
 	writer io.Writer
 }
 
+type imageDownloader struct {
+	mu          sync.Mutex
+	pausedUntil map[string]time.Time
+}
+
+
 // Intenta descargar la imagen sin límite de tamaño y devuelve un archivo temporal.
 func DownloadImage(ctx context.Context, clientID, imageID, imageRef string) (*DownloadedImage, error) {
+	return (&imageDownloader{}).download(ctx, clientID, imageID, imageRef)
+}
+
+func (d *imageDownloader) download(ctx context.Context, clientID, imageID, imageRef string) (*DownloadedImage, error) {
 	if strings.TrimSpace(clientID) == "" || strings.TrimSpace(imageID) == "" {
 		return nil, fmt.Errorf("image download requires client_id and image_id")
 	}
@@ -47,7 +61,7 @@ func DownloadImage(ctx context.Context, clientID, imageID, imageRef string) (*Do
 			return nil, fmt.Errorf("%w: download budget exhausted: %w", errImageSource, err)
 		}
 		var image *DownloadedImage
-		image, err = downloadImageAttempt(downloadCtx, clientID, imageID, imageRef)
+		image, err = d.downloadImageAttempt(downloadCtx, clientID, imageID, imageRef)
 		if err == nil {
 			return image, nil
 		}
@@ -55,7 +69,7 @@ func DownloadImage(ctx context.Context, clientID, imageID, imageRef string) (*Do
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, errors.Join(ctxErr, err)
 		}
-		if !isImageSourceError(err) || errors.Is(err, errImageNotFound) {
+		if !isImageSourceError(err) || errors.Is(err, errImageNotFound) || errors.Is(err, errImageRateLimited) {
 			return nil, err
 		}
 		if attempt < downloadRetries {
@@ -71,18 +85,34 @@ func DownloadImage(ctx context.Context, clientID, imageID, imageRef string) (*Do
 	return nil, fmt.Errorf("image download failed after %d attempts: %w", downloadRetries+1, err)
 }
 
-func downloadImageAttempt(ctx context.Context, clientID, imageID, imageRef string) (download *DownloadedImage, err error) {
+func (d *imageDownloader) downloadImageAttempt(ctx context.Context, clientID, imageID, imageRef string) (download *DownloadedImage, err error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, imageRef, nil)
 	if err != nil {
 		return nil, fmt.Errorf("%w: creating HTTP request: %w", errImageSource, err)
 	}
+	if d.paused(request.URL.Host) {
+		return nil, fmt.Errorf("%w: %w", errImageSource, errImageRateLimited)
+	}
 	request.Header.Set("User-Agent", "trabajo-final-distribuidos")
-	client := http.Client{Timeout: downloadTimeout}
+	client := http.Client{Timeout: downloadTimeout, CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 10 {
+			return fmt.Errorf("too many redirects")
+		}
+		if d.paused(req.URL.Host) {
+			return errImageRateLimited
+		}
+		return nil
+	}}
 	response, err := client.Do(request)
 	if err != nil {
 		return nil, fmt.Errorf("%w: requesting image: %w", errImageSource, err)
 	}
 	defer response.Body.Close()
+	if response.StatusCode == http.StatusTooManyRequests {
+		d.pause(response.Request.URL.Host, response.Header.Get("Retry-After"))
+		d.pause(request.URL.Host, response.Header.Get("Retry-After"))
+		return nil, fmt.Errorf("%w: %w: HTTP %s", errImageSource, errImageRateLimited, response.Status)
+	}
 	if response.StatusCode == http.StatusNotFound {
 		return nil, fmt.Errorf("%w: %w: HTTP %s", errImageSource, errImageNotFound, response.Status)
 	}
@@ -142,4 +172,35 @@ func removeTemporaryImage(path string) error {
 		return fmt.Errorf("%w: removing temporary image %q: %w", errImageLocal, path, err)
 	}
 	return nil
+}
+
+func (d *imageDownloader) paused(host string) bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	host = strings.ToLower(host)
+	if time.Now().Before(d.pausedUntil[host]) {
+		return true
+	}
+	delete(d.pausedUntil, host)
+	return false
+}
+
+func (d *imageDownloader) pause(host, retryAfter string) {
+	now := time.Now()
+	until := now.Add(defaultServerPause)
+	retryAfter = strings.TrimSpace(retryAfter)
+	if seconds, err := strconv.ParseUint(retryAfter, 10, 32); err == nil {
+		until = now.Add(time.Duration(seconds) * time.Second)
+	} else if date, err := http.ParseTime(retryAfter); err == nil && date.After(now) {
+		until = date
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.pausedUntil == nil {
+		d.pausedUntil = make(map[string]time.Time)
+	}
+	host = strings.ToLower(host)
+	if until.After(d.pausedUntil[host]) {
+		d.pausedUntil[host] = until
+	}
 }
