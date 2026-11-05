@@ -17,7 +17,7 @@ Por ejemplo, con 2 clientes, 2 gateways, 3 tokenizers, 2 contadores de Q4, 2 Avg
 cd golang && make up
 ```
 
-`cd golang && make switch` permite elegir entre cinco escenarios. Los escenarios 2, 3 y 4 usan tres filtros y tres Fetchers de Q2; el 4 agrega tres Joins de Q3 (los escenarios 1 a 3 tienen uno). El escenario 5 es igual al 4 pero con 25 Fetchers de Q2. El escenario mínimo conserva uno de cada uno. Luego se levanta con `make up`.
+`cd golang && make switch` permite elegir entre cinco escenarios. Los escenarios 2, 3 y 4 usan tres filtros de Q1, tres filtros de Q2 y tres Fetchers de Q2; el 4 agrega tres Joins de Q3 (los escenarios 1 a 3 tienen uno). El escenario 5 es igual al 4 pero con 25 Fetchers de Q2. El escenario mínimo conserva uno de cada uno. Luego se levanta con `make up`.
 
 ## Decisiones - estado actual
 
@@ -49,7 +49,7 @@ cd golang && make up
 - Cola única por Gateway `results_<gatewayID>`: los mensajes incluyen un header con `type`, `client_id` y `query_id`. Collector los reenvía por el socket de la sesión correspondiente.
 - Las cinco consultas usan `common/resultpublisher` para publicar resultados y EOF, reutilizando conexiones por Gateway.
 - Gateway espera el EOF de cada consulta (configurable con `EXPECTED_QUERIES`) antes de enviar el `EndOfRecords` final al cliente y cerrar la sesión. Cuenta consultas terminadas, no réplicas.
-- Una consulta puede cerrar con más de un EOF: uno por réplica de su última etapa. `Q1_FILTER_AMOUNT` y `Q5_FILTER_AMOUNT` indican cuántos espera de cada consulta. En Q1 valida y deduplica por `filter_id`. Cada réplica publica sus datos y después su EOF por el mismo canal hacia la cola de resultados.
+- El Gateway espera el cierre de todas las réplicas de la última etapa de cada consulta. En Q1 y Q2 valida quién cierra e ignora cierres repetidos.
 
 ### Tokenizer
 
@@ -66,34 +66,43 @@ cd golang && make up
 
 ### Q1
 
-- Consume batches de `article_dates` y selecciona artículos con `language = en` y año de modificación hasta 2020 inclusive, interpretando la fecha en UTC.
-- Publica `url` y `date_modified` de las coincidencias de cada batch. Un batch sin coincidencias no genera resultados ni termina la consulta.
-- No elimina URLs repetidas ni descarta URLs vacías. Un timestamp igual a 0 se interpreta como 1970.
-- Si ocurre un error, envía NACK y detiene el consumo.
-- Al recibir EOF inicia la coordinación y sigue consumiendo. Cuenta cada batch después de publicar sus resultados, incluso si no tuvo coincidencias. Las estadísticas son locales por cliente y réplica, y se liberan después de publicar su EOF exitosamente.
-- `Q1_FILTER_ID` identifica la réplica entre 0 y `Q1_FILTER_AMOUNT - 1`. Los valores predeterminados son ID 0, cantidad 1 y `Q1_PREFETCH=1`. Gateway usa la misma cantidad. Compose conserva un filtro.
-
-### Coordinación de Q1
-
-- Gateway cuenta los batches publicados en `article_dates` y envía `total_batches` en su EOF. Cero indica entrada vacía; un total ausente es un error. Gateway y Q1 deben actualizarse juntos.
-- Los filtros esperan que todas las réplicas estén suscriptas a `q1_filter_control` antes de consumir datos. El coordinador reúne los conteos acumulados de todas y autoriza el cierre cuando su suma coincide con el total esperado. Cada filtro publica su propio EOF identificado, después de sus resultados.
-- La cantidad de réplicas queda fija durante la ejecución. El estado permanece en memoria; se deduplican reportes de control y EOF, no entregas de batches. No se agrega finalizador ni cola de resultados intermedia.
+- Selecciona artículos en inglés modificados hasta 2020 inclusive, usando la fecha en UTC. Devuelve la URL y la fecha, sin eliminar repetidos.
+- Los filtros comparten una cola: cada lote lo procesa una réplica. Los escenarios con réplicas usan tres filtros.
+- Antes de consumir, todos esperan que las réplicas estén suscriptas al canal de control para no perder avisos de coordinación.
+- Cada filtro publica las coincidencias y recién después cuenta el lote como terminado. Los lotes sin coincidencias también cuentan, pero no generan resultados.
+- El Gateway envía un cierre con el total de lotes de ese cliente. El filtro que lo recibe se vuelve coordinador y pide los conteos acumulados de todos.
+- Los filtros siguen procesando y actualizando sus conteos durante la coordinación. El coordinador autoriza el cierre cuando todos reportaron y la suma coincide con el total esperado.
+- Cada filtro publica su propio cierre después de sus resultados. El Gateway identifica quién cerró, ignora cierres repetidos y termina Q1 cuando cerraron todos.
+- Los conteos se separan por cliente y también permiten cerrar entradas vacías. Las réplicas son fijas y el estado queda en memoria; no se recuperan caídas ni se deduplican lotes reentregados.
 
 ### Q2
 
-- Gateway envía `total_batches` en el EOF de entrada. Los filtros coordinan sus lotes completados y cada uno publica su EOF con `filter_id` después de sus pedidos. Cero se distingue de un campo ausente; Gateway, filtros y Fetcher deben actualizarse juntos.
-- `make switch` actualiza la cantidad tanto en los filtros como en el Fetcher.
-- El filtro consume batches de `article_sections` y selecciona artículos con año de modificación hasta 2020 inclusive (UTC) y una sección `biography` o `biographie`, ignorando mayúsculas y espacios en los extremos del nombre de la sección.
-- Los artículos sin imagen se omiten y el procesamiento continúa, sin tratarlos como error.
-- Cada coincidencia con imagen genera un pedido individual en `image_downloads`, con nombre, URL del artículo e `image_ref`. El Fetcher descarga directamente esa imagen a un archivo temporal y luego publica chunks de hasta 64 KiB con la configuración actual.
-- Gateway y cliente soportan `Q2ImageChunk`: se reenvía cada chunk por TCP. Nombre y URL viajan solo en el primer chunk. `last=true` termina una imagen y el EOF Q2 termina la consulta de ese cliente.
-- Después de publicar todos los chunks, el Fetcher cierra y borra el temporal y confirma el pedido con ACK. Este ACK no confirma que el cliente haya guardado la imagen.
-- El Fetcher usa un receptor, un descargador y un publicador concurrentes dentro de una sola instancia. Puede descargar una imagen mientras publica otra. El canal de pedidos tiene capacidad 1; entre descarga y publicación circulan la ruta y los metadatos del temporal, no sus bytes.
-- `Q2_MAX_PENDING_REQUESTS` limita los mensajes de `image_downloads` entregados sin ACK, incluyendo EOF, y fija la capacidad del canal de eventos del publicador. Se configura antes del arranque, vale 4 por defecto y admite valores entre 2 y 65535. Los demás consumidores mantienen su prefetch anterior. Este límite no cambia la cantidad de descargadores ni limita los bytes en disco.
-- El publicador registra los pendientes por cliente y es el único que publica chunks y EOF. Valida y deduplica los EOF por filtro; confirma los cierres parciales para liberar prefetch y sigue recibiendo pedidos de los otros filtros. Publica un único EOF Q2 cuando cerraron todos y no quedan imágenes pendientes, incluso si no hubo imágenes. El ACK del último EOF espera esa publicación.
-- Los fallos del origen se omiten tras los reintentos (404 no reintenta). Los errores internos cancelan el pipeline: se detiene el consumo, se limpian los temporales pendientes y se hace NACK del trabajo no resuelto. Las imágenes ya publicadas conservan su ACK, aunque falle su limpieza posterior. Las conexiones se cierran después de terminar las etapas.
-- Si el cliente recibe el `EndOfRecords` final del Gateway y todavía tiene una imagen sin su último chunk (`last=true`), informa un error. Al cerrar, borra los archivos de las imágenes que quedaron a medio recibir en esa ejecución y conserva las que ya recibió completas.
-- El cliente guarda las imágenes en `output/client_N/q2_images/run-*/` y el archivo `q2_results.csv`, con columnas `image_id,name,url,file`, en `output/client_N/`. Mientras recibe los chunks, escribe cada imagen en un archivo `.part`. Al recibir el último chunk, cambia esa extensión por `.jpg`, `.png`, etc., según el formato detectado en los bytes recibidos. Si no reconoce el formato, usa `.bin`.
+#### Filtros
+
+- Seleccionan artículos modificados hasta 2020 inclusive, con una sección de biografía en inglés o francés. Ignoran mayúsculas y espacios en los extremos de la sección; omiten artículos sin referencia de imagen.
+- Comparten la cola de entrada y esperan que todas las réplicas estén listas en el canal de control antes de consumir.
+- Por cada coincidencia publican un pedido con nombre, URL del artículo y referencia de imagen. Reparten los pedidos por turnos entre los fetchers, cada uno con su propia cola.
+- Cuentan cada lote después de publicar todos sus pedidos, incluso si no produjo ninguno. El filtro que recibe el cierre del Gateway coordina los conteos, como en Q1.
+- Cuando todos reportaron y la suma alcanza el total esperado, cada filtro envía su cierre identificado a **todos los fetchers**, después de sus pedidos, aunque no les haya enviado imágenes.
+
+#### Fetchers y coordinación del cierre
+
+- Cada fetcher tiene un receptor de pedidos, varios descargadores y un único publicador trabajando concurrentemente.
+- El receptor registra cada imagen pendiente antes de entregarla a los descargadores. El publicador mantiene los pendientes y los cierres recibidos separados por cliente.
+- El límite de mensajes recibidos sin confirmar incluye pedidos y cierres; por defecto es cuatro por fetcher. Evita acumular trabajo sin límite, pero no limita los bytes en disco.
+- El publicador valida qué filtro envió cada cierre e ignora repetidos. Confirma los cierres parciales para liberar espacio y seguir recibiendo pedidos de los otros filtros.
+- Cada fetcher publica su cierre cuando recibió los cierres de todos los filtros y resolvió todas sus imágenes pendientes. También cierra si no recibió imágenes; confirma el último cierre de entrada después de publicar el suyo.
+- El Gateway espera un cierre de cada fetcher e ignora duplicados. Así, Q2 no termina mientras otro fetcher todavía descarga o publica imágenes.
+
+#### Descargadores y publicación
+
+- Cada fetcher usa tres descargadores por defecto, configurables. Toman pedidos de un canal compartido: cada pedido lo descarga uno, mientras el publicador puede enviar otra imagen.
+- Descargan a archivos temporales y entregan al publicador la ruta y los metadatos. Las imágenes no se pasan completas por memoria.
+- El publicador envía fragmentos de hasta 64 KiB, borra el temporal y confirma el pedido. Esa confirmación indica publicación, no que el cliente ya guardó la imagen.
+- Cada descarga tiene un presupuesto de cinco segundos y hasta tres reintentos. Los errores 404 y 429 no se reintentan.
+- Ante un 429, los descargadores del mismo fetcher comparten una pausa para ese servidor: respetan el tiempo indicado o usan cinco segundos. Durante la pausa, los nuevos pedidos a ese servidor se resuelven sin imagen; la pausa no se comparte entre fetchers.
+- Si falla el origen, se publica el nombre y la URL para conservar la fila del CSV sin imagen. Los errores internos detienen el fetcher, limpian temporales y rechazan el trabajo pendiente.
+- El cliente guarda los fragmentos en un archivo parcial y lo convierte en imagen completa al recibir el último. Al cerrar elimina las incompletas y avisa si el cierre final llegó con imágenes pendientes.
 
 ### Q3
 
@@ -128,7 +137,7 @@ cd golang && make up
 
 ### Cierre por conteo
 
-- Lo usan Q1, el Tokenizer, el Avg Partial y el Filter de Q5, con `common/eofcoordinator`. Cada réplica cuenta los batches que procesó y publicó. La réplica que recibe el EOF con `total_batches` coordina: pide los conteos, y cuando la suma coincide con el total y reportaron todas, avisa a todas que cierren. El cierre no depende del orden de llegada, así que un batch que una réplica tenía entregado y todavía no procesaba ya no puede quedar después del EOF.
+- Lo usan los filtros de Q1 y Q2, el Tokenizer, el Avg Partial y el Filter de Q5, con `common/eofcoordinator`. Cada réplica cuenta los batches que procesó y publicó. La réplica que recibe el EOF con `total_batches` coordina: pide los conteos, y cuando la suma coincide con el total y reportaron todas, avisa a todas que cierren. El cierre no depende del orden de llegada, así que un batch que una réplica tenía entregado y todavía no procesaba ya no puede quedar después del EOF.
 - El coordinador supone un único EOF con total por cliente. Por eso el Tokenizer publica un solo EOF hacia `historical_counts` y `recent_articles`: si cada réplica del Tokenizer publicara el suyo, varias réplicas del Avg Partial se declararían coordinadoras del mismo cliente y el cierre fallaría.
 - Cada componente espera a que todas sus réplicas estén suscriptas al canal de control antes de consumir datos. Un mensaje de control que llega a una réplica que todavía no se suscribió se pierde, y el cierre no llegaría nunca. Si una réplica no arranca, las demás no procesan.
 - La cantidad de réplicas queda fija durante la ejecución. El estado permanece en memoria. Se cuentan batches procesados, no distintos: una reentrega por una caída no está soportada.
