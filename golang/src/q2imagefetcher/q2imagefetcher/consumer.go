@@ -22,7 +22,7 @@ func (f *Fetcher) Run(ctx context.Context) (err error) {
 	jobs := make(chan downloadJob, 1)
 	events := make(chan pipelineEvent, f.maxPendingRequests)
 	receiverDone := make(chan error, 1)
-	downloaderDone := make(chan error, 1)
+	downloaderDone := make(chan error, f.downloadWorkers)
 	publisherDone := make(chan error, 1)
 	go func() {
 		defer close(stopperDone)
@@ -30,20 +30,24 @@ func (f *Fetcher) Run(ctx context.Context) (err error) {
 	}()
 
 	slog.Info("Consuming Q2 image downloads", "queue", f.queueName, "fetcherID", f.id, "chunkSize", f.chunkSize,
-		"maxPendingRequests", f.maxPendingRequests, "downloaders", 1)
+		"maxPendingRequests", f.maxPendingRequests, "downloaders", f.downloadWorkers)
 	go func() {
 		receiverErr := f.receiveRequests(ctx, cancel, jobs, events)
 		close(jobs)
 		close(consumingDone)
 		receiverDone <- receiverErr
 	}()
-	go func() { downloaderDone <- f.downloadImages(ctx, cancel, jobs, events) }()
+	for i := 0; i < f.downloadWorkers; i++ {
+		go func() { downloaderDone <- f.downloadImages(ctx, cancel, jobs, events) }()
+	}
 	go func() { publisherDone <- f.publishImages(ctx, cancel, events) }()
 
-	// Ambos productores tienen que terminar antes de cerrar los eventos. El publicador
-	// sigue recibiendo durante el apagado para limpiar archivos temporales y resolver NACKs
+	// El publicador drena los eventos hasta que terminan todos los descargadores
 	receiverErr := <-receiverDone
-	downloaderErr := <-downloaderDone
+	var downloaderErr error
+	for i := 0; i < f.downloadWorkers; i++ {
+		downloaderErr = errors.Join(downloaderErr, <-downloaderDone)
+	}
 	close(events)
 	publisherErr := <-publisherDone
 	<-stopperDone

@@ -14,10 +14,11 @@ type ImageDownloadRequest struct {
 
 // Cada mensaje de datos contiene un pedido. El EOF no contiene un pedido
 type ImageDownloadMessage struct {
-	Type     MsgType               `json:"type"`
-	ClientID string                `json:"client_id"`
-	Request  *ImageDownloadRequest `json:"request,omitempty"`
-	FilterID *int                  `json:"filter_id,omitempty"`
+	Type          MsgType               `json:"type"`
+	ClientID      string                `json:"client_id"`
+	Request       *ImageDownloadRequest `json:"request,omitempty"`
+	FilterID      *int                  `json:"filter_id,omitempty"`
+	TotalRequests *uint64               `json:"total_requests,omitempty"`
 }
 
 func (m *ImageDownloadMessage) IsEOF() bool {
@@ -40,12 +41,31 @@ func SerializeImageDownload(clientID string, request ImageDownloadRequest) (*mid
 	}).Serialize()
 }
 
+func SerializeImageDownloadFromFilter(clientID string, filterID int, request ImageDownloadRequest) (*middleware.Message, error) {
+	return (&ImageDownloadMessage{
+		Type:     MsgData,
+		ClientID: clientID,
+		Request:  &request,
+		FilterID: &filterID,
+	}).Serialize()
+}
+
 func SerializeImageDownloadsEOF(clientID string) (*middleware.Message, error) {
 	return (&ImageDownloadMessage{Type: MsgEOF, ClientID: clientID}).Serialize()
 }
 
 func SerializeImageDownloadsProducerEOF(clientID string, filterID int) (*middleware.Message, error) {
 	return (&ImageDownloadMessage{Type: MsgEOF, ClientID: clientID, FilterID: &filterID}).Serialize()
+}
+
+// El total cuenta pedidos de este filtro, no lotes de artículos
+func SerializeImageDownloadsCountedEOF(clientID string, filterID int, totalRequests uint64) (*middleware.Message, error) {
+	return (&ImageDownloadMessage{
+		Type:          MsgEOF,
+		ClientID:      clientID,
+		FilterID:      &filterID,
+		TotalRequests: &totalRequests,
+	}).Serialize()
 }
 
 func DeserializeImageDownload(message *middleware.Message) (*ImageDownloadMessage, error) {

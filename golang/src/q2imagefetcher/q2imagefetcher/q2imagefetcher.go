@@ -15,6 +15,7 @@ type FetcherConfig struct {
 	MOMPort            int
 	ChunkSize          int
 	MaxPendingRequests int
+	DownloadWorkers    int
 	FilterAmount       int
 	FetcherID          int
 	FetcherAmount      int
@@ -27,6 +28,7 @@ type Fetcher struct {
 	publisher          imagePublisher
 	chunkSize          int
 	maxPendingRequests int
+	downloadWorkers    int
 	filterAmount       int
 }
 
@@ -48,6 +50,9 @@ func NewFetcher(config FetcherConfig) (*Fetcher, error) {
 	if config.MaxPendingRequests < 2 || config.MaxPendingRequests > math.MaxUint16 {
 		return nil, fmt.Errorf("Q2_MAX_PENDING_REQUESTS must be between 2 and 65535")
 	}
+	if config.DownloadWorkers < 1 || config.DownloadWorkers > config.MaxPendingRequests {
+		return nil, fmt.Errorf("Q2_DOWNLOAD_WORKERS must be between 1 and Q2_MAX_PENDING_REQUESTS")
+	}
 	settings := middleware.ConnSettings{Hostname: config.MOMHost, Port: config.MOMPort}
 	queueName := imageDownloadsQueueName
 	if config.FetcherAmount > 1 {
@@ -64,6 +69,7 @@ func NewFetcher(config FetcherConfig) (*Fetcher, error) {
 		publisher:          resultpublisher.New(settings),
 		chunkSize:          config.ChunkSize,
 		maxPendingRequests: config.MaxPendingRequests,
+		downloadWorkers:    config.DownloadWorkers,
 		filterAmount:       config.FilterAmount,
 	}, nil
 }

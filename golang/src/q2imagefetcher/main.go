@@ -35,6 +35,10 @@ func loadConfig() (q2imagefetcher.FetcherConfig, error) {
 	if err != nil {
 		return q2imagefetcher.FetcherConfig{}, err
 	}
+	downloadWorkers, err := config.OptionalInt("Q2_DOWNLOAD_WORKERS", 1)
+	if err != nil {
+		return q2imagefetcher.FetcherConfig{}, err
+	}
 	filterAmount, err := config.OptionalInt("Q2_FILTER_AMOUNT", 1)
 	if err != nil {
 		return q2imagefetcher.FetcherConfig{}, err
@@ -53,6 +57,7 @@ func loadConfig() (q2imagefetcher.FetcherConfig, error) {
 		MOMPort:            momPort,
 		ChunkSize:          chunkSize,
 		MaxPendingRequests: maxPendingRequests,
+		DownloadWorkers:    downloadWorkers,
 		FilterAmount:       filterAmount,
 		FetcherID:          fetcherID,
 		FetcherAmount:      fetcherAmount,
