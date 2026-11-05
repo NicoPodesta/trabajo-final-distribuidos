@@ -150,11 +150,11 @@ El código en Go se organiza desacoplando responsabilidades:
 
 Complementa a los diagramas [actividad q2.png](Diagramas/actividad/actividad%20q2.png) y [actividad q5-filter.png](Diagramas/actividad/actividad%20q5-filter.png) (cuyas fuentes `.puml` se ubican en el mismo directorio).
 
-* **Actividad de Q2 — Descarga y envío de imágenes**:
-  El ciclo de vida de una imagen en cada réplica comprende: recepción del pedido o EOF, reserva de cupo de descarga, control de pausas por *rate limiting* (`HTTP 429`), descarga HTTPS al archivo temporal local, transmisión fragmentada en chunks de 64 KiB (o fila vacía ante error 404/red), eliminación del temporal y confirmación del mensaje. Frente a señales de cierre o EOF de todos los filtros, drena pendientes y emite el EOF de Q2 hacia el Gateway.
+* **Actividad de Q2 — Filtrado y descarga de imágenes**:
+  El ciclo de vida de la consulta comprende dos etapas: el **Q2 Filter**, que evalúa las biografías históricas y distribuye los pedidos por turno (*round-robin*) hacia las colas de los fetchers; y el **Image Fetcher**, que administra un pool concurrente de descargas con presupuesto y pausas por *rate limiting* (`HTTP 429`), fragmenta el archivo local en chunks de hasta 64 KiB y los transmite al Gateway, liberando el temporal y confirmando el mensaje.
 
 * **Actividad de Q5 — Filtrado de candidatos**:
-  Modela la concurrencia asíncrona sobre tres canales: la llegada de artículos recientes (retenidos en el `pendingStore` en disco hasta contar con el promedio), el arribo del promedio global por el exchange `q5_average` (que dispara la lectura por lotes de 1000 artículos, publicación de coincidencias y eliminación del archivo en disco) y la barrera de control de fin de recientes. Finaliza únicamente al converger el promedio recibido y el EOF de recientes confirmado (`hasAverage && recentsEOF`).
+  Modela la concurrencia asíncrona sobre tres canales: la llegada de artículos recientes (retenidos en el `pendingStore` en disco hasta contar con el promedio), el arribo del promedio global por el exchange `q5_average` (que dispara la lectura por lotes de 1000 artículos, publicación de coincidencias y eliminación del archivo en disco) y la barrera de control de eof de recientes. Finaliza únicamente al converger el promedio recibido y el EOF de recientes confirmado (`hasAverage && recentsEOF`).
 
 ### 4.5. Secuencia: coordinación entre componentes
 
@@ -183,50 +183,39 @@ En Q3 y Q4, las palabras deben agruparse sin que exista un nodo central de coord
 * Los mensajes se dirigen directamente a la cola de la partición correspondiente: `vocabulary_[i]` para Q3 (asegurando que las palabras en inglés y francés de un mismo término colisionen en la misma réplica de Join) y `word_counts_[i]` para Q4.
 * Cada réplica procesa exclusivamente su conjunto disjunto de términos, logrando escalabilidad lineal con respecto a la cantidad de particiones tanto en la intersección de vocabularios (Q3) como en el conteo de frecuencias (Q4).
 
-### 5.3. Escalabilidad híbrida y tolerancia a latencia externa (Image Fetcher)
+### 5.3. Escalabilidad y tolerancia a latencia externa (Image Fetcher)
 
-La consulta Q2 involucra una operación fuertemente ligada a I/O (*I/O-bound*) sobre una API externa pública (Wikimedia vía HTTPS) sujeta a latencias de red y cuotas de uso (*rate limiting*):
+La consulta Q2 involucra una operación fuertemente ligada a I/O sobre una API externa pública (Wikimedia vía HTTPS) sujeta a latencias de red y cuotas de uso:
 
 * **Escalamiento horizontal**: El clúster distribuye la carga entre $N$ réplicas de `Image Fetcher` mediante colas particionadas (`image_downloads_[i]`), repartiendo el consumo de ancho de banda y el uso de almacenamiento temporal.
-* **Concurrencia vertical (*latency hiding*)**: Cada contenedor de Fetcher ejecuta internamente un pool de goroutines de descarga concurrentes (`Q2_DOWNLOAD_WORKERS`). Mientras un worker espera el RTT de red de Wikimedia, otros descargan en paralelo o transfieren chunks a RabbitMQ.
-* **Mitigación de *rate limiting* (`HTTP 429`)**: Al detectar saturación de peticiones por parte de la API externa, el descargador aplica pausas y *backoff* para evitar descartes en cascada o reintentos destructivos.
+* **Concurrencia vertical**: Cada contenedor de Fetcher ejecuta internamente un pool de goroutines de descarga concurrentes (`Q2_DOWNLOAD_WORKERS`). Mientras un worker espera el RTT de red de Wikimedia, otros descargan en paralelo o transfieren chunks a RabbitMQ.
 
 ### 5.4. Escenarios de escalabilidad y validación de resultados
 
 El comportamiento del clúster fue evaluado a través de cinco escenarios representativos de carga y topología:
 
-* **Escalamiento horizontal en cómputo (CPU-bound)**: Tokenizers, filtros de Q1 y contadores de Q4 distribuyen el trabajo en réplicas concurrentes sobre colas compartidas o particionadas, eliminando cuellos de botella en la ingesta masiva de abstracts y artículos.
-* **Escalamiento intensivo en I/O (I/O-bound)**: En el **Escenario 5**, el clúster escala a **25 réplicas concurrentes de Image Fetcher**, cada una con su propio pool de descargadores (`Q2_DOWNLOAD_WORKERS`), desacoplando la latencia de red externa de Wikimedia del rendimiento interno del pipeline.
+* **Escalamiento horizontal en cómputo**: Tokenizers, filtros de Q1 y contadores de Q4 distribuyen el trabajo en réplicas concurrentes sobre colas compartidas o particionadas, eliminando cuellos de botella en la ingesta masiva de abstracts y artículos.
 * **Concurrencia multicliente y aislamiento**: Los **Escenarios 3 y 4** ejecutan múltiples clientes independientes en paralelo (2 y 3 clientes), verificando la asignación balanceada por el Load Balancer, el aislamiento estricto de sesiones (`clientID`) y la convergencia de resultados en sus respectivos Gateways.
-* **Validación determinística contra el oráculo de referencia**: La exactitud funcional de todas las consultas se verifica de forma automatizada mediante un script de comparación (`scripts/comparar.py`) que contrasta las salidas generadas por el sistema distribuido contra el Jupyter Notebook de referencia provisto por la cátedra (`scripts/analisis_cliente.ipynb`), asegurando coincidencia estricta en el filtrado, los conteos, el criterio de desempate del Top 20 y el cálculo del promedio global.
+* **Validación determinística**: La exactitud funcional de todas las consultas se verifica de forma automatizada mediante un script de comparación (`scripts/comparar.py`) que contrasta los outputs generados por el sistema distribuido contra el Jupyter Notebook de referencia provisto por la cátedra (`scripts/analisis_cliente.ipynb`), asegurando coincidencia estricta en el filtrado, los conteos, el criterio de desempate del Top 20 y el cálculo del promedio global.
 
 ---
 
-## 6. Coordinación distribuida de EOF (Protocolo anti-race condition)
+## 6. Coordinación distribuida de EOF
 
 Complementa a los diagramas [secuencia eof-difusion.png](Diagramas/secuencia/secuencia%20eof-difusion.png) y [secuencia eof-cierre-tokenizers.png](Diagramas/secuencia/secuencia%20eof-cierre-tokenizers.png) (cuyas fuentes `.puml` se ubican en el mismo directorio).
 
-### 6.1. La condición de carrera del EOF en colas compartidas
+### 6.1. Protocolo de Barrera Distribuida (EOFCoordinator)
 
-En cualquier etapa donde múltiples réplicas consumen concurrentemente de una misma cola de trabajo (como Tokenizer, Q1 o Q5):
+Para evitar condiciones de carrera sin importar el orden de llegada de los mensajes ni las diferencias de velocidad entre réplicas, se diseñó un protocolo de **barrera de sincronización distribuida**. Este mecanismo opera a través de exchanges dedicados de control (`tokenizer_control`, `q1_filter_control`, `q2_filter_control`, `q5_avg_partial_control` y `q5_filter_control`):
 
-1. **Asimetría en la entrega del EOF**: Cuando el productor (por ejemplo, el Gateway) finaliza el envío de datos, publica un único EOF en la cola compartida. RabbitMQ despacha ese mensaje a **una sola réplica** (la primera disponible).
-2. **Batches concurrentes en procesamiento**: En ese mismo instante, las restantes réplicas del grupo continúan procesando batches de datos legítimos que fueron extraídos previamente de la cola y que aún se encuentran en vuelo.
-3. **Riesgo de terminación prematura**: Si la réplica receptora del EOF simplemente se apagara o difundiera inmediatamente un cierre hacia downstream, las etapas siguientes recibirían el EOF de consulta **antes** de que las demás réplicas terminen de procesar y publicar sus batches pendientes.
-4. **Consecuencias**: Esto provocaría pérdida silenciosa de registros, arribo de datos posteriores al cierre y cálculo de resultados globales o agregaciones sobre información incompleta.
-
-### 6.2. Protocolo de Barrera Distribuida (EOFCoordinator)
-
-Para evitar la condición de carrera sin importar el orden de llegada de los mensajes ni las diferencias de velocidad entre réplicas, se diseñó un protocolo de **barrera de sincronización distribuida con conteo de batches**. Este mecanismo es genérico y opera a través de exchanges dedicados de control (`tokenizer_control`, `q1_filter_control`, `q2_filter_control`, `q5_avg_partial_control` y `q5_filter_control`):
-
-0. **Handshake inicial de presencia (`WaitReady`)**:
+0. **Handshake inicial (`WaitReady`)**:
    Antes de habilitar el consumo de batches desde la cola de trabajo compartida, cada réplica sondea a sus pares (`msgProbe`) por el exchange de control y aguarda sus respuestas (`msgReady`). Esto garantiza que todas las réplicas del grupo estén activas y suscriptas a sus colas de control antes de que comience el flujo de datos o arribe cualquier EOF.
 
 1. **Conteo en el productor (Gateway)**:
    El productor contabiliza la cantidad exacta de batches de datos emitidos por consulta (`abstractBatches`, `datesBatches`). Al recibir `EndOfRecords` del cliente, incluye en el EOF el total acumulado (`totalBatches`).
 
-2. **Elección dinámica de réplica coordinadora**:
-   La primera réplica que extrae el EOF de la cola compartida asume dinámicamente el rol de **Coordinadora** para ese cliente, registrando el total esperado (`expectedTotal = totalBatches`).
+2. **Elección dinámica de la réplica coordinadora**:
+   La primera réplica que extrae el EOF de la cola compartida asume dinámicamente ese rol para ese cliente, registrando el total esperado.
 
 3. **Fase de sondeo (`msgAskCounts`)**:
    El coordinador difunde por el exchange de control interno una solicitud de conteo a todas las réplicas del grupo.
@@ -240,11 +229,11 @@ Para evitar la condición de carrera sin importar el orden de llegada de los men
 6. **Cumplimiento estricto de la barrera de commit (`msgCountedEOF`)**:
    El coordinador registra los reportes individuales (`reports[replica] = count`). La barrera no se libera hasta que se cumplen simultáneamente dos condiciones:
    * **Cobertura total**: Se recibió el reporte de todas las réplicas del grupo.
-   * **Exactitud matemática**: La suma de los batches procesados por todas las réplicas coincide exactamente con el total emitido por el productor ($\sum = \text{expectedTotal}$).
-   Al cumplirse ambas, se tiene la certeza matemática de que **no queda ningún batch pendiente en ninguna réplica**, y el coordinador difunde el commit definitivo: `msgCountedEOF`.
+   * **Exactitud de la suma con los batches totales**: La suma de los batches procesados por todas las réplicas coincide exactamente con el total emitido por el productor.
+   Al cumplirse ambas, se tiene la certeza de que **no queda ningún batch pendiente en ninguna réplica**, y el coordinador difunde el commit definitivo: `msgCountedEOF`.
 
-7. **Propagación segura y recolección downstream (`eofcounter`)**:
-   Al recibir el commit `msgCountedEOF`, todas las réplicas ejecutan su callback de cierre, liberan su memoria local y emiten su respectivo EOF a las etapas downstream. Aquellas etapas consumidoras (como `Q3 Vocabulary Join`, `Q4 Word Counter` o el propio Gateway) utilizan contadores (`eofcounter`) para aguardar el arribo de los EOFs de todas las réplicas upstream antes de considerar concluida la entrada y consolidar sus resultados.
+7. **Propagación segura (`eofcounter`)**:
+   Al recibir el commit `msgCountedEOF`, todas las réplicas ejecutan su callback de cierre, liberan su memoria local y emiten su respectivo EOF a las siguientes etapas. Aquellas etapas consumidoras (como `Q3 Vocabulary Join`, `Q4 Word Counter` o el propio Gateway) utilizan contadores (`eofcounter`) para aguardar los EOFs de todas las réplicas antes de considerar concluida la entrada y consolidar sus resultados.
 
 ---
 
@@ -258,23 +247,22 @@ El sistema asegura un apagado ordenado frente a señales `SIGTERM` o `SIGINT`:
 * Se cierran ordenadamente los canales y conexiones de RabbitMQ y sockets TCP con los clientes.
 * Se eliminan los archivos temporales remanentes en disco (imágenes en tránsito y candidatos de Q5), asegurando que el host quede en un estado limpio.
 
-
 ## 8. Aclaraciones sobre las decisiones
 
 ### Coordinación por consulta
 
-- **Q1:** Contamos cada batch después de publicar sus resultados, incluso si no hubo coincidencias. Los reportes son acumulados por réplica: recibir uno repetido no aumenta el total.
-- **Q2:** Cada filtro manda su EOF a todos los fetchers. Cada fetcher espera esos cierres y termina sus imágenes pendientes antes de cerrar. Confirma los EOFs parciales para que no ocupen el cupo e impidan recibir los restantes.
-- **Q3:** Cada tokenizer manda su EOF a todos los joins, aunque no les haya enviado palabras. Los joins cuentan cierres por cantidad; a diferencia de Q1 y Q2, no identifican cierres duplicados.
-- **Q4:** Alcanza con reunir los tops locales: una palabra fuera del top 20 de su contador ya tiene veinte palabras por delante y no puede entrar al global.
-- **Q5:** Sumamos palabras y cantidad de artículos, no promediamos los promedios parciales. Cada filtro espera tanto el promedio como el cierre de recientes y la evaluación de sus pendientes.
+* **Q1:** Contamos cada batch después de publicar sus resultados, incluso si no hubo coincidencias. Los reportes son acumulados por réplica: recibir uno repetido no aumenta el total.
+* **Q2:** Cada filtro manda su EOF a todos los fetchers. Cada fetcher espera esos cierres y termina sus imágenes pendientes antes de cerrar. Confirma los EOFs parciales para que no ocupen el cupo e impidan recibir los restantes.
+* **Q3:** Cada tokenizer manda su EOF a todos los joins, aunque no les haya enviado palabras. Los joins cuentan cierres por cantidad; a diferencia de Q1 y Q2, no identifican cierres duplicados.
+* **Q4:** Alcanza con reunir los tops locales: una palabra fuera del top 20 de su contador ya tiene veinte palabras por delante y no puede entrar al global.
+* **Q5:** Sumamos palabras y cantidad de artículos, no promediamos los promedios parciales. Cada filtro espera tanto el promedio como el cierre de recientes y la evaluación de sus pendientes.
 
 ### Protocolos y sesiones
 
-- TCP lleva mensajes binarios con tipo y longitudes; completamos las lecturas porque un mensaje puede llegar en partes. RabbitMQ lleva JSON para poder inspeccionar los mensajes con facilidad.
-- El ACK del Gateway confirma la publicación del batch; el del fetcher, la publicación del resultado; el del cliente, su escritura. Son pasos distintos.
-- Hay una cola de resultados por Gateway y sesiones en memoria para encontrar el socket de cada cliente. El EOF de entrada no cierra la conexión: esperamos a que terminen todas las consultas. Si el cliente se desconecta, los resultados posteriores se descartan.
+* TCP lleva mensajes binarios con tipo y longitudes; completamos las lecturas porque un mensaje puede llegar en partes. RabbitMQ lleva JSON para poder inspeccionar los mensajes con facilidad.
+* El ACK del Gateway confirma la publicación del batch; el del fetcher, la publicación del resultado; el del cliente, su escritura. Son pasos distintos.
+* Hay una cola de resultados por Gateway y sesiones en memoria para encontrar el socket de cada cliente. El EOF de entrada no cierra la conexión: esperamos a que terminen todas las consultas. Si el cliente se desconecta, los resultados posteriores se descartan.
 
 ### Límites
 
-- RabbitMQ, el Collector y los servidores de imágenes pueden limitar el rendimiento. Más réplicas no garantizan una mejora proporcional. Las cantidades de réplicas son fijas en el docker compose.
+* RabbitMQ, el Collector y los servidores de imágenes pueden limitar el rendimiento. Más réplicas no garantizan una mejora proporcional. Las cantidades de réplicas son fijas en el docker compose.
