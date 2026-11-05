@@ -4,70 +4,38 @@ skinparam shadowing false
 skinparam sequenceMessageAlign center
 skinparam responseMessageBelowArrow true
 
-title Secuencia · Propagación de EOF hacia Downstream y Conteo en Word Counters
+title Secuencia · Propagación de EOF y Conteo en Downstream (Word Counter)
 
-box "Tokenizers (Upstream)" #F5F5F5
 participant "Tokenizer 0\n(Coordinador)" as T0
-participant "Tokenizer 1\n(Worker)" as T1
-end box
+participant "Tokenizer 1\n(Réplica)" as T1
+queue "word_counts_k\n(Cola particionada)" as Q_WC
+participant "Word Counter k\n(Shard k)" as WC
+participant "Top 20 Merger" as M4
 
-box "Colas Downstream (RabbitMQ)" #FFF3E0
-queue "vocabulary_0\n(Q3 Shard)" as Q_VOCAB
-queue "word_counts_k\n(Q4 Shard k [1..K])" as Q_WC
-queue "historical_counts / recent_articles\n(Q5 Work Queues)" as Q_Q5
-end box
-
-box "Downstream (Q4)" #E8F8F5
-participant "Q4 Word Counter\n(Shard k)" as WC
-participant "Q4 Top 20 Merger" as M4
-end box
-
-== 1. Recepción de Commit y Dispersión Downstream ==
-note over T0, T1
-  Ambos Tokenizers reciben la confirmación de fin desde el control.
-  Propagan el cierre hacia las diferentes etapas de la arquitectura.
-end note
-
-par Propagación paralela de Tokenizer 0
-    T0 -> Q_VOCAB : EOF del cliente
-    T0 -> Q_WC : EOF a las K colas particionadas
-    T0 -> Q_Q5 : EOF con total acumulado (150 lotes)\n[Solo el coordinador emite a colas compartidas]
-else Propagación paralela de Tokenizer 1
-    T1 -> Q_VOCAB : EOF del cliente
-    T1 -> Q_WC : EOF a las K colas particionadas
-    note over T1, Q_Q5
-      Para colas compartidas (Q5), solo el coordinador
-      emite el fin con el total general, evitando duplicar conteos.
-    end note
+par
+    T0 -> Q_WC : EOF(clientID)
+else
+    T1 -> Q_WC : EOF(clientID)
 end
 
-== 2. Barrera Downstream en Q4 Word Counter ==
+Q_WC -> WC : EOF de Tokenizer 0
 note over WC #LightYellow
-  Cada Word Counter espera recibir el EOF de todas
-  las réplicas upstream antes de dar por cerrada su entrada.
-end note
-
-Q_WC -> WC : Entrega EOF de Tokenizer 0
-note over WC
-  Recibido EOF de 1 réplica (1 de 2).
+  Recibido 1 de 2 EOFs esperados.
   Continúa procesando datos de las demás réplicas.
   Aún no calcula resultados finales.
 end note
 
-Q_WC -> WC : Entrega EOF de Tokenizer 1
+Q_WC -> WC : EOF de Tokenizer 1
 note over WC #LightGreen
-  Recibidos todos los EOFs esperados (2 de 2).
-  ¡Entrada completa y cerrada!
-  Calcula el Top 20 parcial correspondiente a su partición.
+  Recibidos 2 de 2 EOFs (entrada completa).
+  Calcula el Top 20 parcial de su partición.
 end note
 
-== 3. Emisión hacia Merger y Consolidación Final ==
-WC -> M4 : Top 20 parcial del Shard k
-WC -> M4 : EOF del Shard k
+WC -> M4 : Top 20 parcial (top20_merger)
+WC -> M4 : EOF(shard: k)
 
 note over M4
-  El Merger espera el EOF de cada una de las K particiones.
-  Al reunirlos todos, consolida el Top 20 global
-  y responde definitivamente al Gateway.
+  El Merger espera los EOFs de las K particiones para consolidar
+  el Top 20 global y responder al Gateway.
 end note
 @enduml
