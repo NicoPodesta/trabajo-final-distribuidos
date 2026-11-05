@@ -4,16 +4,16 @@
 
 Los datos de cada cliente van en `input/client_N/` (archivos `.parquet`) y sus resultados quedan en `output/client_N/`.
 
-El `docker-compose.yaml` se genera con `generar-compose.sh`, que recibe el archivo de salida, la cantidad de clientes y, opcionalmente, las cantidades de gateways, tokenizers, contadores de Q4, Avg Partial y Filter de Q5 (por defecto 3 cada una, salvo Avg Partial y Filter de Q5 que son 1):
+El `docker-compose.yaml` se genera con `generar-compose.sh`, que recibe el archivo de salida, la cantidad de clientes y, opcionalmente, las cantidades de gateways, tokenizers, contadores de Q4, Avg Partial y Filter de Q5 y Filter de Q1 (por defecto 3 cada una, salvo Avg Partial y Filter de Q5 y Filter de Q1, que son 1):
 
 ```bash
-./generar-compose.sh <archivo-salida> <clientes> [gateways] [tokenizers] [q4-wordcounters] [q5-avgpartials] [q5-filters]
+./generar-compose.sh <archivo-salida> <clientes> [gateways] [tokenizers] [q4-wordcounters] [q5-avgpartials] [q5-filters] [q1-filters]
 ```
 
-Por ejemplo, con 2 clientes, 2 gateways, 3 tokenizers, 2 contadores de Q4, 2 Avg Partial y 2 Filter de Q5:
+Por ejemplo, con 2 clientes, 2 gateways, 3 tokenizers, 2 contadores de Q4, 2 Avg Partial y 2 Filter de Q5 y 2 Filter de Q1:
 
 ```bash
-./generar-compose.sh golang/docker-compose.yaml 2 2 3 2 2 2
+./generar-compose.sh golang/docker-compose.yaml 2 2 3 2 2 2 2
 cd golang && make up
 ```
 
@@ -23,7 +23,7 @@ cd golang && make up
 
 ### Ejecución
 
-- Ejecucion con cantidades configurables de clientes, gateways, tokenizers, contadores de Q4, Avg Partial y Filter de Q5. Un load balancer y una instancia de los demás componentes de Q1 a Q5.
+- Ejecucion con cantidades configurables de clientes, gateways, tokenizers, contadores de Q4, Avg Partial y Filter de Q5 y Filter de Q1. Un load balancer y una instancia de Q2, Q3, el Merger de Q4 y el Aggregator de Q5.
 
 ### Cliente
 
@@ -59,8 +59,9 @@ cd golang && make up
 - Usa las mismas listas de stopwords de NLTK que el notebook, incluidas en `tokenizer/text/stopwords.go` para mantener el mismo criterio de filtrado.
 - Para Q3 publica los pares `(word, language)` sin repetirlos dentro del batch, en `vocabulary_0`.
 - Para Q4 cuenta en cuántos abstracts del batch aparece cada palabra. Cada abstract aporta como máximo 1 por palabra.
-- Para Q5 publica la cantidad de palabras de cada artículo, separando históricos hasta 2020 inclusive y posteriores a 2020. Omite los abstracts vacíos.
-- La réplica que recibe el EOF lo distribuye a todas mediante `tokenizer_control`. Cada réplica usa un mutex para esperar a que termine el procesamiento en curso antes de publicar sus EOF hacia las siguientes etapas.
+- Para Q5 publica la cantidad de palabras de cada artículo, separando históricos hasta 2020 inclusive y posteriores a 2020. Omite los abstracts vacíos. Por cada batch envía **siempre un mensaje** a `historical_counts` y otro a `recent_articles`, vacío si el batch no tiene históricos o recientes, para que el total de mensajes de cada cola sea el de batches.
+- El cierre usa el mismo coordinador por conteo que Q1 (ver "Cierre por conteo"). La réplica que recibe el EOF del Gateway, con `total_batches`, coordina; las demás reportan cuántos batches procesaron y publicaron. Cuando la suma coincide con el total, cada réplica publica sus EOF. Antes de consumir datos espera a que todas las réplicas estén suscriptas a `tokenizer_control`.
+- Hacia `vocabulary_0` y `word_counts_<k>` cada réplica publica su propio EOF (llegan tantos como Tokenizers). Hacia `historical_counts` y `recent_articles` publica un solo EOF, el de la réplica coordinadora, con `total_batches`.
 
 ### Q1
 
@@ -107,7 +108,7 @@ cd golang && make up
 
 - Cuenta en cuántos abstracts aparece cada palabra. Cada abstract aporta como máximo 1 por palabra y los contadores suman los valores preagregados de cada batch.
 - Tokenizer reparte las palabras con `fnv32a(palabra) % K` (K = `Q4_WORD_COUNTER_AMOUNT`) entre las colas `word_counts_<k>`. Publica datos solo en las colas con palabras y envía EOF a todas.
-- Cada WordCounter mantiene sus conteos por cliente en memoria y espera los EOF de los Tokenizers antes de calcular su top 20 parcial.
+- Cada WordCounter mantiene sus conteos por cliente en memoria y espera los EOF de los Tokenizers antes de calcular su top 20 parcial. Tiene una cola propia y un solo consumidor, y el EOF viaja por la misma cola que los datos, así que no necesita coordinador: los Tokenizers solo publican sus EOF después de haber publicado todos sus datos.
 - El top se ordena por count descendente y desempata por palabra ascendente. Cada contador publica su top en `partial_top20` y luego un EOF. Si no tiene palabras, publica solamente el EOF.
 - TopMerger espera los EOF de los K contadores, selecciona el top 20 global con el mismo criterio y publica los resultados y el EOF de Q4. Si el top está vacío, publica solamente el EOF.
 
@@ -115,16 +116,24 @@ cd golang && make up
 
 - Compara la cantidad de palabras de los artículos posteriores a 2020 con el promedio de los artículos hasta 2020 inclusive, usando el año de modificación en UTC y datos separados por cliente.
 - Cuenta las palabras después del filtrado del Tokenizer, incluyendo las repetidas. Omite los abstracts vacíos. Un abstract no vacío que queda sin palabras después del filtrado cuenta como 0.
-- Avg Partial consume `historical_counts`, acumula suma de palabras y cantidad de artículos, y espera los EOF de los Tokenizers antes de publicar su parcial y EOF en `avg_partials`.
+- Avg Partial consume `historical_counts` y acumula suma de palabras y cantidad de artículos. Varias réplicas compiten por la cola. Recibe un único EOF con `total_batches`, cierra por conteo con las demás réplicas (`q5_avg_partial_control`) y recién entonces publica su parcial y su EOF en `avg_partials`.
 - Avg Aggregator espera los EOF de los parciales y calcula el promedio como entero truncado. Si el cliente no tiene artículos históricos, usa 0. Publica el promedio mediante el exchange `q5_average` hacia los filtros.
 - Q5 Filter consume `recent_articles` y guarda los candidatos en memoria hasta recibir el promedio (el objetivo es guardarlos en disco). Selecciona los artículos cuya cantidad de palabras es estrictamente mayor al promedio y publica `url` y `word_count`.
-- Las réplicas del Filter compiten por `recent_articles`, así que cada artículo lo recibe una sola réplica, y el promedio llega a todas por una clave de enrutamiento propia (`q5_filter_<id>`). La réplica que recibe un EOF de un Tokenizer lo difunde por `q5_filter_control`, y cada una cuenta un EOF por Tokenizer.
-- Cada réplica publica el EOF de Q5 cuando ya recibió el promedio y los EOF de los Tokenizers para los artículos recientes, y libera el estado del cliente. Con varias réplicas el Gateway recibe varios EOF de Q5.
+- Las réplicas del Filter compiten por `recent_articles`, así que cada artículo lo recibe una sola réplica, y el promedio llega a todas por una clave de enrutamiento propia (`q5_filter_<id>`). Recibe un único EOF con `total_batches` y cierra por conteo con las demás réplicas (`q5_filter_control`).
+- Cada réplica publica el EOF de Q5 cuando ya recibió el promedio y el cierre por conteo de los artículos recientes, y libera el estado del cliente. Con varias réplicas el Gateway recibe varios EOF de Q5.
+
+### Cierre por conteo
+
+- Lo usan Q1, el Tokenizer, el Avg Partial y el Filter de Q5, con `common/eofcoordinator`. Cada réplica cuenta los batches que procesó y publicó. La réplica que recibe el EOF con `total_batches` coordina: pide los conteos, y cuando la suma coincide con el total y reportaron todas, avisa a todas que cierren. El cierre no depende del orden de llegada, así que un batch que una réplica tenía entregado y todavía no procesaba ya no puede quedar después del EOF.
+- El coordinador supone un único EOF con total por cliente. Por eso el Tokenizer publica un solo EOF hacia `historical_counts` y `recent_articles`: si cada réplica del Tokenizer publicara el suyo, varias réplicas del Avg Partial se declararían coordinadoras del mismo cliente y el cierre fallaría.
+- Cada componente espera a que todas sus réplicas estén suscriptas al canal de control antes de consumir datos. Un mensaje de control que llega a una réplica que todavía no se suscribió se pierde, y el cierre no llegaría nunca. Si una réplica no arranca, las demás no procesan.
+- La cantidad de réplicas queda fija durante la ejecución. El estado permanece en memoria. Se cuentan batches procesados, no distintos: una reentrega por una caída no está soportada.
+- Q4 y Q3 no lo necesitan: cada contador de Q4 tiene su cola y un solo consumidor, y Q3 tiene una sola réplica, así que lo que se publica antes del EOF se procesa antes en ambos.
 
 ## Pendientes
 
 - Validar la ejecución completa con varios clientes, gateways, tokenizers y comprobando que los resultados y cierres correspondan a cada cliente.
-- Carrera en el cierre de los Tokenizers, q5AvgPartial, q5Filter: el EOF de control puede llegar antes de que se procese un lote ya entregado a esa réplica, y ese lote se publica después del EOF.
+- Q5 Filter guarda los candidatos en memoria (el objetivo es disco).
 
 ## Consultas
 
