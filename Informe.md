@@ -4,17 +4,17 @@ Sistemas Distribuidos (75.74) — TP Escalabilidad
 
 **Integrantes:** Arian Jarmolinski, Nicolas Podesta y Gabriel Re.
 
-En este documento describimos el diseño del sistema distribuido, las responsabilidades de sus componentes, los mecanismos de escalabilidad incorporados y las decisiones tomadas para resolver la concurrencia, el particionado y la coordinación de EOFs.
+En este informe explicamos cómo repartimos el trabajo entre los componentes, cómo se comunican y cómo coordinamos los EOFs.
 
-Este informe funciona como documento conceptual y explicativo complementario de los diagramas de diseño ubicados en el directorio `Diagramas/` (C4Model, DAG, Despliegue, Paquetes, Robustez, Actividades y Secuencia).
+Los diagramas de la carpeta `Diagramas/` acompañan estas explicaciones.
 
 ---
 
 ## 1. Propuesta general
 
-El sistema recibe datasets masivos de artículos de Wikipedia en inglés y francés, ejecuta en paralelo cinco consultas y devuelve los resultados a cada cliente de forma aislada y concurrente.
+El sistema procesa artículos de Wikipedia en inglés y francés y ejecuta cinco consultas en paralelo. Los datos y resultados de cada cliente se mantienen separados.
 
-La entrada se procesa en batches acotados y las distintas etapas trabajan en paralelo mediante un middleware propio construido sobre **RabbitMQ**. Los resultados se transmiten en *streaming* hacia el cliente a medida que están disponibles; aquellas consultas que requieren un cómputo o agregación global sincronizan sus barreras de finalización sin bloquear innecesariamente al resto del pipeline.
+Procesamos la entrada en batches y comunicamos las etapas mediante un middleware propio sobre **RabbitMQ**. Enviamos los resultados a medida que están listos; las consultas que necesitan reunir todos los datos esperan a completar su cálculo.
 
 ### Consultas del sistema
 
@@ -26,7 +26,7 @@ La entrada se procesa en batches acotados y las distintas etapas trabajan en par
 | **Q4** | Top 20 de palabras más frecuentes en abstracts, excluyendo stopwords y contando cada término una sola vez por abstract. Conteo particionado por réplica y consolidación global mediante un merger. |
 | **Q5** | URL y cantidad de palabras del abstract de artículos desde 2021 que superan el promedio histórico hasta 2020 (con el criterio de conteo de Q4). Requiere cálculo previo del promedio global y retención temporal de artículos recientes. |
 
-El sistema soporta múltiples clientes conectados simultáneamente con sesiones independientes, y permite escalar aumentando las réplicas de cómputo en las etapas que concentran la mayor carga de procesamiento.
+Podemos atender varios clientes al mismo tiempo y agregar réplicas en las etapas con más trabajo.
 
 ---
 
@@ -34,71 +34,71 @@ El sistema soporta múltiples clientes conectados simultáneamente con sesiones 
 
 | Componente | Responsabilidad | Decisión de Escalabilidad |
 | :--- | :--- | :--- |
-| **Client** | Lee archivos Parquet por batches, transmite datos por TCP y recibe streams de resultados guardándolos en disco. | Múltiples clientes concurrentes e independientes. |
-| **Load Balancer** | Punto de entrada del cluster. Desacopla la red y asigna dinámicamente una réplica de Gateway a cada cliente nuevo. | Distribución balanceada de clientes (*round-robin*). |
-| **TCP Handler / Gateway / Collector** | Mantiene la conexión TCP con el cliente, desmultiplexa batches hacia RabbitMQ, reúne resultados de las cinco consultas y maneja confirmaciones (ACK/NACK). | Escalable horizontalmente en $N$ réplicas; sesión aislada por `clientID`. |
-| **Q1 Filter** | Filtra artículos históricos en inglés y publica directamente al Gateway del cliente. | Réplicas compitiendo sobre cola compartida con barrera distribuida de control (`q1_filter_control`). |
-| **Q2 Filter & Image Fetcher** | Filtra biografías históricas y gestiona la descarga concurrente de imágenes desde Wikimedia vía HTTPS, fragmentando la entrega en chunks. | Filtros coordinados por barrera; Image Fetchers particionados con pool de descargadores concurrentes y mitigación de *rate limit* (`HTTP 429`). |
-| **Tokenizer** | Extrae y normaliza palabras de abstracts sin stopwords. Computa y despacha métricas para Q3, Q4 y Q5. Implementa el coordinador de EOF. | Réplicas compitiendo con coordinación distribuida de EOF (`tokenizer_control`). |
-| **Q3 Vocabulary Join** | Detecta la presencia de cada palabra en inglés y francés, emitiendo en cuanto se verifica la intersección. | Sharding consistente por hash de palabra ($K$ particiones). |
-| **Q4 Word Counter & Top Merger** | Los counters acumulan ocurrencias por palabra en su partición y generan un top 20 parcial. El merger consolida los tops parciales en el top 20 global. | Counters particionados por palabra; Merger como agregador final. |
-| **Q5 Avg Partial, Aggregator & Filter** | Los partials suman palabras y cantidad de históricos; el aggregator calcula el promedio global y lo difunde; los filters retienen recientes hasta comparar contra el promedio. | Partials compitiendo; Filters particionados/compitiendo con almacenamiento temporal de candidatos. |
-| **Middleware** | Encapsula la comunicación con RabbitMQ (`amqp091-go`): colas de trabajo, direct exchanges, routing keys dinámicas, prefetch y control de conexiones. | Abstracción homogénea e independiente del broker subyacente. |
+| **Client** | Lee archivos Parquet por batches y los envía por TCP. Al mismo tiempo recibe resultados, guarda los CSV y reconstruye las imágenes en disco. | Varios clientes pueden trabajar al mismo tiempo, cada uno con sus archivos de entrada y salida. |
+| **Load Balancer** | Es el primer contacto del cliente. Le devuelve la dirección de un Gateway para que se conecte directamente a él. | Reparte los clientes por turnos (*round-robin*) entre los Gateways configurados. No interviene en el envío posterior de artículos y resultados. |
+| **TCP Handler / Gateway / Collector** | Mantiene la conexión con el cliente, envía a cada consulta los campos que necesita y devuelve los resultados. Maneja las sesiones, confirmaciones y cierres. | Podemos tener varios Gateways, cada uno atendiendo clientes concurrentes. Comparten una cola de resultados por Gateway y distinguen a los clientes por su sesión. |
+| **Q1 Filter** | Filtra artículos históricos en inglés y publica las coincidencias hacia el Gateway del cliente, sin esperar a terminar toda la entrada. | Los filtros comparten una cola y se reparten los batches. Coordinan el EOF por conteo para no cerrar mientras otra réplica sigue procesando. |
+| **Q2 Filter & Image Fetcher** | Los filtros seleccionan biografías históricas y generan pedidos de descarga. Los fetchers descargan las imágenes a temporales y las publican por chunks. | Los filtros reparten pedidos entre fetchers con colas propias. Cada fetcher tiene varios descargadores y un publicador, permitiendo descargar imágenes mientras envía otra. |
+| **Tokenizer** | Pasa el texto a minúsculas, quita stopwords y tokens solo numéricos. Prepara el vocabulario para Q3, los conteos para Q4 y las cantidades de palabras para Q5. | Las réplicas comparten la cola de abstracts y coordinan el EOF por conteo de batches. Reparten las salidas según lo que necesita cada consulta. |
+| **Q3 Vocabulary Join** | Guarda por cliente las palabras vistas en cada idioma y publica las que aparecen en inglés y francés, sin repetir resultados. | Repartimos por hash de palabra para que ambos idiomas lleguen al mismo join. Cada join tiene su cola y mantiene su parte del vocabulario en memoria. |
+| **Q4 Word Counter & Top Merger** | Los contadores acumulan en cuántos abstracts aparece cada palabra y arman sus tops parciales. El merger los reúne para obtener el top 20 global. | Cada palabra va a un único contador. Así repartimos los conteos y el merger recibe solo los tops parciales, en lugar de todas las palabras. |
+| **Q5 Avg Partial, Aggregator & Filter** | Los parciales suman palabras y artículos históricos; el aggregator calcula el promedio global y lo envía a los filtros, que seleccionan los recientes que lo superan. | Los parciales y los filtros se reparten sus respectivas entradas. Los filtros guardan candidatos en disco hasta recibir el promedio, evitando acumularlos todos en memoria. |
+| **Middleware** | Reúne el manejo de colas, exchanges, conexiones y confirmaciones de RabbitMQ. También permite limitar los mensajes entregados sin confirmar. | Compartimos este código para no repetirlo en cada componente. Usamos colas para repartir trabajo y exchanges para enviar avisos a varias réplicas. |
 
 ---
 
 ## 3. Diseño general: de C4 al flujo y al despliegue
 
-El diseño se estructura siguiendo el acercamiento progresivo:
+Los diagramas van desde una vista general del sistema hasta el detalle de sus componentes y mensajes:
 
 Contexto C4 → DAG → Despliegue → Robustez → Paquetes → Actividades → Secuencia
 
-Cada vista responde una pregunta arquitectónica distinta y conserva las responsabilidades de las etapas previas.
+Cada vista muestra una parte del diseño: quién usa el sistema, cómo pasan los datos, dónde corre cada componente y cómo se coordinan.
 
 ### 3.1. Contexto C4: el sistema y su entorno
 
 Complementa al diagrama en [01-contexto.puml](Diagramas/C4Model/01-contexto.puml).
 
-El usuario interactúa aportando sus archivos locales de Wikipedia en inglés y francés y recibe los resultados de las cinco consultas sin percibir la topología interna.
+El usuario aporta archivos locales de Wikipedia en inglés y francés y recibe los resultados de las cinco consultas. Solo necesita conectarse al Load Balancer, que le indica qué Gateway usar; no necesita conocer los componentes internos.
 
-La API de Wikimedia constituye una dependencia externa consumida vía HTTPS para la descarga de imágenes requeridas por Q2.
+Q2 también depende de servidores externos: descarga cada imagen desde la dirección incluida en el artículo. Una descarga puede fallar o tardar, por lo que tiene tiempos y reintentos limitados.
 
-El caso de uso modela ejecuciones independientes por cliente, aislamiento estricto de datos entre clientes y procesamiento concurrente y distribuido sobre el cluster.
+Varios clientes pueden procesar sus archivos al mismo tiempo. Sus datos y resultados se mantienen separados, aunque compartan componentes del sistema.
 
 ### 3.2. DAG: transformación y dependencias de los datos
 
 Complementa al diagrama en [tp-disenio-dag.mmd](Diagramas/DAG/tp-disenio-dag.mmd).
 
-El grafo sigue los datos desde su ingreso por el Gateway hasta la recolección en el Collector:
+El grafo sigue los datos desde su ingreso por el Gateway hasta la devolución de resultados por el Collector:
 
-* **Bifurcación inicial**: El Gateway proyecta únicamente los campos necesarios para cada rama:
-  * Artículos y fechas para **Q1**.
-  * Artículos y secciones para **Q2**.
-  * Abstracts de texto para el **Tokenizer**.
+* **Separación de la entrada**: El Gateway envía solo los campos que necesita cada rama, evitando repetir el artículo completo:
+  * Idioma, URL y fecha para **Q1**.
+  * Datos del artículo, secciones y referencia de imagen para **Q2**.
+  * Abstracts y sus datos asociados para el **Tokenizer**.
 
-* **Comportamiento y dependencias de las consultas**:
-  * **Q1**: Decide cada artículo de forma local e independiente. No requiere sincronización global.
-  * **Q2**: Filtra biografías antes de descargar para reservar ancho de banda de red y disco exclusivamente para imágenes que califiquen.
-  * **Q3**: Agrupa palabras por idioma mediante sharding consistente; en cuanto una palabra aparece en ambos idiomas, se emite de inmediato.
-  * **Q4**: Requiere que todos los abstracts hayan sido leídos y contados en cada partición antes de que el Merger reciba los tops parciales y arme el top 20 definitivo.
-  * **Q5**: Separa artículos históricos (hasta 2020), que aportan al cálculo del promedio global, de los recientes (desde 2021), que son retenidos temporalmente por los filtros hasta recibir dicho valor.
+* **Procesamiento de las consultas**:
+  * **Q1**: Filtra cada artículo de forma independiente y publica las coincidencias. La coordinación entre filtros se necesita para saber cuándo terminaron todos.
+  * **Q2**: Primero selecciona las biografías y después descarga sus imágenes. Así no hacemos pedidos a Internet para artículos que no cumplen el filtro.
+  * **Q3**: Reparte por palabra para reunir sus apariciones en inglés y francés en el mismo join. Cuando aparece en ambos idiomas, la publica sin esperar al EOF.
+  * **Q4**: Cada contador espera a completar su entrada antes de calcular el top parcial. El Merger reúne esos tops y obtiene el top 20 global.
+  * **Q5**: Los históricos hasta 2020 aportan al promedio. Los recientes, desde 2021, quedan guardados hasta recibir ese valor y poder compararlos.
 
 * **Retorno de resultados**:
-  Todos los mensajes conservan el identificador del cliente (`clientID`). Las cinco ramas convergen asíncronamente en el Collector asignado a ese cliente, permitiendo entregar resultados intercalados por el socket TCP.
+  Todos los mensajes conservan la identidad del cliente. Las cinco consultas publican hacia la cola de su Gateway y el Collector encuentra la sesión correspondiente. Los resultados de distintas consultas pueden llegar intercalados por el mismo socket TCP.
 
 ### 3.3. Despliegue: procesos, réplicas y recursos
 
 Complementa al diagrama en [Despliegue.png](Diagramas/Despliegue/Despliegue.png).
 
-El despliegue materializa los componentes en unidades de ejecución en contenedores Docker:
+Los componentes corren en contenedores Docker:
 
-* Contenedores cliente independientes montando volúmenes de datasets de entrada y carpetas de salida.
-* Contenedor de balanceo de carga (`load_balancer`) como punto de contacto TCP.
-* Múltiples instancias de procesos de ingesta (`gateway_0`, `gateway_1`, etc.).
-* Broker de mensajería **RabbitMQ** centralizado en la red interna de Docker.
-* Conjuntos de réplicas configurables por variable de entorno (`AMOUNT`) para Tokenizers, filtros, descargadores y contadores.
-* Cada contenedor explicita sus procesos y goroutines concurrentes (`<<process>>`): hilos de atención TCP y colectores en Gateway; workers de procesamiento y consumidores de control de barrera en Tokenizer y Filtros; y el pipeline interno en Image Fetcher (receptor, pool de descargadores concurrentes y publicador de chunks).
-* Almacenamiento temporal en disco utilizado por Q2 (archivos de imagen mientras se transmiten chunks) y por Q5 (candidatos recientes a la espera del promedio), mientras que etapas como Q3 y Q4 procesan exclusivamente en memoria RAM.
+* Cada cliente tiene sus carpetas de entrada y salida montadas como volúmenes.
+* El Load Balancer recibe las conexiones iniciales y asigna un Gateway.
+* Varios Gateways atienden a los clientes y conectan la entrada y los resultados con RabbitMQ.
+* Un broker **RabbitMQ** compartido comunica las etapas dentro de la red de Docker.
+* Las cantidades de filtros, tokenizers, fetchers, joins y contadores son configurables. Se mantienen fijas durante una ejecución para que coincidan el reparto de datos y los cierres esperados.
+* Dentro de cada Gateway se atienden conexiones mientras el Collector recibe resultados. Los filtros y tokenizers consumen datos y avisos de coordinación. Cada fetcher tiene un receptor, varios descargadores concurrentes y un publicador de chunks.
+* Q2 usa disco para las imágenes temporales y Q5 para los candidatos que esperan el promedio. Q3 conserva el vocabulario y Q4 los conteos en memoria hasta terminar el trabajo de cada cliente.
 
 ---
 
