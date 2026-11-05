@@ -57,7 +57,7 @@ Cada vista responde una pregunta arquitectónica distinta y conserva las respons
 
 ### 3.1. Contexto C4: el sistema y su entorno
 
-Complementa al diagrama en `Diagramas/C4Model/01-contexto.puml`.
+Complementa al diagrama en [01-contexto.puml](Diagramas/C4Model/01-contexto.puml).
 
 El usuario interactúa aportando sus archivos locales de Wikipedia en inglés y francés y recibe los resultados de las cinco consultas sin percibir la topología interna.
 
@@ -67,7 +67,7 @@ El caso de uso modela ejecuciones independientes por cliente, aislamiento estric
 
 ### 3.2. DAG: transformación y dependencias de los datos
 
-Complementa al diagrama en `Diagramas/DAG/tp-disenio-dag.mmd`.
+Complementa al diagrama en [tp-disenio-dag.mmd](Diagramas/DAG/tp-disenio-dag.mmd).
 
 El grafo sigue los datos desde su ingreso por el Gateway hasta la recolección en el Collector:
 
@@ -88,7 +88,7 @@ El grafo sigue los datos desde su ingreso por el Gateway hasta la recolección e
 
 ### 3.3. Despliegue: procesos, réplicas y recursos
 
-Complementa al diagrama en `Diagramas/Despliegue/Despliegue.png`.
+Complementa al diagrama en [Despliegue.png](Diagramas/Despliegue/Despliegue.png).
 
 El despliegue materializa los componentes en unidades de ejecución en contenedores Docker:
 
@@ -106,7 +106,7 @@ El despliegue materializa los componentes en unidades de ejecución en contenedo
 
 ### 4.1. Diagrama de Robustez del ingreso (conexión y sesión)
 
-Complementa al diagrama en `Diagramas/Robustez/Diagrama-robustez-ingreso.png`.
+Complementa al diagrama en [Diagrama-robustez-ingreso.png](Diagramas/Robustez/Diagrama-robustez-ingreso.png).
 
 * El **Load Balancer** recibe la conexión inicial del cliente y le retorna el host y puerto del Gateway que atenderá su ciclo de vida.
 * El **TCP Handler** del Gateway asignado preserva el socket TCP, genera un identificador único de sesión (`clientID`), desmultiplexa los batches recibidos y devuelve confirmaciones (*ACK*).
@@ -114,7 +114,7 @@ Complementa al diagrama en `Diagramas/Robustez/Diagrama-robustez-ingreso.png`.
 
 ### 4.2. Diagrama de Robustez de las consultas
 
-Complementa a los diagramas en `Diagramas/Robustez/DIagrama-robustez-q1.png` a `q5.png`.
+Complementa a los diagramas en [Diagramas de Robustez Q1 a Q5](Diagramas/Robustez/).
 
 * **Q1 (Filtro histórico)**: Cada worker filtra artículos por idioma y fecha sobre la cola compartida `article_dates`. Coordina el EOF mediante su exchange de control `q1_filter_control` verificando la cantidad total de batches emitidos por el Gateway antes de publicar sus resultados y emitir su respectivo EOF hacia el Collector.
 * **Q2 (Filtro y descarga)**: El filtro descarta artículos sin biografía y coordina el EOF mediante `q2_filter_control`. Las descargas se distribuyen entre las réplicas de `Image Fetcher` a través de colas particionadas (`image_downloads_[i]`). Cada Fetcher administra un pool de descargadores concurrentes con mitigación de rate limiting (`HTTP 429`) y almacena temporalmente los archivos en disco mientras emite chunks numerados hacia el Gateway.
@@ -128,7 +128,7 @@ Complementa al [diagrama de paquetes](Diagramas/Paquetes/diagrama-paquetes..png)
 
 El código en Go se organiza desacoplando responsabilidades:
 
-* **Cliente** (`client/`): Lectura de archivos Parquet, envío de lotes por TCP, recepción de resultados, escritura de CSV y reconstrucción de imágenes.
+* **Cliente** (`client/`): Lectura de archivos Parquet, envío de batches por TCP, recepción de resultados, escritura de CSV y reconstrucción de imágenes.
 * `loadbalancer/`: Lógica de asignación y balanceo dinámico de gateways.
 * `gateway/`: Manejo de sesiones, TCP handler, collector de resultados y serialización.
 * `tokenizer/`: Limpieza de texto, remoción de stopwords, cálculo de métricas y sharding.
@@ -148,20 +148,20 @@ El código en Go se organiza desacoplando responsabilidades:
 
 ### 4.4. Diagrama de Actividades
 
-Complementa a los diagramas en `Diagramas/actividad/actividad q2.puml` y `actividad q5-filter.puml`.
+Complementa a los diagramas [actividad q2.png](Diagramas/actividad/actividad%20q2.png) y [actividad q5-filter.png](Diagramas/actividad/actividad%20q5-filter.png) (cuyas fuentes `.puml` se ubican en el mismo directorio).
 
 * **Actividad de Q2 — Descarga y envío de imágenes**:
-  El ciclo de vida de una imagen sigue la secuencia: Reservar cupo de descarga → Descargar vía HTTPS → Emitir chunks por RabbitMQ → Eliminar archivo temporal y liberar cupo. El cupo acotado previene que una red externa rápida combinada con un cliente lento sature el disco o la memoria de los workers.
+  El ciclo de vida de una imagen en cada réplica comprende: recepción del pedido o EOF, reserva de cupo de descarga, control de pausas por *rate limiting* (`HTTP 429`), descarga HTTPS al archivo temporal local, transmisión fragmentada en chunks de 64 KiB (o fila vacía ante error 404/red), eliminación del temporal y confirmación del mensaje. Frente a señales de cierre o EOF de todos los filtros, drena pendientes y emite el EOF de Q2 hacia el Gateway.
 
 * **Actividad de Q5 — Filtrado de candidatos**:
-  Combina la llegada asíncrona de candidatos y la del promedio global. Los artículos recientes se almacenan en un `pendingStore`. Al arribar el promedio, se procesa la cola de candidatos pendientes evaluando la condición. El nodo finaliza únicamente cuando se cumplen simultáneamente: EOF de entradas, promedio recibido y todos los candidatos evaluados.
+  Modela la concurrencia asíncrona sobre tres canales: la llegada de artículos recientes (retenidos en el `pendingStore` en disco hasta contar con el promedio), el arribo del promedio global por el exchange `q5_average` (que dispara la lectura por lotes de 1000 artículos, publicación de coincidencias y eliminación del archivo en disco) y la barrera de control de fin de recientes. Finaliza únicamente al converger el promedio recibido y el EOF de recientes confirmado (`hasAverage && recentsEOF`).
 
 ### 4.5. Secuencia: coordinación entre componentes
 
-Complementa a los diagramas en `Diagramas/secuencia/secuencia q2-entrega-imagen-chunks.puml` y `secuencia q5-promedio.puml`.
+Complementa a los diagramas [secuencia q2-entrega-imagen-chunks.png](Diagramas/secuencia/secuencia%20q2-entrega-imagen-chunks.png) y [secuencia q5-promedio.png](Diagramas/secuencia/secuencia%20q5-promedio.png).
 
-* **Secuencia de Q2**: Detalla la notificación de biografía detectada, solicitud a la API externa, persistencia local, transmisión fragmentada en chunks con metadatos (nombre, URL, correlación) y emisión del EOF de imagen hacia el Gateway.
-* **Secuencia de Q5**: Muestra el avance paralelo entre la ingesta de históricos (hacia los partials) y recientes (hacia los filters), la consolidación del promedio en el Aggregator y su difusión mediante un exchange hacia todos los Filters.
+* **Secuencia de Q2**: Muestra la delegación desde el filtro al Fetcher, la descarga externa vía HTTPS a un archivo local temporal, la entrega fragmentada en chunks hacia el Gateway con confirmación por ACK a nivel aplicación TCP desde el cliente por cada trozo, y la liberación final del archivo en disco y cupo en el Fetcher.
+* **Secuencia de Q5**: Ilustra la ingesta paralela de históricos (hacia los partials) y recientes (hacia los filters con persistencia temporal en disco), el cálculo y difusión del promedio global por parte del Aggregator, el posterior drenado y evaluación de candidatos, y el cumplimiento de la condición dual (promedio recibido y fin de recientes) antes de emitir el EOF final hacia el Gateway.
 
 ---
 
@@ -180,8 +180,8 @@ En lugar de exponer directamente los Gateways a los clientes:
 En Q3 y Q4, las palabras deben agruparse sin que exista un nodo central de coordinación durante la fase de cómputo:
 
 * Tokenizer aplica la función de hash determinística **FNV-32a** sobre cada término: `shard = hash(palabra) % N`.
-* El mensaje se dirige directamente a la cola de la partición correspondiente (`word_counts_i`).
-* Cada réplica procesa exclusivamente su conjunto disjunto de términos, logrando escalabilidad lineal con respecto a la cantidad de réplicas contadoras.
+* Los mensajes se dirigen directamente a la cola de la partición correspondiente: `vocabulary_[i]` para Q3 (asegurando que las palabras en inglés y francés de un mismo término colisionen en la misma réplica de Join) y `word_counts_[i]` para Q4.
+* Cada réplica procesa exclusivamente su conjunto disjunto de términos, logrando escalabilidad lineal con respecto a la cantidad de particiones tanto en la intersección de vocabularios (Q3) como en el conteo de frecuencias (Q4).
 
 ### 5.3. Escalabilidad híbrida y tolerancia a latencia externa (Image Fetcher)
 
@@ -191,11 +191,20 @@ La consulta Q2 involucra una operación fuertemente ligada a I/O (*I/O-bound*) s
 * **Concurrencia vertical (*latency hiding*)**: Cada contenedor de Fetcher ejecuta internamente un pool de goroutines de descarga concurrentes (`Q2_DOWNLOAD_WORKERS`). Mientras un worker espera el RTT de red de Wikimedia, otros descargan en paralelo o transfieren chunks a RabbitMQ.
 * **Mitigación de *rate limiting* (`HTTP 429`)**: Al detectar saturación de peticiones por parte de la API externa, el descargador aplica pausas y *backoff* para evitar descartes en cascada o reintentos destructivos.
 
+### 5.4. Escenarios de escalabilidad y validación de resultados
+
+El comportamiento del clúster fue evaluado a través de cinco escenarios representativos de carga y topología:
+
+* **Escalamiento horizontal en cómputo (CPU-bound)**: Tokenizers, filtros de Q1 y contadores de Q4 distribuyen el trabajo en réplicas concurrentes sobre colas compartidas o particionadas, eliminando cuellos de botella en la ingesta masiva de abstracts y artículos.
+* **Escalamiento intensivo en I/O (I/O-bound)**: En el **Escenario 5**, el clúster escala a **25 réplicas concurrentes de Image Fetcher**, cada una con su propio pool de descargadores (`Q2_DOWNLOAD_WORKERS`), desacoplando la latencia de red externa de Wikimedia del rendimiento interno del pipeline.
+* **Concurrencia multicliente y aislamiento**: Los **Escenarios 3 y 4** ejecutan múltiples clientes independientes en paralelo (2 y 3 clientes), verificando la asignación balanceada por el Load Balancer, el aislamiento estricto de sesiones (`clientID`) y la convergencia de resultados en sus respectivos Gateways.
+* **Validación determinística contra el oráculo de referencia**: La exactitud funcional de todas las consultas se verifica de forma automatizada mediante un script de comparación (`scripts/comparar.py`) que contrasta las salidas generadas por el sistema distribuido contra el Jupyter Notebook de referencia provisto por la cátedra (`scripts/analisis_cliente.ipynb`), asegurando coincidencia estricta en el filtrado, los conteos, el criterio de desempate del Top 20 y el cálculo del promedio global.
+
 ---
 
 ## 6. Coordinación distribuida de EOF (Protocolo anti-race condition)
 
-Complementa a los diagramas en `Diagramas/secuencia/secuencia eof-difusion.puml` y `secuencia eof-cierre-tokenizers.puml`.
+Complementa a los diagramas [secuencia eof-difusion.png](Diagramas/secuencia/secuencia%20eof-difusion.png) y [secuencia eof-cierre-tokenizers.png](Diagramas/secuencia/secuencia%20eof-cierre-tokenizers.png) (cuyas fuentes `.puml` se ubican en el mismo directorio).
 
 ### 6.1. La condición de carrera del EOF en colas compartidas
 
