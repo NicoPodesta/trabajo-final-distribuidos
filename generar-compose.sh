@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -lt 1 || $# -gt 9 ]]; then
-  echo "Uso: $0 <archivo-salida> [cantidad-clientes] [cantidad-gateways] [cantidad-tokenizers] [cantidad-q4-wordcounters] [cantidad-q5-avgpartials] [cantidad-q5-filters] [cantidad-q1-filters] [cantidad-q2-filters]" >&2
+if [[ $# -lt 1 || $# -gt 10 ]]; then
+  echo "Uso: $0 <archivo-salida> [cantidad-clientes] [cantidad-gateways] [cantidad-tokenizers] [cantidad-q4-wordcounters] [cantidad-q5-avgpartials] [cantidad-q5-filters] [cantidad-q1-filters] [cantidad-q2-filters] [cantidad-q2-fetchers]" >&2
   exit 1
 fi
 
@@ -15,8 +15,9 @@ q5_avg_partial_count="${6:-1}"
 q5_filter_count="${7:-1}"
 q1_filter_count="${8:-1}"
 q2_filter_count="${9:-1}"
+q2_fetcher_count="${10:-1}"
 
-for val in "$client_count" "$gateway_count" "$tokenizer_count" "$q4_counter_count" "$q5_avg_partial_count" "$q5_filter_count" "$q1_filter_count" "$q2_filter_count"; do
+for val in "$client_count" "$gateway_count" "$tokenizer_count" "$q4_counter_count" "$q5_avg_partial_count" "$q5_filter_count" "$q1_filter_count" "$q2_filter_count" "$q2_fetcher_count"; do
   if ! [[ "$val" =~ ^[0-9]+$ ]] || [[ "$val" -lt 1 ]]; then
     echo "Error: los conteos deben ser enteros positivos" >&2
     exit 1
@@ -101,6 +102,7 @@ gateway() {
     - MOM_PORT=5672
     - EXPECTED_QUERIES=5
     - Q1_FILTER_AMOUNT=${q1_filter_count}
+    - Q2_FETCHER_AMOUNT=${q2_fetcher_count}
     - Q5_FILTER_AMOUNT=${q5_filter_count}
 
 YAML
@@ -168,9 +170,11 @@ YAML
     worker "q1_filter_${id}" q1filter "Q1_FILTER_ID=${id}" "Q1_FILTER_AMOUNT=${q1_filter_count}" 'Q1_PREFETCH=${Q1_PREFETCH:-4}'
   done
   for id in $(seq 0 $((q2_filter_count - 1))); do
-    worker "q2_filter_${id}" q2filter "Q2_FILTER_ID=${id}" "Q2_FILTER_AMOUNT=${q2_filter_count}" 'Q2_PREFETCH=${Q2_PREFETCH:-4}'
+    worker "q2_filter_${id}" q2filter "Q2_FILTER_ID=${id}" "Q2_FILTER_AMOUNT=${q2_filter_count}" 'Q2_PREFETCH=${Q2_PREFETCH:-4}' "Q2_FETCHER_AMOUNT=${q2_fetcher_count}"
   done
-  worker q2_image_fetcher_0 q2imagefetcher CHUNK_SIZE=65536 'Q2_MAX_PENDING_REQUESTS=${Q2_MAX_PENDING_REQUESTS:-4}' "Q2_FILTER_AMOUNT=${q2_filter_count}"
+  for id in $(seq 0 $((q2_fetcher_count - 1))); do
+    worker "q2_image_fetcher_${id}" q2imagefetcher CHUNK_SIZE=65536 'Q2_MAX_PENDING_REQUESTS=${Q2_MAX_PENDING_REQUESTS:-4}' "Q2_FILTER_AMOUNT=${q2_filter_count}" "Q2_FETCHER_ID=${id}" "Q2_FETCHER_AMOUNT=${q2_fetcher_count}"
+  done
 
   for id in $(seq 0 $((tokenizer_count - 1))); do
     worker "tokenizer_${id}" tokenizer "TOKENIZER_ID=${id}" "TOKENIZER_AMOUNT=${tokenizer_count}" "Q4_WORD_COUNTER_AMOUNT=${q4_counter_count}"
@@ -193,4 +197,4 @@ YAML
   rabbitmq
 } > "$output_file"
 
-echo "Docker Compose generado en $output_file con $client_count cliente(s), $gateway_count gateway(s), $tokenizer_count tokenizer(s), $q4_counter_count q4-counter(s), $q5_avg_partial_count q5-avgpartial(s), $q5_filter_count q5-filter(s), $q1_filter_count q1-filter(s) y $q2_filter_count q2-filter(s)."
+echo "Docker Compose generado en $output_file con $client_count cliente(s), $gateway_count gateway(s), $tokenizer_count tokenizer(s), $q4_counter_count q4-counter(s), $q5_avg_partial_count q5-avgpartial(s), $q5_filter_count q5-filter(s), $q1_filter_count q1-filter(s), $q2_filter_count q2-filter(s) y $q2_fetcher_count q2-fetcher(s)."
