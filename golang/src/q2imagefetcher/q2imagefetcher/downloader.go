@@ -14,7 +14,8 @@ import (
 
 const (
 	downloadTimeout    = 10 * time.Second
-	downloadRetries    = 5
+	downloadBudget     = 5 * time.Second
+	downloadRetries    = 3
 	downloadRetryDelay = 1 * time.Second
 )
 
@@ -34,13 +35,19 @@ func DownloadImage(ctx context.Context, clientID, imageID, imageRef string) (*Do
 	if strings.TrimSpace(clientID) == "" || strings.TrimSpace(imageID) == "" {
 		return nil, fmt.Errorf("image download requires client_id and image_id")
 	}
+
+	downloadCtx, cancel := context.WithTimeout(ctx, downloadBudget)
+	defer cancel()
 	var err error
 	for attempt := 0; attempt <= downloadRetries; attempt++ {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
+		if err := downloadCtx.Err(); err != nil {
+			return nil, fmt.Errorf("%w: download budget exhausted: %w", errImageSource, err)
+		}
 		var image *DownloadedImage
-		image, err = downloadImageAttempt(ctx, clientID, imageID, imageRef)
+		image, err = downloadImageAttempt(downloadCtx, clientID, imageID, imageRef)
 		if err == nil {
 			return image, nil
 		}
@@ -54,9 +61,9 @@ func DownloadImage(ctx context.Context, clientID, imageID, imageRef string) (*Do
 		if attempt < downloadRetries {
 			timer := time.NewTimer(downloadRetryDelay)
 			select {
-			case <-ctx.Done():
+			case <-downloadCtx.Done():
 				timer.Stop()
-				return nil, ctx.Err()
+				return nil, fmt.Errorf("%w: download budget exhausted: %w", errImageSource, downloadCtx.Err())
 			case <-timer.C:
 			}
 		}
@@ -114,7 +121,7 @@ func downloadImageAttempt(ctx context.Context, clientID, imageID, imageRef strin
 		return nil, fmt.Errorf("%w: image download size mismatch: expected %d bytes, got %d", errImageSource, response.ContentLength, size)
 	}
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: finishing image download: %w", errImageSource, err)
 	}
 	return &DownloadedImage{Path: file.Name(), Size: size}, nil
 }
