@@ -1,0 +1,127 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1278.0" height="688.0" viewBox="0 0 1278.0 688.0">
+<title>Q3 · Palabras compartidas en inglés y francés</title>
+<rect width="100%" height="100%" fill="white"/>
+<text x="36" y="35.0" text-anchor="start" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="14" font-weight="700" fill="#2d475d">Q3 · Palabras compartidas en inglés y francés</text>
+<text x="36" y="57.0" text-anchor="start" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="8" font-weight="400" fill="#627e99">Controles superpuestos = réplicas · N/K según etapa; G Gateways · Amarillo = estado propio · Hoja = archivo</text>
+<text x="36" y="73.0" text-anchor="start" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="8" font-weight="400" fill="#627e99">Mensajes: type, client_id y datos; resultados incluyen query_id. El destino se obtiene de client_id.</text>
+<rect x="36" y="101" width="1206" height="255" rx="8" fill="#f8fbff" stroke="#cad8e6" stroke-width=".8"/>
+<text x="45" y="113.0" text-anchor="start" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="8" font-weight="700" fill="#627e99">Procesamiento Q3 · dentro del sistema</text>
+<rect x="699" y="124" width="360" height="186" rx="8" fill="#ffffff" stroke="#cad8e6" stroke-width=".8"/>
+<text x="708" y="136.0" text-anchor="start" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="8" font-weight="700" fill="#627e99">Q3 · estado de cada partición</text>
+<rect x="489" y="386" width="750" height="153" rx="8" fill="#ffffff" stroke="#cad8e6" stroke-width=".8"/>
+<text x="498" y="398.0" text-anchor="start" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="8" font-weight="700" fill="#627e99">Retorno al cliente</text>
+<rect x="488" y="407" width="560" height="125" rx="8" fill="#fafcff" stroke="#cad8e6" stroke-width=".8"/>
+<text x="497" y="419.0" text-anchor="start" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="8" font-weight="700" fill="#627e99">Gateway ×G · retorno de resultados</text>
+<path d="M 137.5,183.5 L 189.5,183.5" stroke="#526d86" fill="none" stroke-width="0.75"/>
+<path d="M 189.5,183.5 L 185.5,181.9 L 185.5,185.1 Z" stroke="#526d86" fill="#526d86" stroke-width="0.4"/>
+<path d="M 320.5,183.5 L 371.5,183.5" stroke="#526d86" fill="none" stroke-width="0.75"/>
+<path d="M 371.5,183.5 L 367.5,181.9 L 367.5,185.1 Z" stroke="#526d86" fill="#526d86" stroke-width="0.4"/>
+<path d="M 447.5,183.5 L 509.5,183.5" stroke="#526d86" fill="none" stroke-width="0.75"/>
+<path d="M 509.5,183.5 L 505.5,181.9 L 505.5,185.1 Z" stroke="#526d86" fill="#526d86" stroke-width="0.4"/>
+<path d="M 640.5,183.5 L 687,184 L 687,208 L 735.5,208.5" stroke="#526d86" fill="none" stroke-width="0.75"/>
+<path d="M 735.5,208.5 L 731.5167065143827,206.8588500959879 L 731.4837185766136,210.05868005958936 Z" stroke="#526d86" fill="#526d86" stroke-width="0.4"/>
+<path d="M 811.5,208.5 L 915.5,208.5" stroke="#526d86" fill="none" stroke-width="0.75"/>
+<path d="M 773.5,246.5 L 774,359 L 1168,359 L 1168.0,440.5" stroke="#526d86" fill="none" stroke-width="0.75"/>
+<path d="M 1168.0,440.5 L 1169.6,436.5 L 1166.4,436.5 Z" stroke="#526d86" fill="#526d86" stroke-width="0.4"/>
+<path d="M 1099.5,464.0 L 1043.5,463.5" stroke="#526d86" fill="none" stroke-width="0.75"/>
+<path d="M 1043.5,463.5 L 1047.4855554258609,465.1356490905415 L 1047.5141257156522,461.93577663393626 Z" stroke="#526d86" fill="#526d86" stroke-width="0.4"/>
+<path d="M 968.5,463.5 L 881.5,463.5" stroke="#526d86" fill="none" stroke-width="0.75"/>
+<path d="M 806.5,463.5 L 720.5,463.5" stroke="#526d86" fill="none" stroke-width="0.75"/>
+<path d="M 645.5,463.5 L 566.5,463.5" stroke="#526d86" fill="none" stroke-width="0.75"/>
+<path d="M 490.5,463.5 L 406.5,463.5" stroke="#526d86" fill="none" stroke-width="0.75"/>
+<path d="M 406.5,463.5 L 410.5,465.1 L 410.5,461.9 Z" stroke="#526d86" fill="#526d86" stroke-width="0.4"/>
+<path d="M 1006.0,501.5 L 1006.0,523.5 L 528.5,523.5 L 528.5,501.5" stroke="#526d86" fill="none" stroke-width="0.75"/>
+<path d="M 528.5,501.5 L 526.9,505.5 L 530.1,505.5 Z" stroke="#526d86" fill="#526d86" stroke-width="0.4"/>
+<ellipse cx="108.5" cy="174.5" rx="38.0" ry="38.0" fill="#edf7f3" stroke="#438d78" stroke-width=".8"/>
+<ellipse cx="104.0" cy="179.0" rx="38.0" ry="38.0" fill="#edf7f3" stroke="#438d78" stroke-width=".8"/>
+<ellipse cx="99.5" cy="183.5" rx="38.0" ry="38.0" fill="#edf7f3" stroke="#438d78" stroke-width=".8"/>
+<path d="M 112.5,130.5 l -7,6 l 7,6" stroke="#438d78" fill="none" stroke-width="0.8"/>
+<path d="M 108.0,135.0 l -7,6 l 7,6" stroke="#438d78" fill="none" stroke-width="0.8"/>
+<path d="M 103.5,139.5 l -7,6 l 7,6" stroke="#438d78" fill="none" stroke-width="0.8"/>
+<text x="99.5" y="178.25" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7.5" font-weight="700" fill="#2d475d">Gateway</text>
+<text x="99.5" y="188.75" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7.5" font-weight="400" fill="#2d475d">×G</text>
+<ellipse cx="418.5" cy="174.5" rx="38.0" ry="38.0" fill="#edf7f3" stroke="#438d78" stroke-width=".8"/>
+<ellipse cx="414.0" cy="179.0" rx="38.0" ry="38.0" fill="#edf7f3" stroke="#438d78" stroke-width=".8"/>
+<ellipse cx="409.5" cy="183.5" rx="38.0" ry="38.0" fill="#edf7f3" stroke="#438d78" stroke-width=".8"/>
+<path d="M 422.5,130.5 l -7,6 l 7,6" stroke="#438d78" fill="none" stroke-width="0.8"/>
+<path d="M 418.0,135.0 l -7,6 l 7,6" stroke="#438d78" fill="none" stroke-width="0.8"/>
+<path d="M 413.5,139.5 l -7,6 l 7,6" stroke="#438d78" fill="none" stroke-width="0.8"/>
+<text x="409.5" y="173.0" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7.5" font-weight="700" fill="#2d475d">Tokenizer</text>
+<text x="409.5" y="183.5" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7.5" font-weight="400" fill="#2d475d">preagrega por lote</text>
+<text x="409.5" y="194.0" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7.5" font-weight="400" fill="#2d475d">×N</text>
+<ellipse cx="782.5" cy="199.5" rx="38.0" ry="38.0" fill="#edf7f3" stroke="#438d78" stroke-width=".8"/>
+<ellipse cx="778.0" cy="204.0" rx="38.0" ry="38.0" fill="#edf7f3" stroke="#438d78" stroke-width=".8"/>
+<ellipse cx="773.5" cy="208.5" rx="38.0" ry="38.0" fill="#edf7f3" stroke="#438d78" stroke-width=".8"/>
+<path d="M 786.5,155.5 l -7,6 l 7,6" stroke="#438d78" fill="none" stroke-width="0.8"/>
+<path d="M 782.0,160.0 l -7,6 l 7,6" stroke="#438d78" fill="none" stroke-width="0.8"/>
+<path d="M 777.5,164.5 l -7,6 l 7,6" stroke="#438d78" fill="none" stroke-width="0.8"/>
+<text x="773.5" y="203.25" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7.5" font-weight="700" fill="#2d475d">Q3 Vocabulary</text>
+<text x="773.5" y="213.75" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7.5" font-weight="400" fill="#2d475d">Join · ×K</text>
+<ellipse cx="368.5" cy="463.5" rx="38.0" ry="38.0" fill="#edf7f3" stroke="#438d78" stroke-width=".8"/>
+<path d="M 372.5,419.5 l -7,6 l 7,6" stroke="#438d78" fill="none" stroke-width="0.8"/>
+<text x="368.5" y="458.25" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7.5" font-weight="700" fill="#2d475d">Client</text>
+<text x="368.5" y="468.75" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7.5" font-weight="400" fill="#2d475d">destinatario</text>
+<ellipse cx="683.0" cy="463.5" rx="37.5" ry="38.0" fill="#edf7f3" stroke="#438d78" stroke-width=".8"/>
+<path d="M 687.0,419.5 l -7,6 l 7,6" stroke="#438d78" fill="none" stroke-width="0.8"/>
+<text x="683.0" y="455.1" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="6" font-weight="700" fill="#2d475d">TCP Handler</text>
+<text x="683.0" y="463.5" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="6" font-weight="400" fill="#2d475d">del Gateway</text>
+<text x="683.0" y="471.9" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="6" font-weight="400" fill="#2d475d">client_id → socket</text>
+<ellipse cx="1006.0" cy="463.5" rx="37.5" ry="38.0" fill="#edf7f3" stroke="#438d78" stroke-width=".8"/>
+<path d="M 1010.0,419.5 l -7,6 l 7,6" stroke="#438d78" fill="none" stroke-width="0.8"/>
+<text x="1006.0" y="458.25" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7.5" font-weight="700" fill="#2d475d">Gateway</text>
+<text x="1006.0" y="468.75" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7.5" font-weight="400" fill="#2d475d">Collector</text>
+<ellipse cx="528.5" cy="463.5" rx="38.0" ry="38.0" fill="#eaf3fd" stroke="#368be6" stroke-width=".8"/>
+<path d="M 482.5,453.5 V 473.5 M 482.5,463.5 H 490.5" stroke="#368be6" fill="none" stroke-width="0.8"/>
+<text x="528.5" y="458.25" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7.5" font-weight="700" fill="#2d475d">Socket</text>
+<text x="528.5" y="468.75" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7.5" font-weight="400" fill="#2d475d">TCP/IP</text>
+<ellipse cx="953.0" cy="208.5" rx="37.5" ry="38.0" fill="#fff5db" stroke="#cc980c" stroke-width=".8"/>
+<path d="M 915.5,250.5 H 990.5" stroke="#cc980c" fill="none" stroke-width="0.8"/>
+<text x="953.0" y="187.5" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7.5" font-weight="700" fill="#2d475d">Presencias</text>
+<text x="953.0" y="198.0" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7.5" font-weight="400" fill="#2d475d">word → en / fr</text>
+<text x="953.0" y="208.5" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7.5" font-weight="400" fill="#2d475d">enviado: bool</text>
+<text x="953.0" y="219.0" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7.5" font-weight="400" fill="#2d475d">memoria</text>
+<text x="953.0" y="229.5" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7.5" font-weight="400" fill="#2d475d">por client_id</text>
+<ellipse cx="844.0" cy="463.5" rx="37.5" ry="38.0" fill="#fff5db" stroke="#cc980c" stroke-width=".8"/>
+<path d="M 806.5,505.5 H 881.5" stroke="#cc980c" fill="none" stroke-width="0.8"/>
+<text x="844.0" y="455.1" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="6" font-weight="700" fill="#2d475d">Sesiones</text>
+<text x="844.0" y="463.5" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="6" font-weight="400" fill="#2d475d">client_id → socket</text>
+<text x="844.0" y="471.9" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="6" font-weight="400" fill="#2d475d">EOF por réplica</text>
+<path d="M 195.5,160.5 H 315.5 C 323.5,160.5 323.5,206.5 315.5,206.5 H 195.5 Z" stroke="#8582b4" fill="#f0f1f9" stroke-width="0.8"/>
+<ellipse cx="195.5" cy="183.5" rx="6" ry="23.0" fill="#f0f1f9" stroke="#8582b4" stroke-width=".8"/>
+<text x="255.0" y="170.06" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="6.4" font-weight="700" fill="#2d475d">abstracts</text>
+<text x="255.0" y="179.02" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="6.4" font-weight="400" fill="#2d475d">url, language,</text>
+<text x="255.0" y="187.98" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="6.4" font-weight="400" fill="#2d475d">date_modified, abstract</text>
+<text x="255.0" y="196.94" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="6.4" font-weight="400" fill="#2d475d">1 cola · N consumidores</text>
+<path d="M 515.5,160.5 H 635.5 C 643.5,160.5 643.5,206.5 635.5,206.5 H 515.5 Z" stroke="#8582b4" fill="#f0f1f9" stroke-width="0.8"/>
+<ellipse cx="515.5" cy="183.5" rx="6" ry="23.0" fill="#f0f1f9" stroke="#8582b4" stroke-width=".8"/>
+<text x="575.0" y="174.54" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="6.4" font-weight="700" fill="#2d475d">vocabulary_&lt;k&gt;</text>
+<text x="575.0" y="183.5" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="6.4" font-weight="400" fill="#2d475d">(word, language) únicos por lote</text>
+<text x="575.0" y="192.46" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="6.4" font-weight="400" fill="#2d475d">K colas · fnv32a(word) % K</text>
+<path d="M 1105.5,440.5 H 1231.5 C 1239.5,440.5 1239.5,487.5 1231.5,487.5 H 1105.5 Z" stroke="#8582b4" fill="#f0f1f9" stroke-width="0.8"/>
+<ellipse cx="1105.5" cy="464.0" rx="6" ry="23.5" fill="#f0f1f9" stroke="#8582b4" stroke-width=".8"/>
+<text x="1168.0" y="455.04" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="6.4" font-weight="700" fill="#2d475d">results_&lt;gatewayID&gt;</text>
+<text x="1168.0" y="464.0" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="6.4" font-weight="400" fill="#2d475d">Q3: word</text>
+<text x="1168.0" y="472.96" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="6.4" font-weight="400" fill="#2d475d">type, client_id, query_id</text>
+<rect x="141.75234375" y="167.46" width="43.4953125" height="10.799999999999999" fill="#f8fbff"/>
+<text x="163.5" y="173.5" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7" font-weight="400" fill="#2d475d">Lotes + EOF</text>
+<rect x="324.24609375" y="159.06" width="35.5078125" height="20.599999999999998" fill="#f8fbff"/>
+<text x="342" y="165.1" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7" font-weight="400" fill="#2d475d">Normaliza</text>
+<text x="342" y="174.9" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7" font-weight="400" fill="#2d475d">abstracts</text>
+<rect x="453.146875" y="158.06" width="57.70625" height="20.599999999999998" fill="#f8fbff"/>
+<text x="482" y="164.1" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7" font-weight="400" fill="#2d475d">Pares únicos</text>
+<text x="482" y="173.9" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7" font-weight="400" fill="#2d475d">Hash por palabra</text>
+<rect x="664.74296875" y="192.96" width="42.5140625" height="10.799999999999999" fill="#f8fbff"/>
+<text x="686" y="199.0" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7" font-weight="400" fill="#2d475d">Datos / EOF</text>
+<rect x="838.6171875" y="182.35" width="52.765625" height="22.0" fill="#ffffff"/>
+<text x="865" y="188.75" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7.5" font-weight="400" fill="#2d475d">Marca idiomas</text>
+<text x="865" y="199.25" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7.5" font-weight="400" fill="#2d475d">y enviados</text>
+<rect x="928.28828125" y="330.93" width="107.4234375" height="24.799999999999997" fill="#f8fbff"/>
+<text x="982" y="338.05" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="8.5" font-weight="400" fill="#2d475d">Inglés ∩ francés, sin repetir</text>
+<text x="982" y="349.95" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="8.5" font-weight="400" fill="#2d475d">EOF tras T Tokenizers</text>
+<rect x="1058.35078125" y="437.844" width="26.2984375" height="20.04" fill="#ffffff"/>
+<text x="1071.5" y="443.74" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="6.8" font-weight="400" fill="#2d475d">K Joins</text>
+<text x="1071.5" y="453.26" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="6.8" font-weight="400" fill="#2d475d">K EOF</text>
+<rect x="669.15703125" y="510.1" width="196.1859375" height="11.5" fill="#fafcff"/>
+<text x="767.25" y="516.5" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7.5" font-weight="400" fill="#2d475d">Envía resultados; espera ACK · Fin al cerrar las consultas</text>
+<text x="36" y="670.0" text-anchor="start" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7.5" font-weight="400" fill="#627e99">TCP Handler y Collector pertenecen al mismo Gateway. Retorno: results_&lt;gatewayID&gt; → Collector → socket de la sesión.</text>
+</svg>

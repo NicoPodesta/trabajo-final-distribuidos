@@ -20,14 +20,14 @@ config:
 %% Las flechas punteadas indican dependencias de código, no flujo de mensajes.
 %% Las dependencias desde un grupo resumen la unión de sus importaciones:
 %% cada componente usa solamente los paquetes compartidos que necesita.
-%% Gateway contiene proyección, sesiones y collector; no son paquetes separados.
+%% Gateway contiene sesiones y collector; no son paquetes separados.
 %% Los temporales de Q2 son locales; Q5 contiene el subpaquete pending.
 flowchart LR
     subgraph APPS["Aplicaciones"]
         direction TB
         CLIENT["«package» Cliente<br/>Parquet, TCP y resultados"]
         LB["«package» Load Balancer<br/>Asignación de Gateways"]
-        GW["«package» Gateway<br/>Sesiones, proyección y collector"]
+        GW["«package» Gateway<br/>Sesiones y collector"]
         TOK["«package» Tokenizer<br/>Limpieza y particionado"]
         subgraph QUERIES["Consultas · agrupaciones lógicas"]
             direction TB

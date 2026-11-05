@@ -1,51 +1,40 @@
+%% Distribución de nodos conservada respecto de la versión original.
+%% SVG/PNG conservan las posiciones; Mermaid usa distribución automática.
 %% Q3 · Palabras compartidas en inglés y francés
-%% Fuente semántica; SVG y PNG usan una distribución fija para conservar legibilidad.
-%% Réplicas: se conserva el diseño previsto; la coordinación de cierre aún tiene pendientes.
-%% Parser, TCP Handler y Collector pertenecen al mismo proceso Gateway; se muestran en dos vistas.
 flowchart LR
-    subgraph JOIN["Q3 · estado de cada partición"]
+    subgraph GROUP1["Q3 · estado de cada partición"]
     Q3(("Q3 Vocabulary<br/>Join · ×K"))
     E3(("Presencias<br/>word → en / fr<br/>enviado: bool<br/>memoria<br/>por client_id"))
     end
-    subgraph RETURN["Retorno al cliente"]
-    RQ@{ shape: h-cyl, label: "results_&lt;gatewayID&gt;<br/>Q3: word<br/>type, client_id, query_id" }
-    subgraph GATEWAY["Gateway ×G · retorno; mismo proceso que la proyección"]
-    GW(("Gateway<br/>Collector"))
-    SESSION(("Sesiones<br/>client_id → socket<br/>EOF por consulta"))
-    RX(("TCP Handler<br/>del Gateway<br/>client_id → socket"))
+    subgraph GROUP3["Gateway ×G · retorno de resultados"]
     API(("Socket<br/>TCP/IP"))
+    RX(("TCP Handler<br/>del Gateway<br/>client_id → socket"))
+    SESSION(("Sesiones<br/>client_id → socket<br/>EOF por réplica"))
+    GW(("Gateway<br/>Collector"))
     end
-    end
-    P(("Parser /<br/>Projector<br/>en Gateway ×G"))
-    TQ@{ shape: h-cyl, label: "abstracts<br/>url, language,<br/>date_modified, abstract<br/>1 cola · N consumidores" }
+    P(("Gateway<br/>×G"))
     T(("Tokenizer<br/>preagrega por lote<br/>×N"))
-    VQ@{ shape: h-cyl, label: "vocabulary[i]<br/>(word, language) únicos por lote<br/>K colas · hash(word) % K" }
     C(("Client<br/>destinatario"))
-    P --> TQ
-    TQ --> T
-    T --> VQ
-    VQ --> Q3
-    Q3 --- E3
-    RQ --> GW
+    TQ@{ shape: h-cyl, label: "abstracts<br/>url, language,<br/>date_modified, abstract<br/>1 cola · N consumidores" }
+    VQ@{ shape: h-cyl, label: "vocabulary_&lt;k&gt;<br/>(word, language) únicos por lote<br/>K colas · fnv32a(word) % K" }
+    RQ@{ shape: h-cyl, label: "results_&lt;gatewayID&gt;<br/>Q3: word<br/>type, client_id, query_id" }
+    P -->|"Lotes + EOF"| TQ
+    TQ -->|"Normaliza<br/>abstracts"| T
+    T -->|"Pares únicos<br/>Hash por palabra"| VQ
+    VQ -->|"Datos / EOF"| Q3
+    Q3 ---|"Marca idiomas<br/>y enviados"| E3
+    Q3 -->|"Inglés ∩ francés, sin repetir<br/>EOF tras T Tokenizers"| RQ
+    RQ -->|"K Joins<br/>K EOF"| GW
     GW --- SESSION
-    RX --- SESSION
+    SESSION --- RX
     RX --- API
-    GW -->|escritura por sesión| API
     API --> C
-    Q3 --> RQ
-    classDef control fill:#edf7f3,stroke:#377964;
-    class P,T,Q3,GW,RX,C control;
-    classDef boundary fill:#eaf3fd,stroke:#397bac;
+    GW -->|"Envía resultados; espera ACK · Fin al cerrar las consultas"| API
+    classDef control fill:#edf7f3,stroke:#438d78,color:#2d475d;
+    class P,T,Q3,C,RX,GW control;
+    classDef boundary fill:#eaf3fd,stroke:#368be6,color:#2d475d;
     class API boundary;
-    classDef entity fill:#fff5db,stroke:#b6903e;
-    class SESSION entity;
-    class E3 entity;
-    classDef queue fill:#f0f1f9,stroke:#737d9e;
+    classDef entity fill:#fff5db,stroke:#cc980c,color:#2d475d;
+    class E3,SESSION entity;
+    classDef queue fill:#f0f1f9,stroke:#8582b4,color:#2d475d;
     class TQ,VQ,RQ queue;
-    classDef exchange fill:#f0f1f9,stroke:#737d9e;
-    classDef file fill:#fff7e9,stroke:#ad8242;
-    classDef actor fill:white,stroke:#526579;
-%% Preagregación y reparto: Tokenizer deduplica (word, language) por lote de un mismo cliente. hash(word) % K reúne ambos idiomas en la misma partición; language no forma parte de la clave de reparto.
-%% Estado por cliente y word: word → {en, fr, enviado}: tres booleanos en memoria, inicialmente false. enviado registra la publicación en results_&lt;gatewayID&gt;.
-%% Envío y fin: Si en y fr son true y enviado es false, publica la word y luego marca enviado = true. Las siguientes apariciones no vuelven a emitirla. El cierre espera completar la entrada y las publicaciones.
-%% Tokenizer: normaliza y quita stopwords; deduplica (word, language) por lote de un mismo cliente antes del reparto por word.

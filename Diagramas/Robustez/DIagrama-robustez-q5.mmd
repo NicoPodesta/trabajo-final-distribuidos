@@ -1,71 +1,63 @@
+%% Distribución de nodos conservada respecto de la versión original.
+%% SVG/PNG conservan las posiciones; Mermaid usa distribución automática.
 %% Q5 · promedio histórico y artículos recientes
-%% Fuente semántica; SVG y PNG usan una distribución fija para conservar legibilidad.
-%% Réplicas: se conserva el diseño previsto; la coordinación de cierre aún tiene pendientes.
-%% Parser, TCP Handler y Collector pertenecen al mismo proceso Gateway; se muestran en dos vistas.
 flowchart LR
-    subgraph PARTIAL["Q5 Partial · por réplica"]
+    subgraph GROUP1["Q5 Partial · por réplica"]
     Q5A(("Q5 Avg<br/>Partial · ×N"))
     SUM(("Suma y cantidad<br/>por client_id<br/>memoria"))
     end
-    subgraph FILTER["Q5 Filter · por worker"]
+    subgraph GROUP2["Q5 Filter · por worker"]
     Q5F(("Q5 Filter<br/>×N"))
-    F5["candidatos_q5/*.jsonl<br/>url, n_words"]
+    F5["Pendientes por cliente<br/>filter_&lt;id&gt;/&lt;client_id&gt;.jsonl"]
     E5(("Promedio y fin<br/>por client_id<br/>memoria"))
     end
-    subgraph RETURN["Retorno al cliente"]
-    RQ@{ shape: h-cyl, label: "results_&lt;gatewayID&gt;<br/>Q5: url, n_words<br/>type, client_id, query_id" }
-    subgraph GATEWAY["Gateway ×G · retorno; mismo proceso que la proyección"]
-    GW(("Gateway<br/>Collector"))
-    SESSION(("Sesiones<br/>client_id → socket<br/>EOF por consulta"))
-    RX(("TCP Handler<br/>del Gateway<br/>client_id → socket"))
+    subgraph GROUP4["Gateway ×G · retorno de resultados"]
     API(("Socket<br/>TCP/IP"))
+    RX(("TCP Handler<br/>del Gateway<br/>client_id → socket"))
+    SESSION(("Sesiones<br/>client_id → socket<br/>EOF por réplica"))
+    GW(("Gateway<br/>Collector"))
     end
-    end
-    P(("Parser /<br/>Projector<br/>en Gateway ×G"))
-    TQ@{ shape: h-cyl, label: "abstracts<br/>url, language,<br/>date_modified, abstract<br/>1 cola · N consumidores" }
+    Q5G(("Q5 Avg<br/>Aggregator · ×1"))
+    P(("Gateway<br/>×G"))
     T(("Tokenizer<br/>×N"))
+    C(("Client<br/>destinatario"))
     OLDQ@{ shape: h-cyl, label: "historical_counts<br/>n_words · year ≤ 2020<br/>1 cola · N consumidores" }
     PARTQ@{ shape: h-cyl, label: "avg_partials<br/>sum, count<br/>1 cola · 1 consumidor" }
-    Q5G(("Q5 Avg<br/>Aggregator · ×1"))
     EX["Exchange<br/>q5_average · direct"]
     AQ@{ shape: h-cyl, label: "promedio<br/>client_id, valor entero<br/>1 cola por Q5 Filter" }
+    TQ@{ shape: h-cyl, label: "abstracts<br/>url, language,<br/>date_modified, abstract<br/>1 cola · N consumidores" }
     CQ@{ shape: h-cyl, label: "recent_articles<br/>url, n_words · year ≥ 2021<br/>1 cola · N consumidores" }
-    C(("Client<br/>destinatario"))
-    P --> TQ
-    TQ --> T
-    T --> OLDQ
-    OLDQ --> Q5A
-    Q5A --- SUM
-    Q5A --> PARTQ
-    PARTQ --> Q5G
-    Q5G --> EX
-    EX --> AQ
-    AQ --> Q5F
-    T --> CQ
-    CQ --> Q5F
-    Q5F <--> F5
-    Q5F --- E5
-    RQ --> GW
+    RQ@{ shape: h-cyl, label: "results_&lt;gatewayID&gt;<br/>Q5: url, word_count<br/>type, client_id, query_id" }
+    P -->|"Lotes + EOF"| TQ
+    TQ -->|"Cuenta tokens<br/>Con repetición"| T
+    T -->|"Históricos ≤ 2020<br/>n_words"| OLDQ
+    OLDQ -->|"Datos / EOF"| Q5A
+    Q5A ---|"Acumula suma<br/>y cantidad"| SUM
+    Q5A -->|"Parcial + EOF<br/>Cierre por conteo"| PARTQ
+    PARTQ -->|"Espera N EOF"| Q5G
+    Q5G -->|"Promedio entero<br/>Sin históricos: 0"| EX
+    EX -->|"Difunde promedio"| AQ
+    AQ -->|"Promedio por cliente"| Q5F
+    T -->|"Recientes &gt; 2020<br/>URL y n_words"| CQ
+    CQ -->|"Reparte candidatos<br/>Selecciona n_words &gt; promedio"| Q5F
+    Q5F <-->|"Pendientes en disco<br/>Lee y borra al filtrar"| F5
+    Q5F ---|"Promedio / fin"| E5
+    Q5F -->|"URL y word_count<br/>EOF tras procesar pendientes"| RQ
+    RQ -->|"N filtros<br/>N EOF"| GW
     GW --- SESSION
-    RX --- SESSION
+    SESSION --- RX
     RX --- API
-    GW -->|escritura por sesión| API
     API --> C
-    Q5F --> RQ
-    classDef control fill:#edf7f3,stroke:#377964;
-    class P,T,Q5A,Q5G,Q5F,GW,RX,C control;
-    classDef boundary fill:#eaf3fd,stroke:#397bac;
+    GW -->|"Envía resultados; espera ACK · Fin al cerrar las consultas"| API
+    classDef control fill:#edf7f3,stroke:#438d78,color:#2d475d;
+    class Q5A,Q5G,P,T,Q5F,C,RX,GW control;
+    classDef boundary fill:#eaf3fd,stroke:#368be6,color:#2d475d;
     class API boundary;
-    classDef entity fill:#fff5db,stroke:#b6903e;
-    class SESSION entity;
-    class SUM,E5 entity;
-    classDef queue fill:#f0f1f9,stroke:#737d9e;
-    class TQ,OLDQ,PARTQ,AQ,CQ,RQ queue;
-    classDef exchange fill:#f0f1f9,stroke:#737d9e;
-    class EX exchange;
-    classDef file fill:#fff7e9,stroke:#ad8242;
+    classDef entity fill:#fff5db,stroke:#cc980c,color:#2d475d;
+    class SUM,E5,SESSION entity;
+    classDef queue fill:#f0f1f9,stroke:#8582b4,color:#2d475d;
+    class OLDQ,PARTQ,AQ,TQ,CQ,RQ queue;
+    classDef file fill:#fff7e9,stroke:#b88837,color:#2d475d;
     class F5 file;
-    classDef actor fill:white,stroke:#526579;
-%% Cantidad de palabras: n_words es la cantidad de words distintas del abstract, sin stopwords. Se usa para calcular el promedio histórico y para comparar los artículos recientes.
-%% Exchange del promedio: Aggregator publica el promedio en el exchange. El exchange manda una copia a la cola de cada filtro. Los candidatos se reparten; el promedio llega a todos.
-%% Cuándo termina: Cada filtro espera el promedio y el fin de artículos recientes. Revisa todos sus candidatos, envía los resultados y avisa que terminó. En el diseño se espera a todos los filtros; hoy Gateway registra EOF por consulta.
+    classDef exchange fill:#f0f1f9,stroke:#8582b4,color:#2d475d;
+    class EX exchange;

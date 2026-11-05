@@ -1,0 +1,144 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1328.0" height="858.0" viewBox="0 0 1328.0 858.0">
+<title>Q2 · biografías y descarga de imágenes</title>
+<rect width="100%" height="100%" fill="white"/>
+<text x="36" y="35.0" text-anchor="start" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="14" font-weight="700" fill="#2d475d">Q2 · biografías y descarga de imágenes</text>
+<text x="36" y="57.0" text-anchor="start" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="8" font-weight="400" fill="#627e99">Controles superpuestos = réplicas · N/K según etapa; G Gateways · Amarillo = estado propio · Hoja = archivo</text>
+<text x="36" y="73.0" text-anchor="start" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="8" font-weight="400" fill="#627e99">Mensajes: type, client_id y datos; resultados incluyen query_id. El destino se obtiene de client_id.</text>
+<rect x="36" y="101" width="1050" height="350" rx="8" fill="#f8fbff" stroke="#cad8e6" stroke-width=".8"/>
+<text x="45" y="113.0" text-anchor="start" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="8" font-weight="700" fill="#627e99">Procesamiento Q2 · dentro del sistema</text>
+<rect x="706" y="124" width="352" height="300" rx="8" fill="#ffffff" stroke="#cad8e6" stroke-width=".8"/>
+<text x="715" y="136.0" text-anchor="start" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="8" font-weight="700" fill="#627e99">Image Fetcher · descarga completa y envío</text>
+<rect x="539" y="507" width="750" height="153" rx="8" fill="#ffffff" stroke="#cad8e6" stroke-width=".8"/>
+<text x="548" y="519.0" text-anchor="start" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="8" font-weight="700" fill="#627e99">Retorno al cliente</text>
+<rect x="538" y="529" width="562" height="123" rx="8" fill="#fafcff" stroke="#cad8e6" stroke-width=".8"/>
+<text x="547" y="541.0" text-anchor="start" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="8" font-weight="700" fill="#627e99">Gateway ×G · retorno de resultados</text>
+<path d="M 137.5,178.5 L 195.5,179.0" stroke="#526d86" fill="none" stroke-width="0.75"/>
+<path d="M 195.5,179.0 L 191.51394121524712,177.3655779723418 L 191.4863560333457,180.5654590729047 Z" stroke="#526d86" fill="#526d86" stroke-width="0.4"/>
+<path d="M 338.5,179.0 L 397.5,178.5" stroke="#526d86" fill="none" stroke-width="0.75"/>
+<path d="M 397.5,178.5 L 393.48658479399415,176.93395453954838 L 393.513702464305,180.13383963622874 Z" stroke="#526d86" fill="#526d86" stroke-width="0.4"/>
+<path d="M 473.5,178.5 L 538.5,179.0" stroke="#526d86" fill="none" stroke-width="0.75"/>
+<path d="M 538.5,179.0 L 534.5124256661345,177.36927901470008 L 534.4878110097527,180.5691843443452 Z" stroke="#526d86" fill="#526d86" stroke-width="0.4"/>
+<path d="M 670.5,179.0 L 705,179 L 705,224 L 740.5,223.5" stroke="#526d86" fill="none" stroke-width="0.75"/>
+<path d="M 740.5,223.5 L 736.4778637112515,221.9564911160825 L 736.5229296640666,225.1561737659553 Z" stroke="#526d86" fill="#526d86" stroke-width="0.4"/>
+<path d="M 778.5,261.5 L 778.5,333.5" stroke="#526d86" fill="none" stroke-width="0.75"/>
+<path d="M 778.5,333.5 L 780.1,329.5 L 776.9,329.5 Z" stroke="#526d86" fill="#526d86" stroke-width="0.4"/>
+<path d="M 778.5,261.5 L 776.9,265.5 L 780.1,265.5 Z" stroke="#526d86" fill="#526d86" stroke-width="0.4"/>
+<path d="M 816.5,223.5 L 935.5,223.5" stroke="#526d86" fill="none" stroke-width="0.75"/>
+<path d="M 935.5,223.5 L 931.5,221.9 L 931.5,225.1 Z" stroke="#526d86" fill="#526d86" stroke-width="0.4"/>
+<path d="M 816.5,223.5 L 820.5,225.1 L 820.5,221.9 Z" stroke="#526d86" fill="#526d86" stroke-width="0.4"/>
+<path d="M 1011.5,223.5 L 1184,218" stroke="#526d86" fill="none" stroke-width="0.75"/>
+<path d="M 1184,218 L 1179.9510430554096,216.52828411000866 L 1180.0530202194404,219.7266588000686 Z" stroke="#526d86" fill="#526d86" stroke-width="0.4"/>
+<path d="M 1011.5,223.5 L 1015.5489569445904,224.97171588999134 L 1015.4469797805596,221.7733411999314 Z" stroke="#526d86" fill="#526d86" stroke-width="0.4"/>
+<path d="M 778.5,261.5 L 778,282 L 1032,282 L 1032,478 L 1218,478 L 1219.0,560.5" stroke="#526d86" fill="none" stroke-width="0.75"/>
+<path d="M 1219.0,560.5 L 1220.5514011868352,556.4809013003552 L 1217.3516362389876,556.519686330026 Z" stroke="#526d86" fill="#526d86" stroke-width="0.4"/>
+<path d="M 1150.5,583.5 L 1093.5,583.5" stroke="#526d86" fill="none" stroke-width="0.75"/>
+<path d="M 1093.5,583.5 L 1097.5,585.1 L 1097.5,581.9 Z" stroke="#526d86" fill="#526d86" stroke-width="0.4"/>
+<path d="M 1017.5,583.5 L 932.5,583.5" stroke="#526d86" fill="none" stroke-width="0.75"/>
+<path d="M 856.5,583.5 L 771.5,583.5" stroke="#526d86" fill="none" stroke-width="0.75"/>
+<path d="M 695.5,583.5 L 617.5,583.5" stroke="#526d86" fill="none" stroke-width="0.75"/>
+<path d="M 541.5,583.5 L 456.5,583.5" stroke="#526d86" fill="none" stroke-width="0.75"/>
+<path d="M 456.5,583.5 L 460.5,585.1 L 460.5,581.9 Z" stroke="#526d86" fill="#526d86" stroke-width="0.4"/>
+<path d="M 1055.5,621.5 L 1055.5,643.5 L 579.5,643.5 L 579.5,621.5" stroke="#526d86" fill="none" stroke-width="0.75"/>
+<path d="M 579.5,621.5 L 577.9,625.5 L 581.1,625.5 Z" stroke="#526d86" fill="#526d86" stroke-width="0.4"/>
+<ellipse cx="108.0" cy="169.5" rx="38.5" ry="38.0" fill="#edf7f3" stroke="#438d78" stroke-width=".8"/>
+<ellipse cx="103.5" cy="174.0" rx="38.5" ry="38.0" fill="#edf7f3" stroke="#438d78" stroke-width=".8"/>
+<ellipse cx="99.0" cy="178.5" rx="38.5" ry="38.0" fill="#edf7f3" stroke="#438d78" stroke-width=".8"/>
+<path d="M 112.0,125.5 l -7,6 l 7,6" stroke="#438d78" fill="none" stroke-width="0.8"/>
+<path d="M 107.5,130.0 l -7,6 l 7,6" stroke="#438d78" fill="none" stroke-width="0.8"/>
+<path d="M 103.0,134.5 l -7,6 l 7,6" stroke="#438d78" fill="none" stroke-width="0.8"/>
+<text x="99.0" y="173.25" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7.5" font-weight="700" fill="#2d475d">Gateway</text>
+<text x="99.0" y="183.75" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7.5" font-weight="400" fill="#2d475d">×G</text>
+<ellipse cx="444.5" cy="169.5" rx="38.0" ry="38.0" fill="#edf7f3" stroke="#438d78" stroke-width=".8"/>
+<ellipse cx="440.0" cy="174.0" rx="38.0" ry="38.0" fill="#edf7f3" stroke="#438d78" stroke-width=".8"/>
+<ellipse cx="435.5" cy="178.5" rx="38.0" ry="38.0" fill="#edf7f3" stroke="#438d78" stroke-width=".8"/>
+<path d="M 448.5,125.5 l -7,6 l 7,6" stroke="#438d78" fill="none" stroke-width="0.8"/>
+<path d="M 444.0,130.0 l -7,6 l 7,6" stroke="#438d78" fill="none" stroke-width="0.8"/>
+<path d="M 439.5,134.5 l -7,6 l 7,6" stroke="#438d78" fill="none" stroke-width="0.8"/>
+<text x="435.5" y="173.25" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7.5" font-weight="700" fill="#2d475d">Q2 Filter</text>
+<text x="435.5" y="183.75" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7.5" font-weight="400" fill="#2d475d">×N</text>
+<ellipse cx="787.5" cy="214.5" rx="38.0" ry="38.0" fill="#edf7f3" stroke="#438d78" stroke-width=".8"/>
+<ellipse cx="783.0" cy="219.0" rx="38.0" ry="38.0" fill="#edf7f3" stroke="#438d78" stroke-width=".8"/>
+<ellipse cx="778.5" cy="223.5" rx="38.0" ry="38.0" fill="#edf7f3" stroke="#438d78" stroke-width=".8"/>
+<path d="M 791.5,170.5 l -7,6 l 7,6" stroke="#438d78" fill="none" stroke-width="0.8"/>
+<path d="M 787.0,175.0 l -7,6 l 7,6" stroke="#438d78" fill="none" stroke-width="0.8"/>
+<path d="M 782.5,179.5 l -7,6 l 7,6" stroke="#438d78" fill="none" stroke-width="0.8"/>
+<text x="778.5" y="218.25" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7.5" font-weight="700" fill="#2d475d">Image Fetcher</text>
+<text x="778.5" y="228.75" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7.5" font-weight="400" fill="#2d475d">×N</text>
+<ellipse cx="418.5" cy="583.5" rx="38.0" ry="38.0" fill="#edf7f3" stroke="#438d78" stroke-width=".8"/>
+<path d="M 422.5,539.5 l -7,6 l 7,6" stroke="#438d78" fill="none" stroke-width="0.8"/>
+<text x="418.5" y="578.25" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7.5" font-weight="700" fill="#2d475d">Client</text>
+<text x="418.5" y="588.75" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7.5" font-weight="400" fill="#2d475d">destinatario</text>
+<ellipse cx="733.5" cy="583.5" rx="38.0" ry="38.0" fill="#edf7f3" stroke="#438d78" stroke-width=".8"/>
+<path d="M 737.5,539.5 l -7,6 l 7,6" stroke="#438d78" fill="none" stroke-width="0.8"/>
+<text x="733.5" y="575.1" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="6" font-weight="700" fill="#2d475d">TCP Handler</text>
+<text x="733.5" y="583.5" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="6" font-weight="400" fill="#2d475d">del Gateway</text>
+<text x="733.5" y="591.9" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="6" font-weight="400" fill="#2d475d">client_id → socket</text>
+<ellipse cx="1055.5" cy="583.5" rx="38.0" ry="38.0" fill="#edf7f3" stroke="#438d78" stroke-width=".8"/>
+<path d="M 1059.5,539.5 l -7,6 l 7,6" stroke="#438d78" fill="none" stroke-width="0.8"/>
+<text x="1055.5" y="578.25" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7.5" font-weight="700" fill="#2d475d">Gateway</text>
+<text x="1055.5" y="588.75" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7.5" font-weight="400" fill="#2d475d">Collector</text>
+<ellipse cx="973.5" cy="223.5" rx="38.0" ry="38.0" fill="#eaf3fd" stroke="#368be6" stroke-width=".8"/>
+<path d="M 927.5,213.5 V 233.5 M 927.5,223.5 H 935.5" stroke="#368be6" fill="none" stroke-width="0.8"/>
+<text x="973.5" y="218.25" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7.5" font-weight="700" fill="#2d475d">HTTP(S)</text>
+<text x="973.5" y="228.75" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7.5" font-weight="400" fill="#2d475d">image_ref</text>
+<ellipse cx="579.5" cy="583.5" rx="38.0" ry="38.0" fill="#eaf3fd" stroke="#368be6" stroke-width=".8"/>
+<path d="M 533.5,573.5 V 593.5 M 533.5,583.5 H 541.5" stroke="#368be6" fill="none" stroke-width="0.8"/>
+<text x="579.5" y="578.25" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7.5" font-weight="700" fill="#2d475d">Socket</text>
+<text x="579.5" y="588.75" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7.5" font-weight="400" fill="#2d475d">TCP/IP</text>
+<ellipse cx="894.5" cy="583.5" rx="38.0" ry="38.0" fill="#fff5db" stroke="#cc980c" stroke-width=".8"/>
+<path d="M 856.5,625.5 H 932.5" stroke="#cc980c" fill="none" stroke-width="0.8"/>
+<text x="894.5" y="575.1" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="6" font-weight="700" fill="#2d475d">Sesiones</text>
+<text x="894.5" y="583.5" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="6" font-weight="400" fill="#2d475d">client_id → socket</text>
+<text x="894.5" y="591.9" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="6" font-weight="400" fill="#2d475d">EOF por réplica</text>
+<path d="M 201.5,155.5 H 333.5 C 341.5,155.5 341.5,202.5 333.5,202.5 H 201.5 Z" stroke="#8582b4" fill="#f0f1f9" stroke-width="0.8"/>
+<ellipse cx="201.5" cy="179.0" rx="6" ry="23.5" fill="#f0f1f9" stroke="#8582b4" stroke-width=".8"/>
+<text x="267.0" y="170.04" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="6.4" font-weight="700" fill="#2d475d">article_sections</text>
+<text x="267.0" y="179.0" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="6.4" font-weight="400" fill="#2d475d">language, name, url,</text>
+<text x="267.0" y="187.96" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="6.4" font-weight="400" fill="#2d475d">date_modified, image, sections</text>
+<path d="M 544.5,155.5 H 665.5 C 673.5,155.5 673.5,202.5 665.5,202.5 H 544.5 Z" stroke="#8582b4" fill="#f0f1f9" stroke-width="0.8"/>
+<ellipse cx="544.5" cy="179.0" rx="6" ry="23.5" fill="#f0f1f9" stroke="#8582b4" stroke-width=".8"/>
+<text x="604.5" y="170.04" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="6.4" font-weight="700" fill="#2d475d">image_downloads_&lt;i&gt;</text>
+<text x="604.5" y="179.0" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="6.4" font-weight="400" fill="#2d475d">name, url, image_ref</text>
+<text x="604.5" y="187.96" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="6.4" font-weight="400" fill="#2d475d">1 cola por Fetcher</text>
+<path d="M 1156.5,560.5 H 1282.5 C 1290.5,560.5 1290.5,606.5 1282.5,606.5 H 1156.5 Z" stroke="#8582b4" fill="#f0f1f9" stroke-width="0.8"/>
+<ellipse cx="1156.5" cy="583.5" rx="6" ry="23.0" fill="#f0f1f9" stroke="#8582b4" stroke-width=".8"/>
+<text x="1219.0" y="570.06" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="6.4" font-weight="700" fill="#2d475d">results_&lt;gatewayID&gt;</text>
+<text x="1219.0" y="579.02" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="6.4" font-weight="400" fill="#2d475d">Q2: image_id, seq, last</text>
+<text x="1219.0" y="587.98" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="6.4" font-weight="400" fill="#2d475d">bytes + metadatos</text>
+<text x="1219.0" y="596.94" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="6.4" font-weight="400" fill="#2d475d">type, client_id, query_id</text>
+<path d="M 716.5,333.5 H 832.5 L 840.5,341.5 V 373.5 H 716.5 Z" stroke="#b88837" fill="#fff7e9" stroke-width="0.8"/>
+<path d="M 832.5,333.5 V 341.5 H 840.5" stroke="#b88837" fill="none" stroke-width="0.8"/>
+<text x="778.5" y="344.54" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="6.4" font-weight="700" fill="#2d475d">Temporal por imagen</text>
+<text x="778.5" y="353.5" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="6.4" font-weight="400" fill="#2d475d">client_id, image_id</text>
+<text x="778.5" y="362.46" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="6.4" font-weight="400" fill="#2d475d">imagen completa</text>
+<ellipse cx="1209" cy="198" rx="6" ry="6" fill="white" stroke="#61758b" stroke-width=".8"/>
+<path d="M 1209,204 V 225 M 1196,212 H 1222 M 1209,225 l -12,12 M 1209,225 l 12,12" stroke="#61758b" fill="none" stroke-width="0.75"/>
+<text x="1209" y="250.8" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="6" font-weight="700" fill="#2d475d">Wikimedia</text>
+<text x="1209" y="259.2" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="6" font-weight="400" fill="#2d475d">servicio externo</text>
+<rect x="144.75234375" y="162.46" width="43.4953125" height="10.799999999999999" fill="#f8fbff"/>
+<text x="166.5" y="168.5" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7" font-weight="400" fill="#2d475d">Lotes + EOF</text>
+<rect x="344.18046875" y="162.96" width="45.6390625" height="10.799999999999999" fill="#f8fbff"/>
+<text x="367" y="169.0" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7" font-weight="400" fill="#2d475d">Reparte lotes</text>
+<rect x="468.278125" y="141.06" width="81.44375" height="20.599999999999998" fill="#f8fbff"/>
+<text x="509" y="147.1" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7" font-weight="400" fill="#2d475d">Biografías ≤ 2020</text>
+<text x="509" y="156.9" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7" font-weight="400" fill="#2d475d">Con imagen; round-robin</text>
+<rect x="672.35078125" y="186.06" width="29.2984375" height="20.599999999999998" fill="#f8fbff"/>
+<text x="687" y="192.1" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7" font-weight="400" fill="#2d475d">Pedidos</text>
+<text x="687" y="201.9" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7" font-weight="400" fill="#2d475d">+ EOF</text>
+<rect x="744.3171875" y="288.35" width="67.365625" height="22.0" fill="#ffffff"/>
+<text x="778" y="294.75" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7.5" font-weight="400" fill="#2d475d">Temporal completo</text>
+<text x="778" y="305.25" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7.5" font-weight="400" fill="#2d475d">Borra tras enviar</text>
+<rect x="849.1171875" y="207.6" width="57.765625" height="11.5" fill="#ffffff"/>
+<text x="878" y="214.0" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7.5" font-weight="400" fill="#2d475d">Descarga HTTP</text>
+<rect x="1065.8953125" y="207.6" width="78.209375" height="11.5" fill="white"/>
+<text x="1105" y="214.0" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7.5" font-weight="400" fill="#2d475d">Bytes / error de origen</text>
+<rect x="1065.07109375" y="449.64" width="113.8578125" height="23.4" fill="white"/>
+<text x="1122" y="456.4" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="8" font-weight="400" fill="#2d475d">Chunks o resultado sin imagen</text>
+<text x="1122" y="467.6" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="8" font-weight="400" fill="#2d475d">EOF sin descargas pendientes</text>
+<rect x="1095.9984375" y="557.844" width="52.003125" height="20.04" fill="#ffffff"/>
+<text x="1122.0" y="563.74" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="6.8" font-weight="400" fill="#2d475d">N Fetchers</text>
+<text x="1122.0" y="573.26" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="6.8" font-weight="400" fill="#2d475d">fetcher_id único</text>
+<rect x="719.40703125" y="630.1" width="196.1859375" height="11.5" fill="#fafcff"/>
+<text x="817.5" y="636.5" text-anchor="middle" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7.5" font-weight="400" fill="#2d475d">Envía resultados; espera ACK · Fin al cerrar las consultas</text>
+<text x="36" y="840.0" text-anchor="start" dominant-baseline="central" font-family="Liberation Sans,Arial,sans-serif" font-size="7.5" font-weight="400" fill="#627e99">TCP Handler y Collector pertenecen al mismo Gateway. Retorno: results_&lt;gatewayID&gt; → Collector → socket de la sesión.</text>
+</svg>

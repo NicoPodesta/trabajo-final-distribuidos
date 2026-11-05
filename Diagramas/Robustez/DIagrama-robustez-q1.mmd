@@ -1,41 +1,32 @@
+%% Distribución de nodos conservada respecto de la versión original.
+%% SVG/PNG conservan las posiciones; Mermaid usa distribución automática.
 %% Q1 · artículos en inglés hasta 2020
-%% Fuente semántica; SVG y PNG usan una distribución fija para conservar legibilidad.
-%% Réplicas: se conserva el diseño previsto; la coordinación de cierre aún tiene pendientes.
-%% Parser, TCP Handler y Collector pertenecen al mismo proceso Gateway; se muestran en dos vistas.
 flowchart LR
-    subgraph RETURN["Retorno al cliente"]
-    RQ@{ shape: h-cyl, label: "results_&lt;gatewayID&gt;<br/>Q1: url, date_modified<br/>type, client_id, query_id" }
-    subgraph GATEWAY["Gateway ×G · retorno; mismo proceso que la proyección"]
-    GW(("Gateway<br/>Collector"))
-    SESSION(("Sesiones<br/>client_id → socket<br/>EOF por consulta"))
-    RX(("TCP Handler<br/>del Gateway<br/>client_id → socket"))
+    subgraph GROUP2["Gateway ×G · retorno de resultados"]
     API(("Socket<br/>TCP/IP"))
+    RX(("TCP Handler<br/>del Gateway<br/>client_id → socket"))
+    SESSION(("Sesiones<br/>client_id → socket<br/>EOF por réplica"))
+    GW(("Gateway<br/>Collector"))
     end
-    end
-    P(("Parser /<br/>Projector<br/>en Gateway ×G"))
-    Q1Q@{ shape: h-cyl, label: "article_dates<br/>language, url,<br/>date_modified<br/>1 cola · N consumidores" }
+    P(("Gateway<br/>×G"))
     Q1(("Q1 Filter<br/>×N"))
     C(("Client<br/>destinatario"))
-    P --> Q1Q
-    Q1Q --> Q1
-    RQ --> GW
+    Q1Q@{ shape: h-cyl, label: "article_dates<br/>language, url,<br/>date_modified<br/>1 cola · N consumidores" }
+    RQ@{ shape: h-cyl, label: "results_&lt;gatewayID&gt;<br/>Q1: url, date_modified<br/>type, client_id, query_id" }
+    P -->|"Lotes + EOF"| Q1Q
+    Q1Q -->|"Reparte lotes"| Q1
+    Q1 -->|"Inglés ≤ 2020 → URL y fecha<br/>EOF tras cierre coordinado"| RQ
+    RQ -->|"N filtros<br/>filter_id único"| GW
     GW --- SESSION
-    RX --- SESSION
+    SESSION --- RX
     RX --- API
-    GW -->|escritura por sesión| API
     API --> C
-    Q1 --> RQ
-    classDef control fill:#edf7f3,stroke:#377964;
-    class P,Q1,GW,RX,C control;
-    classDef boundary fill:#eaf3fd,stroke:#397bac;
+    GW -->|"Envía resultados; espera ACK · Fin al cerrar las consultas"| API
+    classDef control fill:#edf7f3,stroke:#438d78,color:#2d475d;
+    class P,Q1,C,RX,GW control;
+    classDef boundary fill:#eaf3fd,stroke:#368be6,color:#2d475d;
     class API boundary;
-    classDef entity fill:#fff5db,stroke:#b6903e;
+    classDef entity fill:#fff5db,stroke:#cc980c,color:#2d475d;
     class SESSION entity;
-    classDef queue fill:#f0f1f9,stroke:#737d9e;
+    classDef queue fill:#f0f1f9,stroke:#8582b4,color:#2d475d;
     class Q1Q,RQ queue;
-    classDef exchange fill:#f0f1f9,stroke:#737d9e;
-    classDef file fill:#fff7e9,stroke:#ad8242;
-    classDef actor fill:white,stroke:#526579;
-%% Recibe: La proyección del Gateway publica lotes de language, url y date_modified. La cola reparte los lotes entre N filtros.
-%% Emite: Publica las coincidencias del lote: url y date_modified. Un lote sin coincidencias no publica resultados ni EOF.
-%% Cuándo termina: Hoy Q1 publica EOF al recibir el fin de entrada. Todavía falta coordinar el cierre entre réplicas de Q1; Gateway registra EOF por consulta.

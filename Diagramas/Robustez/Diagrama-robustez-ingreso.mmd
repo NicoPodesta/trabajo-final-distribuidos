@@ -1,51 +1,44 @@
-%% Ingreso · archivos, clientes y Parser
-%% Fuente semántica; SVG y PNG usan una distribución fija para conservar legibilidad.
-%% Cierres: se conserva el diseño de réplicas; la coordinación de Q1 todavía está pendiente.
+%% Distribución de nodos conservada respecto de la versión original.
+%% SVG/PNG conservan las posiciones; Mermaid usa distribución automática.
+%% Ingreso · archivos, clientes y Gateway
 flowchart LR
-    F1["Archivo de entrada<br/>artículos"]
-    C1(("Client 1<br/>lee y envía"))
-    FC["Archivo de entrada<br/>artículos"]
-    CC(("Client N<br/>lee y envía"))
-    LB(("Load Balancer<br/>round-robin<br/>asigna Gateway"))
-    subgraph GATEWAY["Gateway ×G · Handler, Collector y proyección en un proceso"]
-    subgraph TCP["Recepción TCP"]
+    subgraph GROUP1["Gateway ×G · un proceso por réplica"]
     API(("Socket<br/>TCP/IP"))
-    RX(("TCP Handler<br/>por conexión"))
-    CONN(("Conexiones<br/>client_id ↔ socket<br/>memoria de sesión"))
-    end
-    subgraph COLLECTOR["Collector · estado de sesión"]
+    RX(("TCP Handler<br/>del Gateway"))
     GW(("Gateway<br/>Collector"))
+    CONN(("Conexiones<br/>client_id ↔ socket<br/>memoria de sesión"))
     SESSION(("Sesiones<br/>resultados y fin<br/>client_id → destino"))
     end
-    P(("Parser /<br/>Projector<br/>dentro del Handler"))
-    end
+    C1(("Client 1<br/>lee y envía"))
+    CC(("Client N<br/>lee y envía"))
+    LB(("Load Balancer<br/>round-robin<br/>asigna Gateway"))
     RQ@{ shape: h-cyl, label: "results_&lt;gatewayID&gt;<br/>type, client_id, query_id<br/>resultados / EOF" }
-    F1 --> C1
-    FC --> CC
-    C1 <-->|1. conexión inicial / dirección del Gateway| LB
-    C1 <-->|2. conexión TCP directa| API
-    CC <-->|1. conexión inicial / dirección del Gateway| LB
-    CC <-->|2. conexión TCP directa| API
-    API <--> RX
-    RX -->|proyección del lote| P
-    RX --- CONN
-    GW --- SESSION
-    RQ --> GW
-    GW -->|escritura por sesión| API
-    classDef control fill:#edf7f3,stroke:#377964;
-    class LB,C1,CC,RX,GW,P control;
-    classDef boundary fill:#eaf3fd,stroke:#397bac;
+    F1["Archivo de entrada<br/>artículos"]
+    FC["Archivo de entrada<br/>artículos"]
+    DATES@{ shape: h-cyl, label: "article_dates<br/>Q1" }
+    SECTIONS@{ shape: h-cyl, label: "article_sections<br/>Q2" }
+    ABSTRACTS@{ shape: h-cyl, label: "abstracts<br/>Q3 · Q4 · Q5" }
+    F1 -->|"Artículos"| C1
+    FC -->|"Lotes ≤ 100"| CC
+    C1 <-->|"Asigna Gateway<br/>Round-robin"| LB
+    CC <--> LB
+    C1 <-->|"TCP directo<br/>Lotes / resultados"| API
+    CC <--> API
+    API <-->|"Lotes / ACK"| RX
+    RX ---|"Registra client_id<br/>Asocia socket"| CONN
+    GW ---|"Cuenta EOF<br/>por consulta y réplica"| SESSION
+    RQ -->|"Busca sesión<br/>según client_id"| GW
+    GW -->|"Resultados → espera ACK<br/>Fin al cerrar las consultas"| API
+    RX -->|"Publica lotes + EOF"| DATES
+    RX --> SECTIONS
+    RX --> ABSTRACTS
+    classDef control fill:#edf7f3,stroke:#438d78,color:#2d475d;
+    class C1,RX,GW,CC,LB control;
+    classDef boundary fill:#eaf3fd,stroke:#368be6,color:#2d475d;
     class API boundary;
-    classDef entity fill:#fff5db,stroke:#b6903e;
+    classDef entity fill:#fff5db,stroke:#cc980c,color:#2d475d;
     class CONN,SESSION entity;
-    classDef queue fill:#f0f1f9,stroke:#737d9e;
-    class RQ queue;
-    classDef exchange fill:#f0f1f9,stroke:#737d9e;
-    classDef file fill:#fff7e9,stroke:#ad8242;
+    classDef queue fill:#f0f1f9,stroke:#8582b4,color:#2d475d;
+    class RQ,DATES,SECTIONS,ABSTRACTS queue;
+    classDef file fill:#fff7e9,stroke:#b88837,color:#2d475d;
     class F1,FC file;
-    classDef actor fill:white,stroke:#526579;
-%% Conexión: Primero, Load Balancer devuelve la dirección de un Gateway por round-robin. El cliente cierra esa conexión y abre una sesión TCP directa con el Gateway asignado. Handler, Collector y proyección viven en ese proceso.
-%% Identidad y resultados: Handler asigna client_id = gatewayID + secuencia local. Las sesiones mantienen socket y cierre por consulta. Collector consume results_<gatewayID> y escribe por la sesión, con mutex compartido con los ACK.
-%% Hasta Parser y cierre: Handler proyecta los lotes directamente hacia las colas de cada rama. Se conserva la perspectiva de réplicas; la coordinación del cierre de Q1 sigue pendiente.
-
-%% Asignación inicial: El cliente se conecta al Load Balancer, recibe GatewayAssignment con la dirección elegida por round-robin y cierra esa conexión. Luego abre la sesión TCP directamente con el Gateway; artículos y resultados no pasan por el balanceador.

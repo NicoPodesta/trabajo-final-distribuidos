@@ -1,55 +1,44 @@
+%% Distribución de nodos conservada respecto de la versión original.
+%% SVG/PNG conservan las posiciones; Mermaid usa distribución automática.
 %% Q4 · conteos por word y top 20 global
-%% Fuente semántica; SVG y PNG usan una distribución fija para conservar legibilidad.
-%% Réplicas: se conserva el diseño previsto; la coordinación de cierre aún tiene pendientes.
-%% Parser, TCP Handler y Collector pertenecen al mismo proceso Gateway; se muestran en dos vistas.
 flowchart LR
-    subgraph COUNTER["Q4 · por partición"]
+    subgraph GROUP1["Q4 · por partición"]
     Q4C(("Q4 Word<br/>Counter · ×K"))
-    F4["estado_q4/segmentos<br/>word, count"]
+    F4(("Conteos Q4<br/>word → count<br/>en memoria"))
     end
-    subgraph RETURN["Retorno al cliente"]
-    RQ@{ shape: h-cyl, label: "results_&lt;gatewayID&gt;<br/>Q4: [(word, count)]<br/>type, client_id, query_id" }
-    subgraph GATEWAY["Gateway ×G · retorno; mismo proceso que la proyección"]
-    GW(("Gateway<br/>Collector"))
-    SESSION(("Sesiones<br/>client_id → socket<br/>EOF por consulta"))
-    RX(("TCP Handler<br/>del Gateway<br/>client_id → socket"))
+    subgraph GROUP3["Gateway ×G · retorno de resultados"]
     API(("Socket<br/>TCP/IP"))
+    RX(("TCP Handler<br/>del Gateway<br/>client_id → socket"))
+    SESSION(("Sesiones<br/>client_id → socket<br/>EOF por réplica"))
+    GW(("Gateway<br/>Collector"))
     end
-    end
-    P(("Parser /<br/>Projector<br/>en Gateway ×G"))
-    TQ@{ shape: h-cyl, label: "abstracts<br/>url, language,<br/>date_modified, abstract<br/>1 cola · N consumidores" }
+    P(("Gateway<br/>×G"))
     T(("Tokenizer<br/>preagrega por lote<br/>×N"))
-    WQ@{ shape: h-cyl, label: "word_counts_&lt;i&gt;<br/>word, count por lote<br/>K colas · hash(word) % K" }
-    TOPQ@{ shape: h-cyl, label: "partial_top20<br/>[(word, count)]<br/>hasta 20 por partición" }
     Q4M(("Q4 Top 20<br/>Merger · ×1"))
     C(("Client<br/>destinatario"))
-    P --> TQ
-    TQ --> T
-    T --> WQ
-    WQ --> Q4C
-    Q4C <--> F4
-    Q4C --> TOPQ
-    TOPQ --> Q4M
-    RQ --> GW
+    TQ@{ shape: h-cyl, label: "abstracts<br/>url, language,<br/>date_modified, abstract<br/>1 cola · N consumidores" }
+    WQ@{ shape: h-cyl, label: "word_counts_&lt;k&gt;<br/>word, count por lote<br/>K colas · fnv32a(word) % K" }
+    TOPQ@{ shape: h-cyl, label: "partial_top20<br/>[(word, count)]<br/>hasta 20 por partición" }
+    RQ@{ shape: h-cyl, label: "results_&lt;gatewayID&gt;<br/>Q4: [(word, count)]<br/>type, client_id, query_id" }
+    P -->|"Lotes + EOF"| TQ
+    TQ -->|"Normaliza<br/>abstracts"| T
+    T -->|"Cuenta abstracts<br/>Reparte por hash"| WQ
+    WQ -->|"Datos / EOF"| Q4C
+    Q4C <-->|"Suma por palabra"| F4
+    Q4C -->|"Top parcial<br/>tras T EOF"| TOPQ
+    TOPQ -->|"Tops + EOF"| Q4M
+    Q4M -->|"Top global tras K EOF<br/>count ↓; word ↑"| RQ
+    RQ -->|"1 EOF<br/>del Merger"| GW
     GW --- SESSION
-    RX --- SESSION
+    SESSION --- RX
     RX --- API
-    GW -->|escritura por sesión| API
     API --> C
-    Q4M --> RQ
-    classDef control fill:#edf7f3,stroke:#377964;
-    class P,T,Q4C,Q4M,GW,RX,C control;
-    classDef boundary fill:#eaf3fd,stroke:#397bac;
+    GW -->|"Envía resultados; espera ACK · Fin al cerrar las consultas"| API
+    classDef control fill:#edf7f3,stroke:#438d78,color:#2d475d;
+    class P,T,Q4C,Q4M,C,RX,GW control;
+    classDef boundary fill:#eaf3fd,stroke:#368be6,color:#2d475d;
     class API boundary;
-    classDef entity fill:#fff5db,stroke:#b6903e;
-    class SESSION entity;
-    classDef queue fill:#f0f1f9,stroke:#737d9e;
+    classDef entity fill:#fff5db,stroke:#cc980c,color:#2d475d;
+    class SESSION,F4 entity;
+    classDef queue fill:#f0f1f9,stroke:#8582b4,color:#2d475d;
     class TQ,WQ,TOPQ,RQ queue;
-    classDef exchange fill:#f0f1f9,stroke:#737d9e;
-    classDef file fill:#fff7e9,stroke:#ad8242;
-    class F4 file;
-    classDef actor fill:white,stroke:#526579;
-%% Conteos preagregados por lote: Tokenizer emite (word, k) por cliente y lote: k cuenta abstracts, no repeticiones. Los lotes aportan incrementos disjuntos. Counter suma k por palabra. Se conservan los segmentos del diseño; actualmente los conteos están en memoria.
-%% Top global: Merger recibe el top 20 de cada partición y elige las 20 words más frecuentes del conjunto. Todas las particiones usan el mismo desempate.
-%% Cuándo termina: Merger espera la lista de cada partición, también su EOF si no recibió words. Después envía el top global y el fin de Q4.
-%% k cuenta abstracts del lote que contienen word; cada abstract aporta como máximo 1. Counter suma k, no 1 por mensaje.
