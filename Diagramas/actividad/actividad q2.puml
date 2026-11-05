@@ -1,34 +1,40 @@
-@startuml image-fetcher
-title Actividad · Image Fetcher · Pipeline por réplica
+@startuml
+skinparam shadowing false
 
+title Actividad · Q2 · Filtrado, Descarga y Publicación de Imágenes
+
+|Q2 Filter|
 start
+:Llega batch de artículos (`article_sections`);
+:Filtrar artículos históricos (hasta 2020 inclusive)\ncon sección biografía e imagen referenciada;
 
-while (¿Mensajes de entrada en cola?) is (pedidos / EOFs)
-  if (¿Es mensaje de EOF de un filtro?) then (sí)
-    :Registrar EOF del filtro;
-    if (¿Llegaron EOFs de todos los filtros y no hay pendientes?) then (sí)
-      :Emitir EOF de Q2 hacia el Gateway;
-      :Confirmar último EOF;
-    endif
-  else (pedido de imagen)
-    :Reservar cupo de descarga;
-    if (¿Servidor en pausa por HTTP 429?) then (sí)
-      :Resolver de inmediato sin imagen;
-    else (no)
-      :Descargar imagen a archivo temporal\n(pool de descargadores concurrentes);
-      if (¿Descarga exitosa?) then (sí)
-        :Leer archivo local y fragmentar en chunks de 64 KiB;
-        :Emitir chunks numerados y EOF de imagen por RabbitMQ;
-        :Borrar archivo temporal local;
-      else (error 404 / fallo de red)
-        :Emitir registro vacío (nombre y URL sin imagen);
-      endif
-    endif
-    :Liberar cupo y confirmar mensaje;
+if (¿Hay artículos que califican?) then (sí)
+  :Generar pedidos de descarga (nombre, URL, imagen);
+  :Distribuir pedidos por turno (*round-robin*)\nentre las colas de los fetchers (`image_downloads_[i]`);
+else (no)
+  :No se generan pedidos de descarga;
+endif
+
+:Contabilizar batch procesado y confirmar mensaje;
+
+|Image Fetcher|
+:Consumir pedido desde `image_downloads_[i]`;
+:Reservar cupo en el pool de descargadores concurrentes;
+
+if (¿Host en pausa por rate limit HTTP 429?) then (sí)
+  :Resolver de inmediato sin imagen;
+else (no)
+  :Descargar imagen a archivo temporal en disco\n(timeout 5s, hasta 3 reintentos);
+  if (¿Descarga exitosa?) then (sí)
+    :Leer archivo local y fragmentar en chunks de hasta 64 KiB;
+    :Emitir chunks numerados y EOF de imagen hacia el Gateway;
+    :Eliminar archivo temporal local;
+  else (error 404 o fallo de red)
+    :Emitir fila CSV vacía (nombre y URL sin imagen);
   endif
-endwhile (cierre ordenado / SIGTERM)
+endif
 
-:Cerrar conexiones y limpiar temporales remanentes;
+:Liberar cupo del pool y confirmar mensaje (ACK);
 stop
 
 @enduml
