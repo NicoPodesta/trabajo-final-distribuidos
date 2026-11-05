@@ -17,9 +17,10 @@ type Q2ArticleItem struct {
 }
 
 type Q2ArticlesMessage struct {
-	Type     MsgType         `json:"type"`
-	ClientID string          `json:"client_id"`
-	Records  []Q2ArticleItem `json:"records,omitempty"`
+	Type         MsgType         `json:"type"`
+	ClientID     string          `json:"client_id"`
+	Records      []Q2ArticleItem `json:"records,omitempty"`
+	TotalBatches *uint64         `json:"total_batches,omitempty"`
 }
 
 func (m *Q2ArticlesMessage) IsEOF() bool {
@@ -59,6 +60,12 @@ func SerializeQ2Articles(clientID string, records []Q2ArticleItem) (*middleware.
 
 func SerializeQ2ArticlesEOF(clientID string) (*middleware.Message, error) {
 	return NewQ2ArticlesEOF(clientID).Serialize()
+}
+
+func SerializeQ2ArticlesCountedEOF(clientID string, totalBatches uint64) (*middleware.Message, error) {
+	msg := NewQ2ArticlesEOF(clientID)
+	msg.TotalBatches = &totalBatches
+	return msg.Serialize()
 }
 
 func DeserializeQ2Articles(message *middleware.Message) (*Q2ArticlesMessage, error) {

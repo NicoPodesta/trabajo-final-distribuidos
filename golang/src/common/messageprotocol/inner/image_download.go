@@ -17,6 +17,7 @@ type ImageDownloadMessage struct {
 	Type     MsgType               `json:"type"`
 	ClientID string                `json:"client_id"`
 	Request  *ImageDownloadRequest `json:"request,omitempty"`
+	FilterID *int                  `json:"filter_id,omitempty"`
 }
 
 func (m *ImageDownloadMessage) IsEOF() bool {
@@ -41,6 +42,10 @@ func SerializeImageDownload(clientID string, request ImageDownloadRequest) (*mid
 
 func SerializeImageDownloadsEOF(clientID string) (*middleware.Message, error) {
 	return (&ImageDownloadMessage{Type: MsgEOF, ClientID: clientID}).Serialize()
+}
+
+func SerializeImageDownloadsProducerEOF(clientID string, filterID int) (*middleware.Message, error) {
+	return (&ImageDownloadMessage{Type: MsgEOF, ClientID: clientID, FilterID: &filterID}).Serialize()
 }
 
 func DeserializeImageDownload(message *middleware.Message) (*ImageDownloadMessage, error) {

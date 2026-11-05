@@ -79,6 +79,7 @@ cd golang && make up
 
 ### Q2
 
+- Se preparan cierres explícitos con `total_batches` para los lotes de entrada y `filter_id` para identificar al filtro que terminó de publicar pedidos. Cero se distingue de un campo ausente. Los mensajes actuales se conservan; la integración con Gateway, filtros y Fetcher queda pendiente.
 - El filtro consume batches de `article_sections` y selecciona artículos con año de modificación hasta 2020 inclusive (UTC) y una sección `biography` o `biographie`, ignorando mayúsculas y espacios en los extremos del nombre de la sección.
 - Los artículos sin imagen se omiten y el procesamiento continúa, sin tratarlos como error.
 - Cada coincidencia con imagen genera un pedido individual en `image_downloads`, con nombre, URL del artículo e `image_ref`. El Fetcher descarga directamente esa imagen a un archivo temporal y luego publica chunks de hasta 64 KiB con la configuración actual.
