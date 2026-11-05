@@ -46,6 +46,14 @@ func loadConfig() (gateway.GatewayConfig, error) {
 		return gateway.GatewayConfig{}, err
 	}
 
+	q3JoinAmount, err := config.OptionalInt("Q3_JOIN_AMOUNT", 1)
+	if err != nil {
+		return gateway.GatewayConfig{}, err
+	}
+	if q3JoinAmount < 1 {
+		return gateway.GatewayConfig{}, fmt.Errorf("Q3_JOIN_AMOUNT must be positive")
+	}
+
 	q1FilterAmount, err := config.OptionalInt("Q1_FILTER_AMOUNT", 1)
 	if err != nil {
 		return gateway.GatewayConfig{}, err
@@ -68,7 +76,7 @@ func loadConfig() (gateway.GatewayConfig, error) {
 		MOMHost:         momHost,
 		MOMPort:         momPort,
 		ExpectedQueries: expectedQueries,
-		ExpectedEOFs:    map[inner.QueryID]int{inner.Q1: q1FilterAmount, inner.Q2: q2FetcherAmount, inner.Q5: q5FilterAmount},
+		ExpectedEOFs:    map[inner.QueryID]int{inner.Q1: q1FilterAmount, inner.Q2: q2FetcherAmount, inner.Q3: q3JoinAmount, inner.Q5: q5FilterAmount},
 	}, nil
 }
 
