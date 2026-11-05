@@ -99,8 +99,7 @@ cd golang && make up
 - Cada fetcher usa tres descargadores por defecto, configurables. Toman pedidos de un canal compartido: cada pedido lo descarga uno, mientras el publicador puede enviar otra imagen.
 - Descargan a archivos temporales y entregan al publicador la ruta y los metadatos. Las imágenes no se pasan completas por memoria.
 - El publicador envía fragmentos de hasta 64 KiB, borra el temporal y confirma el pedido. Esa confirmación indica publicación, no que el cliente ya guardó la imagen.
-- Cada descarga tiene un presupuesto de cinco segundos y hasta tres reintentos. Los errores 404 y 429 no se reintentan.
-- Ante un 429, los descargadores del mismo fetcher comparten una pausa para ese servidor: respetan el tiempo indicado o usan cinco segundos. Durante la pausa, los nuevos pedidos a ese servidor se resuelven sin imagen; la pausa no se comparte entre fetchers.
+- Cada descarga tiene un presupuesto de cinco segundos y hasta tres reintentos. Los errores 404 no se reintentan.
 - Si falla el origen, se publica el nombre y la URL para conservar la fila del CSV sin imagen. Los errores internos detienen el fetcher, limpian temporales y rechazan el trabajo pendiente.
 - El cliente guarda los fragmentos en un archivo parcial y lo convierte en imagen completa al recibir el último. Al cerrar elimina las incompletas y avisa si el cierre final llegó con imágenes pendientes.
 
