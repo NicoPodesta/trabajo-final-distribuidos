@@ -175,7 +175,7 @@ YAML
     worker "q2_filter_${id}" q2filter "Q2_FILTER_ID=${id}" "Q2_FILTER_AMOUNT=${q2_filter_count}" 'Q2_PREFETCH=${Q2_PREFETCH:-4}' "Q2_FETCHER_AMOUNT=${q2_fetcher_count}"
   done
   for id in $(seq 0 $((q2_fetcher_count - 1))); do
-    worker "q2_image_fetcher_${id}" q2imagefetcher CHUNK_SIZE=65536 'Q2_MAX_PENDING_REQUESTS=${Q2_MAX_PENDING_REQUESTS:-4}' "Q2_FILTER_AMOUNT=${q2_filter_count}" "Q2_FETCHER_ID=${id}" "Q2_FETCHER_AMOUNT=${q2_fetcher_count}"
+    worker "q2_image_fetcher_${id}" q2imagefetcher CHUNK_SIZE=65536 'Q2_MAX_PENDING_REQUESTS=${Q2_MAX_PENDING_REQUESTS:-4}' 'Q2_DOWNLOAD_WORKERS=${Q2_DOWNLOAD_WORKERS:-3}' "Q2_FILTER_AMOUNT=${q2_filter_count}" "Q2_FETCHER_ID=${id}" "Q2_FETCHER_AMOUNT=${q2_fetcher_count}"
   done
 
   for id in $(seq 0 $((tokenizer_count - 1))); do

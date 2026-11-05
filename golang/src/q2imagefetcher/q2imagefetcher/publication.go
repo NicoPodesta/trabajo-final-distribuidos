@@ -7,6 +7,7 @@ import (
 	"log/slog"
 
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
+	"trabajo-final-distribuidos/common/result"
 )
 
 // Solo la goroutine de publicación modifica este estado y usa el Publisher
@@ -107,8 +108,21 @@ func (f *Fetcher) resolveImage(ctx context.Context, event pipelineEvent, state *
 		if !isImageSourceError(event.err) {
 			return event.err
 		}
-		slog.Warn("Failed to download image from source, skipping", "clientID", event.job.clientID,
+		slog.Warn("Failed to download image from source, publishing result without image", "clientID", event.job.clientID,
 			"imageID", event.job.imageID, "url", event.job.request.ImageRef, "err", event.err)
+		msg, err := inner.SerializeQ2Results(event.job.clientID, []result.Q2Result{{
+			Name: event.job.request.Name,
+			Url:  event.job.request.Url,
+		}})
+		if err != nil {
+			return err
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if err := f.publisher.Publish(event.job.clientID, *msg); err != nil {
+			return err
+		}
 	} else {
 		slog.Debug("Starting Q2 image publication", "clientID", event.job.clientID, "imageID", event.job.imageID)
 		if err := f.publishDownloadedImage(ctx, event.job.clientID, event.job.imageID, event.job.request, event.image); err != nil {
