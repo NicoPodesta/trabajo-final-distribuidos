@@ -124,17 +124,26 @@ Complementa a los diagramas en `Diagramas/Robustez/DIagrama-robustez-q1.png` a `
 
 ### 4.3. Diagrama de Paquetes
 
-Complementa al diagrama en `Diagramas/Paquetes/diagrama-paquetes..png`.
+Complementa al [diagrama de paquetes](Diagramas/Paquetes/diagrama-paquetes..png), cuya fuente editable está en [Mermaid](Diagramas/Paquetes/diagrama-paquetes.mmd). Las consultas se presentan como agrupaciones lógicas identificadas por **Q1, Q2, Q3, Q4 y Q5**, con los nombres de sus etapas. Las flechas punteadas indican dependencias de código; la relación entre aplicaciones y paquetes compartidos resume los usos de cada componente.
 
 El código en Go se organiza desacoplando responsabilidades:
 
-* `client/`: Lectura de archivos Parquet, conexión TCP y persistencia de resultados en archivos CSV.
+* **Cliente** (`client/`): Lectura de archivos Parquet, envío de lotes por TCP, recepción de resultados, escritura de CSV y reconstrucción de imágenes.
 * `loadbalancer/`: Lógica de asignación y balanceo dinámico de gateways.
 * `gateway/`: Manejo de sesiones, TCP handler, collector de resultados y serialización.
 * `tokenizer/`: Limpieza de texto, remoción de stopwords, cálculo de métricas y sharding.
+* **Q1 - Filter**: Filtro de artículos históricos en inglés.
+* **Q2 - Filter - Fetcher**: Filtro de biografías, descarga concurrente de imágenes, almacenamiento temporal y publicación de chunks.
+* **Q3 - Vocabulary Join**: Intersección de vocabulario en inglés y francés por partición.
+* **Q4 - Counter - Merger**: Conteo de palabras por partición y consolidación del top 20 global.
+* **Q5 - Avg - Filter**: Cálculo de promedios parciales, agregación global y filtro de artículos recientes con candidatos pendientes en disco.
 * `common/eofcoordinator/`: Protocolo de barrera de sincronización y cierre distribuido con conteo de batches.
+* `common/eofcounter/`: Conteo de cierres por cliente en las etapas particionadas que lo utilizan.
+* `common/resultpublisher/`: Publicación de resultados hacia la cola del Gateway de cada cliente.
 * `common/middleware/`: Abstracción de RabbitMQ (colas con prefetch, exchanges de difusión, direct exchanges con routing keys).
 * `common/messageprotocol/`: Protocolos de mensajería (binario para el canal externo TCP, JSON para el canal interno RabbitMQ).
+* `common/article/` y `common/result/`: Contratos de artículos de entrada, resultados y chunks de imágenes.
+* `common/config/` y `common/logger/`: Configuración de procesos y logs.
 * `common/shutdown/`: Manejo unificado de señales del sistema operativo (`SIGTERM`, `SIGINT`).
 
 ### 4.4. Diagrama de Actividades
