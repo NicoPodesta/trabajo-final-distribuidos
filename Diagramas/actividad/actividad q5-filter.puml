@@ -1,14 +1,32 @@
 @startuml q5-filter
-title Actividad · Q5 Filter · Artículo reciente
+title Actividad · Q5 Filter · Flujo por cliente
 
 start
 
-:Llega un artículo reciente de un cliente;
+fork
+  :Llegan artículos recientes (`recent_articles`);
+  if (¿Ya se recibió el promedio del cliente?) then (sí)
+    :Filtrar y publicar los que n_words > promedio;
+  else (no)
+    :Almacenar en disco (`pendingStore`);
+  endif
+fork again
+  :Llega el promedio global (`q5_average`);
+  :Registrar promedio en estado del cliente;
+  if (¿Hay artículos pendientes en disco?) then (sí)
+    :Leer archivo por tandas de 1000 artículos;
+    :Publicar aquellos donde n_words > promedio;
+    :Eliminar archivo temporal de candidatos;
+  endif
+fork again
+  :Llega EOF de artículos recientes;
+  :Participar de la barrera de conteo (`q5_filter_control`);
+  :Marcar fin de recientes para el cliente;
+end fork
 
-if (¿Ya conoce el promedio de ese cliente?) then (sí)
-  :Publicar si n_words > promedio;
-else (no)
-  :Guardar el artículo en el archivo del cliente;
+if (¿Promedio recibido Y fin de recientes confirmado?) then (sí)
+  :Emitir EOF de Q5 hacia el Gateway;
+  :Liberar estado del cliente en memoria;
 endif
 
 stop

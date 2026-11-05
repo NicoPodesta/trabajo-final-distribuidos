@@ -1,23 +1,51 @@
-@startuml q5-promedio
-title Secuencia · Q5 · Los recientes esperan el promedio
+@startuml
+autonumber
+skinparam shadowing false
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+
+title Secuencia · Q5 · Cálculo de Promedio y Filtrado de Candidatos
 
 participant "Tokenizer" as T
-participant "Q5 Avg Partial" as A
-participant "Q5 Avg Aggregator" as G
-participant "Q5 Filter" as F
+participant "Q5 Avg Partial" as PART
+participant "Q5 Avg Aggregator" as AGG
+participant "Q5 Filter" as FLT
 participant "Gateway" as GW
 
-par mientras llegan los artículos
-    T -> A : cantidad de palabras\nde cada artículo histórico
+par Ingesta paralela
+  T -> PART : batches de artículos históricos
 else
-    T -> F : cantidad de palabras\nde cada artículo reciente
-    note right of F : los retiene hasta conocer el promedio
+  T -> FLT : batches de artículos recientes
+  note over FLT #LightYellow
+    Retiene los artículos en disco
+    a la espera del promedio global.
+  end note
 end
 
-T -> A : fin de los artículos
-A -> G : suma y cantidad parciales
-G -> F : promedio de palabras
+T -> PART : EOF(artículos históricos)
+PART -> AGG : totales parciales (suma, cantidad)
 
-F -> GW : recientes retenidos por encima del promedio
+note over AGG #LightCyan
+  Calcula el promedio histórico global:
+  promedio = suma_total / cant_total
+end note
+
+AGG -> FLT : difusión del promedio global (exchange q5_average)
+
+note over FLT #LightGreen
+  Drena los artículos retenidos en disco,
+  evalúa n_words > promedio y descarta el resto.
+end note
+
+FLT -> GW : artículos que superan el promedio
+
+T -> FLT : EOF(artículos recientes)
+
+note over FLT #LightYellow
+  Al recibir el promedio Y el EOF de recientes,
+  se completa la consulta del cliente.
+end note
+
+FLT -> GW : EOF(Q5)
 
 @enduml

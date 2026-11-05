@@ -1,25 +1,34 @@
 @startuml image-fetcher
-title Actividad · Image Fetcher · Una réplica
+title Actividad · Image Fetcher · Pipeline por réplica
 
 start
 
-while (¿SIGTERM?) is (no)
-  :Tomar una imagen de cualquier cliente\nsi hay cupo libre;
-  fork
-    :Descargar la imagen completa\na un archivo local;
-  fork again
-    :Publicar sus trozos en la cola Q2\n(espera solo esta publicación si está llena);
-  end fork
-  :Borrar el archivo y liberar el cupo;
-endwhile (sí)
+while (¿Mensajes de entrada en cola?) is (pedidos / EOFs)
+  if (¿Es mensaje de EOF de un filtro?) then (sí)
+    :Registrar EOF del filtro;
+    if (¿Llegaron EOFs de todos los filtros y no hay pendientes?) then (sí)
+      :Emitir EOF de Q2 hacia el Gateway;
+      :Confirmar último EOF;
+    endif
+  else (pedido de imagen)
+    :Reservar cupo de descarga;
+    if (¿Servidor en pausa por HTTP 429?) then (sí)
+      :Resolver de inmediato sin imagen;
+    else (no)
+      :Descargar imagen a archivo temporal\n(pool de descargadores concurrentes);
+      if (¿Descarga exitosa?) then (sí)
+        :Leer archivo local y fragmentar en chunks de 64 KiB;
+        :Emitir chunks numerados y EOF de imagen por RabbitMQ;
+        :Borrar archivo temporal local;
+      else (error 404 / fallo de red)
+        :Emitir registro vacío (nombre y URL sin imagen);
+      endif
+    endif
+    :Liberar cupo y confirmar mensaje;
+  endif
+endwhile (cierre ordenado / SIGTERM)
 
-:Cerrar descargas, borrar temporales\ny cerrar el middleware;
+:Cerrar conexiones y limpiar temporales remanentes;
 stop
-
-note right
-  Hasta N imágenes en paralelo,
-  de clientes distintos.
-  Fallo HTTP y disco lleno: decisión abierta.
-end note
 
 @enduml

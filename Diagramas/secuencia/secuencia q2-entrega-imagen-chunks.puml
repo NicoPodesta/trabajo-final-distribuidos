@@ -1,29 +1,42 @@
 @startuml
-title Secuencia · Q2 · Entrega de la imagen en chunks
+autonumber
+skinparam shadowing false
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
 
-participant "Q2 Filter" as Q2
+title Secuencia · Q2 · Descarga y Entrega Fragmentada de Imágenes
+
+participant "Q2 Filter" as Q2F
 participant "Image Fetcher" as IMG
-participant "API de Wikimedia" as WM
-queue "Cola de resultados\n(del Gateway del cliente)" as Q
+participant "API Wikimedia\n(HTTPS)" as WM
 participant "Gateway" as GW
-actor "Client" as C
+actor "Client" as CLI
 
-Q2 -> IMG : artículo con referencia a la imagen
+Q2F -> IMG : pedido de descarga (nombre, URL, ref)
 
-par descarga sin esperar la cola
-    IMG -> WM : descarga la imagen
-    WM --> IMG : imagen completa
-else entrega de los chunks
-    loop por cada chunk de la imagen
-        IMG -> Q : chunk
-        Q -> GW : chunk
-        GW -> C : chunk
-    end
+IMG -> WM : GET https://upload.wikimedia.org/...
+WM --> IMG : 200 OK (bytes de la imagen)
+
+note over IMG #LightYellow
+  Almacena temporalmente la imagen en disco
+  y la divide en chunks de hasta 64 KiB.
+end note
+
+loop Por cada chunk [1..M]
+  IMG -> GW : chunk(seq: j, total: M, bytes)
+  GW -> CLI : chunk binario (TCP)
+  CLI --> GW : ACK de aplicación (TCP)
 end
 
-note over IMG, Q
-  Si la cola está llena, solo espera la publicación:
-  la descarga sigue.
+note over CLI #LightGreen
+  El cliente reensambla los M fragmentos
+  y consolida la imagen definitiva en disco.
+end note
+
+IMG -> GW : EOF de imagen
+note over IMG #LightCyan
+  Elimina el archivo temporal en disco
+  y libera el cupo de descarga.
 end note
 
 @enduml
