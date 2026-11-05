@@ -10,8 +10,8 @@ func SerializeHistoricalCounts(clientID string, records []uint32) (*middleware.M
 	return serializeRecords(clientID, records)
 }
 
-func SerializeHistoricalCountsEOF(clientID string) (*middleware.Message, error) {
-	return serializeRecordsEOF[uint32](clientID)
+func SerializeHistoricalCountsEOF(clientID string, totalBatches uint64) (*middleware.Message, error) {
+	return serializeRecordsEOFWithTotal[uint32](clientID, totalBatches)
 }
 
 func DeserializeHistoricalCounts(message *middleware.Message) (*HistoricalCountsMessage, error) {

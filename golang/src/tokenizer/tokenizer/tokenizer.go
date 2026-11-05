@@ -1,6 +1,7 @@
 package tokenizer
 
 import (
+	"fmt"
 	"log/slog"
 	"sync"
 
@@ -106,7 +107,11 @@ func (tokenizer *Tokenizer) Run() error {
 		if err := tokenizer.coordinator.Start(func(clientID string) error {
 			tokenizer.mu.Lock()
 			defer tokenizer.mu.Unlock()
-			return tokenizer.publishEOF(clientID)
+			totalBatches, ok := tokenizer.coordinator.ClosingTotal(clientID)
+			if !ok {
+				return fmt.Errorf("closing total of client %q is unknown", clientID)
+			}
+			return tokenizer.publishEOF(clientID, totalBatches)
 		}); err != nil {
 			slog.Error("Control consumer stopped with error", "err", err)
 		}

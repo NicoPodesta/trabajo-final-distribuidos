@@ -15,8 +15,8 @@ func SerializeRecentArticles(clientID string, records []RecentArticleItem) (*mid
 	return serializeRecords(clientID, records)
 }
 
-func SerializeRecentArticlesEOF(clientID string) (*middleware.Message, error) {
-	return serializeRecordsEOF[RecentArticleItem](clientID)
+func SerializeRecentArticlesEOF(clientID string, totalBatches uint64) (*middleware.Message, error) {
+	return serializeRecordsEOFWithTotal[RecentArticleItem](clientID, totalBatches)
 }
 
 func DeserializeRecentArticles(message *middleware.Message) (*RecentArticlesMessage, error) {

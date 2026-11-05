@@ -142,6 +142,18 @@ func (c *EOFCoordinator) BroadcastWithTotal(clientID string, totalBatches uint64
 	return c.send(countMessage(msgAskCounts, clientID, info, 0))
 }
 
+func (c *EOFCoordinator) ClosingTotal(clientID string) (uint64, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if info, ok := c.closing[clientID]; ok {
+		return info.total, true
+	}
+	if info, ok := c.closed[clientID]; ok {
+		return info.total, true
+	}
+	return 0, false
+}
+
 func countMessage(kind msgType, clientID string, info closeInfo, count uint64) controlMessage {
 	return controlMessage{Type: kind, ClientID: clientID, Coordinator: &info.coordinator, Total: &info.total, Count: count}
 }

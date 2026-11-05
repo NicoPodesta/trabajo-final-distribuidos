@@ -8,9 +8,10 @@ import (
 
 // Abstraccion comun de los mensajes
 type RecordsMessage[T any] struct {
-	Type     MsgType `json:"type"`
-	ClientID string  `json:"client_id"`
-	Records  []T     `json:"records,omitempty"`
+	Type         MsgType `json:"type"`
+	ClientID     string  `json:"client_id"`
+	Records      []T     `json:"records,omitempty"`
+	TotalBatches *uint64 `json:"total_batches,omitempty"`
 }
 
 func (m *RecordsMessage[T]) IsEOF() bool {
@@ -31,6 +32,10 @@ func serializeRecords[T any](clientID string, records []T) (*middleware.Message,
 
 func serializeRecordsEOF[T any](clientID string) (*middleware.Message, error) {
 	return (&RecordsMessage[T]{Type: MsgEOF, ClientID: clientID}).Serialize()
+}
+
+func serializeRecordsEOFWithTotal[T any](clientID string, totalBatches uint64) (*middleware.Message, error) {
+	return (&RecordsMessage[T]{Type: MsgEOF, ClientID: clientID, TotalBatches: &totalBatches}).Serialize()
 }
 
 func deserializeRecords[T any](message *middleware.Message) (*RecordsMessage[T], error) {
