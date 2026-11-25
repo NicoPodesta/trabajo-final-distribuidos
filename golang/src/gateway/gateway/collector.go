@@ -23,16 +23,11 @@ func NewResultCollector(gatewayID string, resultsQueue middleware.Middleware, se
 	}
 }
 
-func (c *ResultCollector) Start(running *atomic.Bool) {
+func (c *ResultCollector) Start(running *atomic.Bool) error {
 	resultsQueue := fmt.Sprintf("results_%s", c.gatewayID)
 	slog.Info("Starting results consumer on queue...", "queue", resultsQueue)
 
-	var processingErr error
 	err := c.resultsQueue.StartConsuming(func(msg middleware.Message, ack func(), nack func()) {
-		if processingErr != nil {
-			nack()
-			return
-		}
 		header, err := inner.DeserializeResultHeader(&msg)
 		if err != nil {
 			slog.Error("While deserializing result header", "err", err)
@@ -42,51 +37,28 @@ func (c *ResultCollector) Start(running *atomic.Bool) {
 
 		session := c.sessionManager.Get(header.ClientID)
 		if session == nil {
-			slog.Warn("Received results for unknown or disconnected client", "clientID", header.ClientID)
+			slog.Debug("Discarding results for unknown or disconnected client", "clientID", header.ClientID, "queryID", header.QueryID)
 			ack()
 			return
 		}
 
-		if header.IsEOF() {
-			slog.Info("Results EOF received from workers for client", "clientID", header.ClientID, "query", header.QueryID)
-			allDone, err := session.registerEOF(header.QueryID, header.FilterID, header.FetcherID)
-			if err != nil {
-				slog.Error("While writing END_OF_RECORDS to client", "clientID", header.ClientID, "err", err)
-				if header.QueryID == inner.Q1 || header.QueryID == inner.Q2 {
-					processingErr = err
-					nack()
-					_ = c.resultsQueue.StopConsuming()
-					return
-				}
-			}
-			if allDone {
-				slog.Info("All expected query EOFs received for client", "clientID", header.ClientID)
-			}
-			ack()
-			return
+		delivery := sessionDelivery{
+			header: header,
+			msg:    msg,
+			ack:    ack,
 		}
-
-		if err := c.handleResultRecord(session, header, &msg); err != nil {
-			slog.Error("While handling result record", "clientID", header.ClientID, "queryID", header.QueryID, "err", err)
-			session.finish()
-			if header.QueryID == inner.Q1 {
-				processingErr = err
-				nack()
-				_ = c.resultsQueue.StopConsuming()
-				return
-			}
+		if !session.enqueue(delivery) {
 			ack()
-			return
 		}
-		ack()
 	})
 
 	if err != nil && running.Load() {
 		slog.Error("While consuming results from RabbitMQ", "err", err)
 	}
+	return err
 }
 
-func (c *ResultCollector) handleResultRecord(session *clientSession, header *inner.ResultHeader, msg *middleware.Message) error {
+func deliverResultRecord(session *clientSession, header *inner.ResultHeader, msg *middleware.Message) error {
 	switch header.QueryID {
 	case inner.Q1:
 		q1Msg, err := inner.DeserializeQ1Results(msg)

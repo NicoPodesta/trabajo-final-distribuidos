@@ -3,13 +3,13 @@ module trabajo-final-distribuidos
 go 1.24.9
 
 require (
+	github.com/google/uuid v1.6.0
 	github.com/parquet-go/parquet-go v0.32.0
 	github.com/rabbitmq/amqp091-go v1.16.0
 )
 
 require (
 	github.com/andybalholm/brotli v1.1.1 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/klauspost/compress v1.17.9 // indirect
 	github.com/parquet-go/bitpack v1.0.0 // indirect
 	github.com/parquet-go/jsonlite v1.0.0 // indirect

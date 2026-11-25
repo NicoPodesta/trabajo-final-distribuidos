@@ -8,26 +8,34 @@ import (
 	"os/signal"
 	"sync/atomic"
 	"syscall"
+	"time"
 
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/common/middleware"
 )
 
 const (
-	articleDatesQueueName    = "article_dates"
-	articleSectionsQueueName = "article_sections"
-	abstractsQueueName       = "abstracts"
+	articleDatesQueueName         = "article_dates"
+	articleSectionsQueueName      = "article_sections"
+	abstractsQueueName            = "abstracts"
+	defaultResultsPrefetch        = 100
+	defaultClientWriteTimeout     = 30 * time.Second
+	defaultClientAckTimeout       = 60 * time.Second
+	defaultClientBatchReadTimeout = 120 * time.Second
 )
 
 type GatewayConfig struct {
-	ID              string
-	ServerHost      string
-	ServerPort      string
-	MOMHost         string
-	MOMPort         int
-	ExpectedQueries int
-	ExpectedEOFs    map[inner.QueryID]int
-	ResultsPrefetch int
+	ID                     string
+	ServerHost             string
+	ServerPort             string
+	MOMHost                string
+	MOMPort                int
+	ExpectedQueries        int
+	ExpectedEOFs           map[inner.QueryID]int
+	ResultsPrefetch        int
+	ClientWriteTimeout     time.Duration
+	ClientAckTimeout       time.Duration
+	ClientBatchReadTimeout time.Duration
 }
 
 type Gateway struct {
@@ -37,10 +45,24 @@ type Gateway struct {
 	collector       *ResultCollector
 	conns           *middleware.Connections
 	running         atomic.Bool
+	signaled        atomic.Bool
 	shutdownChannel chan struct{}
 }
 
 func NewGateway(config GatewayConfig) (gw *Gateway, err error) {
+	if config.ResultsPrefetch <= 0 {
+		config.ResultsPrefetch = defaultResultsPrefetch
+	}
+	if config.ClientWriteTimeout <= 0 {
+		config.ClientWriteTimeout = defaultClientWriteTimeout
+	}
+	if config.ClientAckTimeout <= 0 {
+		config.ClientAckTimeout = defaultClientAckTimeout
+	}
+	if config.ClientBatchReadTimeout <= 0 {
+		config.ClientBatchReadTimeout = defaultClientBatchReadTimeout
+	}
+
 	listener, err := net.Listen("tcp", config.ServerHost+":"+config.ServerPort)
 	if err != nil {
 		return nil, err
@@ -52,9 +74,13 @@ func NewGateway(config GatewayConfig) (gw *Gateway, err error) {
 	}
 
 	conns := middleware.NewConnections(settings)
+	var resultsQ middleware.Middleware
 	defer func() {
 		if err != nil {
 			_ = listener.Close()
+			if resultsQ != nil {
+				_ = resultsQ.Close()
+			}
 			conns.Close()
 		}
 	}()
@@ -75,13 +101,18 @@ func NewGateway(config GatewayConfig) (gw *Gateway, err error) {
 	}
 
 	resultsQueueName := fmt.Sprintf("results_%s", config.ID)
-	resultsQ, err := conns.QueueWithPrefetch(resultsQueueName, config.ResultsPrefetch)
+	resultsQ, err = middleware.CreateQueueWithPrefetchAndRetry(resultsQueueName, settings, config.ResultsPrefetch)
 	if err != nil {
 		return nil, err
 	}
 
-	sessionManager := NewSessionManager(config.ExpectedQueries, config.ExpectedEOFs)
-	handler := NewClientHandler(config.ID, sessionManager, articleDatesQ, articleSectionsQ, abstractsQ)
+	sessionManager := NewSessionManager(
+		config.ExpectedQueries,
+		config.ExpectedEOFs,
+		config.ClientWriteTimeout,
+		config.ClientAckTimeout,
+	)
+	handler := NewClientHandler(config.ID, sessionManager, articleDatesQ, articleSectionsQ, abstractsQ, config.ClientBatchReadTimeout)
 	collector := NewResultCollector(config.ID, resultsQ, sessionManager)
 
 	gw = &Gateway{
@@ -100,9 +131,18 @@ func (gateway *Gateway) Run() error {
 	defer gateway.Close()
 
 	go gateway.handleSignals()
-	go gateway.collector.Start(&gateway.running)
 
-	slog.Info("Accepting connections...", "gatewayID", gateway.config.ID)
+	collectorErrCh := make(chan error, 1)
+	go func() {
+		err := gateway.collector.Start(&gateway.running)
+		collectorErrCh <- err
+		if err != nil && gateway.running.Load() {
+			slog.Error("Result collector stopped unexpectedly, shutting down gateway", "gatewayID", gateway.config.ID, "err", err)
+			gateway.Close()
+		}
+	}()
+
+	slog.Info("Accepting connections...", "gatewayID", gateway.config.ID, "resultsPrefetch", gateway.config.ResultsPrefetch)
 
 	for {
 		conn, err := gateway.listener.Accept()
@@ -117,6 +157,9 @@ func (gateway *Gateway) Run() error {
 		go gateway.handler.Handle(conn, gateway.shutdownChannel)
 	}
 
+	if err := <-collectorErrCh; err != nil && !gateway.signaled.Load() {
+		return err
+	}
 	return nil
 }
 
@@ -143,7 +186,11 @@ func (gateway *Gateway) handleSignals() {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(signals)
-	<-signals
-	slog.Info("SIGTERM signal received")
-	gateway.Close()
+	select {
+	case <-signals:
+		slog.Info("SIGTERM signal received")
+		gateway.signaled.Store(true)
+		gateway.Close()
+	case <-gateway.shutdownChannel:
+	}
 }

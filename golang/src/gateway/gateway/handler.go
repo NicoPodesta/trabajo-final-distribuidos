@@ -4,20 +4,24 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
-	"sync/atomic"
+	"time"
+
+	"github.com/google/uuid"
 
 	"trabajo-final-distribuidos/common/messageprotocol/external"
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/common/middleware"
 )
 
+const tcpKeepAlivePeriod = 10 * time.Second
+
 type ClientHandler struct {
 	gatewayID            string
-	clientSeq            atomic.Uint64
 	sessionManager       *SessionManager
 	articleDatesQueue    middleware.Middleware
 	articleSectionsQueue middleware.Middleware
 	abstractsQueue       middleware.Middleware
+	batchReadTimeout     time.Duration
 }
 
 func NewClientHandler(
@@ -26,6 +30,7 @@ func NewClientHandler(
 	articleDatesQueue middleware.Middleware,
 	articleSectionsQueue middleware.Middleware,
 	abstractsQueue middleware.Middleware,
+	batchReadTimeout time.Duration,
 ) *ClientHandler {
 	return &ClientHandler{
 		gatewayID:            gatewayID,
@@ -33,18 +38,23 @@ func NewClientHandler(
 		articleDatesQueue:    articleDatesQueue,
 		articleSectionsQueue: articleSectionsQueue,
 		abstractsQueue:       abstractsQueue,
+		batchReadTimeout:     batchReadTimeout,
 	}
 }
 
 func (h *ClientHandler) Handle(conn net.Conn, shutdownChannel <-chan struct{}) {
 	defer conn.Close()
 
-	seq := h.clientSeq.Add(1)
-	clientID := fmt.Sprintf("%s_%d", h.gatewayID, seq)
+	if tcpConn, ok := conn.(*net.TCPConn); ok {
+		_ = tcpConn.SetKeepAlive(true)
+		_ = tcpConn.SetKeepAlivePeriod(tcpKeepAlivePeriod)
+	}
+
+	clientID := fmt.Sprintf("%s_%s", h.gatewayID, uuid.NewString())
 	session := h.sessionManager.CreateSession(clientID, conn)
 	defer func() {
-		session.finish()
 		h.sessionManager.Unregister(clientID)
+		session.finish()
 	}()
 
 	slog.Info("Client registered", "clientID", clientID)
@@ -52,7 +62,7 @@ func (h *ClientHandler) Handle(conn net.Conn, shutdownChannel <-chan struct{}) {
 	go func() {
 		select {
 		case <-shutdownChannel:
-			_ = conn.Close()
+			session.finish()
 		case <-session.doneChannel:
 		}
 	}()
@@ -65,11 +75,17 @@ func (h *ClientHandler) Handle(conn net.Conn, shutdownChannel <-chan struct{}) {
 	endOfRecordsReceived := false
 
 	for {
+		if !endOfRecordsReceived && h.batchReadTimeout > 0 {
+			_ = conn.SetReadDeadline(time.Now().Add(h.batchReadTimeout))
+		} else {
+			_ = conn.SetReadDeadline(time.Time{})
+		}
+
 		msgType, err := reader.ReadMsgType()
 		if err != nil {
 			select {
 			case <-session.doneChannel:
-				slog.Info("Client session completed successfully", "clientID", clientID)
+				slog.Info("Client session closed", "clientID", clientID)
 			default:
 				slog.Debug("While reading message type from client", "clientID", clientID, "err", err)
 			}
@@ -168,10 +184,6 @@ func (h *ClientHandler) handleArticleBatch(session *clientSession, reader *exter
 func (h *ClientHandler) handleEndOfRecords(session *clientSession, clientID string, received int, abstractBatches, q1Batches, q2Batches uint64) error {
 	slog.Info("Received END_OF_RECORDS message from client", "clientID", clientID, "articles", received)
 
-	if err := session.sendAck(); err != nil {
-		return err
-	}
-
 	if err := h.sendQ1EOF(clientID, q1Batches); err != nil {
 		return err
 	}
@@ -182,6 +194,10 @@ func (h *ClientHandler) handleEndOfRecords(session *clientSession, clientID stri
 		return err
 	}
 
+	if err := session.sendAck(); err != nil {
+		return err
+	}
+	session.markInboundEOFAcked()
 	return nil
 }
 

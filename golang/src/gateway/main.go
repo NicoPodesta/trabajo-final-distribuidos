@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"time"
 
 	"trabajo-final-distribuidos/common/config"
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
@@ -68,20 +69,51 @@ func loadConfig() (gateway.GatewayConfig, error) {
 	if q2FetcherAmount < 1 {
 		return gateway.GatewayConfig{}, fmt.Errorf("Q2_FETCHER_AMOUNT must be positive")
 	}
-	resultsPrefetch, err := config.OptionalInt("GATEWAY_RESULTS_PREFETCH", 1)
+
+	resultsPrefetch, err := config.OptionalInt("RESULTS_PREFETCH", 100)
 	if err != nil {
 		return gateway.GatewayConfig{}, err
 	}
+	if resultsPrefetch < 1 || resultsPrefetch > 65535 {
+		return gateway.GatewayConfig{}, fmt.Errorf("RESULTS_PREFETCH must be between 1 and 65535")
+	}
+
+	writeTimeoutSec, err := config.OptionalInt("CLIENT_WRITE_TIMEOUT_SEC", 30)
+	if err != nil {
+		return gateway.GatewayConfig{}, err
+	}
+	if writeTimeoutSec < 1 {
+		return gateway.GatewayConfig{}, fmt.Errorf("CLIENT_WRITE_TIMEOUT_SEC must be positive")
+	}
+
+	ackTimeoutSec, err := config.OptionalInt("CLIENT_ACK_TIMEOUT_SEC", 60)
+	if err != nil {
+		return gateway.GatewayConfig{}, err
+	}
+	if ackTimeoutSec < 1 {
+		return gateway.GatewayConfig{}, fmt.Errorf("CLIENT_ACK_TIMEOUT_SEC must be positive")
+	}
+
+	batchReadTimeoutSec, err := config.OptionalInt("CLIENT_BATCH_READ_TIMEOUT_SEC", 120)
+	if err != nil {
+		return gateway.GatewayConfig{}, err
+	}
+	if batchReadTimeoutSec < 1 {
+		return gateway.GatewayConfig{}, fmt.Errorf("CLIENT_BATCH_READ_TIMEOUT_SEC must be positive")
+	}
 
 	return gateway.GatewayConfig{
-		ID:              id,
-		ServerHost:      serverHost,
-		ServerPort:      serverPort,
-		MOMHost:         momHost,
-		MOMPort:         momPort,
-		ExpectedQueries: expectedQueries,
-		ExpectedEOFs:    map[inner.QueryID]int{inner.Q1: q1FilterAmount, inner.Q2: q2FetcherAmount, inner.Q3: q3JoinAmount, inner.Q5: q5FilterAmount},
-		ResultsPrefetch: resultsPrefetch,
+		ID:                     id,
+		ServerHost:             serverHost,
+		ServerPort:             serverPort,
+		MOMHost:                momHost,
+		MOMPort:                momPort,
+		ExpectedQueries:        expectedQueries,
+		ExpectedEOFs:           map[inner.QueryID]int{inner.Q1: q1FilterAmount, inner.Q2: q2FetcherAmount, inner.Q3: q3JoinAmount, inner.Q5: q5FilterAmount},
+		ResultsPrefetch:        resultsPrefetch,
+		ClientWriteTimeout:     time.Duration(writeTimeoutSec) * time.Second,
+		ClientAckTimeout:       time.Duration(ackTimeoutSec) * time.Second,
+		ClientBatchReadTimeout: time.Duration(batchReadTimeoutSec) * time.Second,
 	}, nil
 }
 

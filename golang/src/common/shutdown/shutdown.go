@@ -1,6 +1,7 @@
 package shutdown
 
 import (
+	"context"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -16,4 +17,8 @@ func OnSignal(stop func()) {
 		slog.Info("Shutdown signal received")
 		stop()
 	}()
+}
+
+func NotifyContext(parent context.Context) (context.Context, context.CancelFunc) {
+	return signal.NotifyContext(parent, syscall.SIGINT, syscall.SIGTERM)
 }
