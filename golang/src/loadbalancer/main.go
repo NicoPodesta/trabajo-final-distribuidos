@@ -5,12 +5,18 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"time"
 
 	"trabajo-final-distribuidos/common/config"
 	"trabajo-final-distribuidos/loadbalancer/loadbalancer"
 )
 
 func loadConfig() (loadbalancer.LoadBalancerConfig, error) {
+	id, err := config.OptionalInt("LB_ID", 0)
+	if err != nil {
+		return loadbalancer.LoadBalancerConfig{}, err
+	}
+
 	serverHost, err := config.RequiredString("SERVER_HOST")
 	if err != nil {
 		return loadbalancer.LoadBalancerConfig{}, err
@@ -38,10 +44,17 @@ func loadConfig() (loadbalancer.LoadBalancerConfig, error) {
 		return loadbalancer.LoadBalancerConfig{}, errors.New("GATEWAYS must contain at least one valid gateway address")
 	}
 
+	writeTimeoutSec, err := config.OptionalInt("WRITE_TIMEOUT_SEC", 5)
+	if err != nil {
+		return loadbalancer.LoadBalancerConfig{}, err
+	}
+
 	return loadbalancer.LoadBalancerConfig{
-		ServerHost: serverHost,
-		ServerPort: serverPort,
-		Gateways:   gateways,
+		ID:           id,
+		ServerHost:   serverHost,
+		ServerPort:   serverPort,
+		Gateways:     gateways,
+		WriteTimeout: time.Duration(writeTimeoutSec) * time.Second,
 	}, nil
 }
 

@@ -8,14 +8,19 @@ import (
 	"os/signal"
 	"sync/atomic"
 	"syscall"
+	"time"
 
 	"trabajo-final-distribuidos/common/messageprotocol/external"
 )
 
+const defaultWriteTimeout = 5 * time.Second
+
 type LoadBalancerConfig struct {
-	ServerHost string
-	ServerPort string
-	Gateways   []string
+	ID           int
+	ServerHost   string
+	ServerPort   string
+	Gateways     []string
+	WriteTimeout time.Duration
 }
 
 type LoadBalancer struct {
@@ -23,6 +28,7 @@ type LoadBalancer struct {
 	listener         net.Listener
 	gateways         []string
 	nextGatewayIndex atomic.Uint64
+	writeTimeout     time.Duration
 	running          atomic.Bool
 	shutdownChannel  chan struct{}
 }
@@ -30,6 +36,10 @@ type LoadBalancer struct {
 func NewLoadBalancer(config LoadBalancerConfig) (*LoadBalancer, error) {
 	if len(config.Gateways) == 0 {
 		return nil, errors.New("At least one gateway must be configured")
+	}
+	writeTimeout := config.WriteTimeout
+	if writeTimeout <= 0 {
+		writeTimeout = defaultWriteTimeout
 	}
 
 	listener, err := net.Listen("tcp", config.ServerHost+":"+config.ServerPort)
@@ -41,7 +51,11 @@ func NewLoadBalancer(config LoadBalancerConfig) (*LoadBalancer, error) {
 		config:          config,
 		listener:        listener,
 		gateways:        config.Gateways,
+		writeTimeout:    writeTimeout,
 		shutdownChannel: make(chan struct{}),
+	}
+	if config.ID > 0 {
+		lb.nextGatewayIndex.Store(uint64(config.ID))
 	}
 	lb.running.Store(true)
 	return lb, nil
@@ -52,7 +66,12 @@ func (lb *LoadBalancer) Run() error {
 
 	go lb.handleSignals()
 
-	slog.Info("Load Balancer listening...", "host", lb.config.ServerHost, "port", lb.config.ServerPort, "gateways", lb.gateways)
+	slog.Info("Load Balancer listening...",
+		"lbID", lb.config.ID,
+		"host", lb.config.ServerHost,
+		"port", lb.config.ServerPort,
+		"gateways", lb.gateways,
+	)
 
 	for {
 		conn, err := lb.listener.Accept()
@@ -73,11 +92,14 @@ func (lb *LoadBalancer) handleClient(conn net.Conn) {
 	defer conn.Close()
 
 	assignedGateway := lb.selectGateway()
-	slog.Info("Assigning gateway to client", "client", conn.RemoteAddr().String(), "gateway", assignedGateway)
+	slog.Info("Assigning gateway to client", "lbID", lb.config.ID, "client", conn.RemoteAddr().String(), "gateway", assignedGateway)
 
+	if lb.writeTimeout > 0 {
+		_ = conn.SetWriteDeadline(time.Now().Add(lb.writeTimeout))
+	}
 	writer := external.NewWriter(conn)
 	if err := writer.WriteGatewayAssignment(assignedGateway); err != nil {
-		slog.Error("While writing gateway assignment to client", "client", conn.RemoteAddr().String(), "err", err)
+		slog.Error("While writing gateway assignment to client", "lbID", lb.config.ID, "client", conn.RemoteAddr().String(), "err", err)
 		return
 	}
 }
@@ -102,7 +124,10 @@ func (lb *LoadBalancer) handleSignals() {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(signals)
-	<-signals
-	slog.Info("SIGTERM signal received on load balancer")
-	lb.Close()
+	select {
+	case <-signals:
+		slog.Info("SIGTERM signal received on load balancer", "lbID", lb.config.ID)
+		lb.Close()
+	case <-lb.shutdownChannel:
+	}
 }
