@@ -6,152 +6,221 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
-	"os"
-	"os/signal"
-	"sync/atomic"
-	"syscall"
 	"time"
 
 	"trabajo-final-distribuidos/common/messageprotocol/external"
+	"trabajo-final-distribuidos/common/shutdown"
 )
 
 const (
-	connectionAttempts        = 15
-	connectionAttemptsDelayMs = 500
+	defaultMaxRetryDuration = 5 * time.Minute
+	defaultDialTimeout      = 3 * time.Second
+	defaultWriteTimeout     = 30 * time.Second
+	defaultBatchAckTimeout  = 60 * time.Second
+	lbReadTimeout           = 5 * time.Second
+	initialBackoff          = 500 * time.Millisecond
+	maxBackoff              = 5 * time.Second
+	tcpKeepAlivePeriod      = 10 * time.Second
 )
 
 type ClientConfig struct {
-	ServerHost string
-	ServerPort string
-	InputDir   string
-	OutputDir  string
+	LoadBalancers    []string
+	InputDir         string
+	OutputDir        string
+	MaxRetryDuration time.Duration
+	DialTimeout      time.Duration
+	WriteTimeout     time.Duration
+	BatchAckTimeout  time.Duration
 }
 
 type Client struct {
-	conn           net.Conn
-	articleSender  *ArticleSender
-	resultsHandler *ResultsHandler
-	running        atomic.Bool
-	config         ClientConfig
+	config ClientConfig
 }
 
 func NewClient(config ClientConfig) (*Client, error) {
-	gatewayHost, gatewayPort, err := resolveGatewayFromLoadBalancer(config.ServerHost, config.ServerPort)
-	if err != nil {
-		return nil, fmt.Errorf("while querying load balancer: %w", err)
+	if len(config.LoadBalancers) == 0 {
+		return nil, errors.New("at least one load balancer address is required")
 	}
-	slog.Info("Discovered assigned gateway from load balancer", "gateway", gatewayHost+":"+gatewayPort)
-
-	conn, err := connectToServer(gatewayHost, gatewayPort)
-	if err != nil {
-		return nil, err
+	if config.MaxRetryDuration <= 0 {
+		config.MaxRetryDuration = defaultMaxRetryDuration
 	}
-
-	writer, err := NewResultWriter(config.OutputDir)
-	if err != nil {
-		conn.Close()
-		return nil, fmt.Errorf("while initializing result writer: %w", err)
+	if config.DialTimeout <= 0 {
+		config.DialTimeout = defaultDialTimeout
 	}
-
-	socketWriter := external.NewWriter(conn)
-	socketReader := external.NewReader(conn)
-	articleSender := NewArticleSender(socketWriter, config.InputDir)
-	resultsHandler := NewResultsHandler(socketReader, socketWriter, writer)
-
-	client := &Client{
-		conn:           conn,
-		articleSender:  articleSender,
-		resultsHandler: resultsHandler,
-		config:         config,
+	if config.WriteTimeout <= 0 {
+		config.WriteTimeout = defaultWriteTimeout
 	}
-	client.running.Store(true)
-	return client, nil
-}
-
-func connectToServer(host, port string) (net.Conn, error) {
-	var err error
-	var conn net.Conn
-
-	for range connectionAttempts {
-		conn, err = net.Dial("tcp", host+":"+port)
-		if err != nil {
-			slog.Warn("Retrying connection...")
-			time.Sleep(connectionAttemptsDelayMs * time.Millisecond)
-			continue
-		}
-		break
+	if config.BatchAckTimeout <= 0 {
+		config.BatchAckTimeout = defaultBatchAckTimeout
 	}
 
-	return conn, err
-}
-
-func resolveGatewayFromLoadBalancer(lbHost, lbPort string) (string, string, error) {
-	conn, err := connectToServer(lbHost, lbPort)
-	if err != nil {
-		return "", "", fmt.Errorf("connecting to load balancer: %w", err)
-	}
-	defer conn.Close()
-
-	reader := external.NewReader(conn)
-	gatewayAddr, err := reader.ReadGatewayAssignment()
-	if err != nil {
-		return "", "", fmt.Errorf("reading gateway assignment: %w", err)
-	}
-
-	host, port, err := net.SplitHostPort(gatewayAddr)
-	if err != nil {
-		return "", "", fmt.Errorf("invalid gateway address format '%s': %w", gatewayAddr, err)
-	}
-
-	return host, port, nil
+	return &Client{config: config}, nil
 }
 
 func (client *Client) Run() error {
-	defer client.conn.Close()
+	ctx, stopSignals := shutdown.NotifyContext(context.Background())
+	defer stopSignals()
 
-	ctx, cancel := context.WithCancel(context.Background())
+	if err := CleanupStaleAttempts(client.config.OutputDir); err != nil {
+		return fmt.Errorf("cleaning stale attempt directories: %w", err)
+	}
+
+	deadline := time.Now().Add(client.config.MaxRetryDuration)
+	backoff := initialBackoff
+	lbIndex := 0
+
+	for attempt := 1; ; attempt++ {
+		if ctx.Err() != nil {
+			return nil
+		}
+
+		err := client.executeAttempt(ctx, attempt, &lbIndex)
+		if err == nil {
+			return nil
+		}
+		if ctx.Err() != nil {
+			return nil
+		}
+
+		if time.Now().After(deadline) {
+			return fmt.Errorf("exhausted retry budget (%s) after %d attempts: %w", client.config.MaxRetryDuration, attempt, err)
+		}
+
+		slog.Warn("Client attempt failed, retrying from load balancer...",
+			"attempt", attempt,
+			"backoff", backoff,
+			"err", err,
+		)
+
+		timer := time.NewTimer(backoff)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil
+		case <-timer.C:
+		}
+
+		backoff *= 2
+		if backoff > maxBackoff {
+			backoff = maxBackoff
+		}
+	}
+}
+
+func (client *Client) executeAttempt(ctx context.Context, attempt int, lbIndex *int) error {
+	gatewayAddr, err := resolveGatewayFromLoadBalancers(ctx, client.config.LoadBalancers, lbIndex, client.config.DialTimeout)
+	if err != nil {
+		return fmt.Errorf("querying load balancer: %w", err)
+	}
+	slog.Info("Discovered assigned gateway from load balancer", "attempt", attempt, "gateway", gatewayAddr)
+
+	conn, err := dialTCP(ctx, gatewayAddr, client.config.DialTimeout)
+	if err != nil {
+		return fmt.Errorf("connecting to gateway %s: %w", gatewayAddr, err)
+	}
+	defer conn.Close()
+
+	writer, err := NewAttemptResultWriter(client.config.OutputDir)
+	if err != nil {
+		return fmt.Errorf("initializing attempt result writer: %w", err)
+	}
+
+	if err := client.runAttempt(ctx, conn, writer); err != nil {
+		_ = writer.Discard()
+		return err
+	}
+
+	if err := writer.Commit(); err != nil {
+		_ = writer.Discard()
+		return fmt.Errorf("committing final outputs: %w", err)
+	}
+	return nil
+}
+
+func (client *Client) runAttempt(ctx context.Context, conn net.Conn, writer *ResultWriter) error {
+	attemptCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	go client.handleSignals(cancel)
+	socketWriter := external.NewWriter(conn)
+	socketReader := external.NewReader(conn)
+	articleSender := NewArticleSender(conn, socketWriter, client.config.InputDir, client.config.WriteTimeout, client.config.BatchAckTimeout)
+	resultsHandler := NewResultsHandler(conn, socketReader, socketWriter, writer, client.config.WriteTimeout)
 
 	ackChannel := make(chan struct{}, 1)
 	handlerErrorChannel := make(chan error, 1)
 
 	go func() {
-		handlerErr := client.resultsHandler.Handle(ctx, ackChannel)
+		handlerErr := resultsHandler.Handle(attemptCtx, ackChannel)
 		handlerErrorChannel <- handlerErr
 		if handlerErr != nil {
 			cancel()
-			client.conn.Close()
+			_ = conn.Close()
 		}
 	}()
 
-	sendErr := client.articleSender.Send(ctx, ackChannel)
+	sendErr := articleSender.Send(attemptCtx, ackChannel)
 	if sendErr != nil {
 		cancel()
-		client.conn.Close()
+		_ = conn.Close()
 		handlerErr := <-handlerErrorChannel
-		if client.running.Load() {
-			return errors.Join(sendErr, handlerErr)
-		}
-		return nil
+		return errors.Join(sendErr, handlerErr)
 	}
 
 	handlerErr := <-handlerErrorChannel
-	if handlerErr != nil && client.running.Load() {
+	if handlerErr != nil {
 		return handlerErr
 	}
-
 	return nil
 }
 
-func (client *Client) handleSignals(cancel context.CancelFunc) {
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
-	defer signal.Stop(signals)
-	<-signals
-	slog.Info("SIGTERM signal received")
-	client.running.Store(false)
-	cancel()
-	client.conn.Close()
+func dialTCP(ctx context.Context, addr string, timeout time.Duration) (net.Conn, error) {
+	dialer := net.Dialer{Timeout: timeout}
+	conn, err := dialer.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		return nil, err
+	}
+	if tcpConn, ok := conn.(*net.TCPConn); ok {
+		_ = tcpConn.SetKeepAlive(true)
+		_ = tcpConn.SetKeepAlivePeriod(tcpKeepAlivePeriod)
+	}
+	return conn, nil
+}
+
+func resolveGatewayFromLoadBalancers(ctx context.Context, lbs []string, lbIndex *int, dialTimeout time.Duration) (string, error) {
+	var lastErr error
+	n := len(lbs)
+	for i := 0; i < n; i++ {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+		addr := lbs[(*lbIndex)%n]
+		*lbIndex = (*lbIndex + 1) % n
+
+		gatewayAddr, err := querySingleLoadBalancer(ctx, addr, dialTimeout)
+		if err == nil {
+			return gatewayAddr, nil
+		}
+		slog.Warn("Load balancer request failed, trying next if available", "lb", addr, "err", err)
+		lastErr = err
+	}
+	return "", lastErr
+}
+
+func querySingleLoadBalancer(ctx context.Context, addr string, dialTimeout time.Duration) (string, error) {
+	conn, err := dialTCP(ctx, addr, dialTimeout)
+	if err != nil {
+		return "", err
+	}
+	defer conn.Close()
+
+	_ = conn.SetReadDeadline(time.Now().Add(lbReadTimeout))
+	reader := external.NewReader(conn)
+	gatewayAddr, err := reader.ReadGatewayAssignment()
+	if err != nil {
+		return "", fmt.Errorf("reading gateway assignment from %s: %w", addr, err)
+	}
+	if _, _, err := net.SplitHostPort(gatewayAddr); err != nil {
+		return "", fmt.Errorf("invalid gateway address format '%s': %w", gatewayAddr, err)
+	}
+	return gatewayAddr, nil
 }

@@ -5,25 +5,40 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
+	"time"
 
 	"trabajo-final-distribuidos/common/messageprotocol/external"
 )
 
 type ResultsHandler struct {
-	reader     *external.Reader
-	writer     *ResultWriter
-	connWriter *external.Writer
+	conn         net.Conn
+	reader       *external.Reader
+	writer       *ResultWriter
+	connWriter   *external.Writer
+	writeTimeout time.Duration
 }
 
-func NewResultsHandler(reader *external.Reader, connWriter *external.Writer, writer *ResultWriter) *ResultsHandler {
+func NewResultsHandler(
+	conn net.Conn,
+	reader *external.Reader,
+	connWriter *external.Writer,
+	writer *ResultWriter,
+	writeTimeout time.Duration,
+) *ResultsHandler {
 	return &ResultsHandler{
-		reader:     reader,
-		writer:     writer,
-		connWriter: connWriter,
+		conn:         conn,
+		reader:       reader,
+		connWriter:   connWriter,
+		writer:       writer,
+		writeTimeout: writeTimeout,
 	}
 }
 
 func (h *ResultsHandler) sendAck() error {
+	if h.writeTimeout > 0 && h.conn != nil {
+		_ = h.conn.SetWriteDeadline(time.Now().Add(h.writeTimeout))
+	}
 	return h.connWriter.WriteAck()
 }
 

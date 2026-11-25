@@ -3,9 +3,11 @@ package client
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/fs"
 	"log/slog"
+	"net"
 	"os"
 	"path/filepath"
 	"time"
@@ -54,14 +56,55 @@ type articleRow struct {
 }
 
 type ArticleSender struct {
-	writer   *external.Writer
-	inputDir string
+	conn         net.Conn
+	writer       *external.Writer
+	inputDir     string
+	writeTimeout time.Duration
+	ackTimeout   time.Duration
 }
 
-func NewArticleSender(writer *external.Writer, inputDir string) *ArticleSender {
+func NewArticleSender(
+	conn net.Conn,
+	writer *external.Writer,
+	inputDir string,
+	writeTimeout time.Duration,
+	ackTimeout time.Duration,
+) *ArticleSender {
 	return &ArticleSender{
-		writer:   writer,
-		inputDir: inputDir,
+		conn:         conn,
+		writer:       writer,
+		inputDir:     inputDir,
+		writeTimeout: writeTimeout,
+		ackTimeout:   ackTimeout,
+	}
+}
+
+func (s *ArticleSender) setWriteDeadline() {
+	if s.writeTimeout > 0 && s.conn != nil {
+		_ = s.conn.SetWriteDeadline(time.Now().Add(s.writeTimeout))
+	}
+}
+
+func (s *ArticleSender) waitForAck(ctx context.Context, ackChannel <-chan struct{}) error {
+	if s.ackTimeout <= 0 {
+		select {
+		case <-ackChannel:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+
+	timer := time.NewTimer(s.ackTimeout)
+	defer timer.Stop()
+
+	select {
+	case <-ackChannel:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return fmt.Errorf("timed out waiting for gateway batch ack after %s", s.ackTimeout)
 	}
 }
 
@@ -87,14 +130,13 @@ func (s *ArticleSender) Send(ctx context.Context, ackChannel <-chan struct{}) er
 		return err
 	}
 
+	s.setWriteDeadline()
 	if err := s.writer.WriteEndOfRecords(); err != nil {
 		return err
 	}
 
-	select {
-	case <-ackChannel:
-	case <-ctx.Done():
-		return ctx.Err()
+	if err := s.waitForAck(ctx, ackChannel); err != nil {
+		return err
 	}
 
 	slog.Info("Finished sending input", "articles", total)
@@ -130,14 +172,13 @@ func (s *ArticleSender) sendFile(ctx context.Context, path string, ackChannel <-
 				}
 			}
 
+			s.setWriteDeadline()
 			if err := s.writer.WriteArticleBatch(batch); err != nil {
 				return sent, err
 			}
 
-			select {
-			case <-ackChannel:
-			case <-ctx.Done():
-				return sent, ctx.Err()
+			if err := s.waitForAck(ctx, ackChannel); err != nil {
+				return sent, err
 			}
 			sent += nread
 		}

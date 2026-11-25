@@ -28,6 +28,7 @@ type q2ImageWriter struct {
 	csvFile   *os.File
 	csvWriter *csv.Writer
 	partials  map[string]*q2PartialImage
+	completed map[string]bool
 	nextImage uint64
 	closed    bool
 }
@@ -54,6 +55,7 @@ func newQ2ImageWriter(outputDir, parentDir string) (*q2ImageWriter, error) {
 		csvFile:   csvFile,
 		csvWriter: csv.NewWriter(csvFile),
 		partials:  make(map[string]*q2PartialImage),
+		completed: make(map[string]bool),
 	}
 	if err := w.writeCSVRecord([]string{"image_id", "name", "url", "file"}); err != nil {
 		w.Close()
@@ -84,6 +86,9 @@ func (w *q2ImageWriter) WriteChunk(chunk *result.Q2ImageChunk) (bool, error) {
 	if err := chunk.Validate(); err != nil {
 		return false, err
 	}
+	if w.completed[chunk.ImageID] {
+		return false, nil
+	}
 	partial, exists := w.partials[chunk.ImageID]
 	if !exists {
 		if chunk.Seq != 0 {
@@ -99,6 +104,17 @@ func (w *q2ImageWriter) WriteChunk(chunk *result.Q2ImageChunk) (bool, error) {
 		}
 		partial = &q2PartialImage{file: file, name: chunk.Name, url: chunk.Url}
 		w.partials[chunk.ImageID] = partial
+	} else if chunk.Seq == 0 && partial.nextSeq > 0 {
+		// Si un fetcher reinicio y reenvia la imagen desde seq=0, reinicia el parcial limpio.
+		if _, err := partial.file.Seek(0, io.SeekStart); err != nil {
+			return false, err
+		}
+		if err := partial.file.Truncate(0); err != nil {
+			return false, err
+		}
+		partial.nextSeq = 0
+		partial.name = chunk.Name
+		partial.url = chunk.Url
 	}
 	if uint64(chunk.Seq) != partial.nextSeq {
 		return false, fmt.Errorf("Q2 image %q expected seq=%d, got %d", chunk.ImageID, partial.nextSeq, chunk.Seq)
@@ -129,6 +145,7 @@ func (w *q2ImageWriter) finishImage(imageID string, partial *q2PartialImage) err
 		return err
 	}
 	delete(w.partials, imageID)
+	w.completed[imageID] = true
 
 	imagePath, err := filepath.Rel(filepath.Dir(w.csvFile.Name()), finalPath)
 	if err != nil {
