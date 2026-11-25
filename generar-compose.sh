@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -lt 1 || $# -gt 11 ]]; then
-  echo "Uso: $0 <archivo-salida> [cantidad-clientes] [cantidad-gateways] [cantidad-tokenizers] [cantidad-q4-wordcounters] [cantidad-q5-avgpartials] [cantidad-q5-filters] [cantidad-q1-filters] [cantidad-q2-filters] [cantidad-q2-fetchers] [cantidad-q3-joins]" >&2
+if [[ $# -lt 1 || $# -gt 12 ]]; then
+  echo "Uso: $0 <archivo-salida> [cantidad-clientes] [cantidad-gateways] [cantidad-tokenizers] [cantidad-q4-wordcounters] [cantidad-q5-avgpartials] [cantidad-q5-filters] [cantidad-q1-filters] [cantidad-q2-filters] [cantidad-q2-fetchers] [cantidad-q3-joins] [cantidad-load-balancers]" >&2
   exit 1
 fi
 
@@ -17,8 +17,9 @@ q1_filter_count="${8:-1}"
 q2_filter_count="${9:-1}"
 q2_fetcher_count="${10:-1}"
 q3_join_count="${11:-1}"
+lb_count="${12:-1}"
 
-for val in "$client_count" "$gateway_count" "$tokenizer_count" "$q4_counter_count" "$q5_avg_partial_count" "$q5_filter_count" "$q1_filter_count" "$q2_filter_count" "$q2_fetcher_count" "$q3_join_count"; do
+for val in "$client_count" "$gateway_count" "$tokenizer_count" "$q4_counter_count" "$q5_avg_partial_count" "$q5_filter_count" "$q1_filter_count" "$q2_filter_count" "$q2_fetcher_count" "$q3_join_count" "$lb_count"; do
   if ! [[ "$val" =~ ^[0-9]+$ ]] || [[ "$val" -lt 1 ]]; then
     echo "Error: los conteos deben ser enteros positivos" >&2
     exit 1
@@ -27,11 +28,34 @@ done
 
 root_dir="$(cd "$(dirname "$0")" && pwd)"
 
+lb_service_name() {
+  local id=$1
+  local total=$2
+  if [[ "$total" -eq 1 ]]; then
+    echo "load_balancer"
+  else
+    echo "load_balancer_${id}"
+  fi
+}
+
 cliente() {
   local id=$1
+  local total_lbs=$2
   if [[ ! -d "$root_dir/input/client_${id}" ]]; then
     echo "Aviso: no existe input/client_${id}, el cliente no tendra datos que enviar" >&2
   fi
+
+  local lbs_list=""
+  for lb_id in $(seq 0 $((total_lbs - 1))); do
+    local svc
+    svc=$(lb_service_name "$lb_id" "$total_lbs")
+    if [[ -n "$lbs_list" ]]; then
+      lbs_list="${lbs_list},${svc}:5000"
+    else
+      lbs_list="${svc}:5000"
+    fi
+  done
+
   cat <<YAML
   client_${id}:
     build:
@@ -40,12 +64,24 @@ cliente() {
     container_name: client_${id}
     user: "$(id -u):$(id -g)"
     depends_on:
-    - load_balancer
+YAML
+  for lb_id in $(seq 0 $((total_lbs - 1))); do
+    echo "    - $(lb_service_name "$lb_id" "$total_lbs")"
+  done
+  cat <<YAML
     environment:
     - INPUT_DIR=/datasets
     - OUTPUT_DIR=/output
+YAML
+  if [[ "$total_lbs" -eq 1 ]]; then
+    cat <<YAML
     - SERVER_HOST=load_balancer
     - SERVER_PORT=5000
+YAML
+  else
+    echo "    - LOAD_BALANCERS=${lbs_list}"
+  fi
+  cat <<YAML
     volumes:
     - ../input/client_${id}:/datasets
     - ../output/client_${id}:/output
@@ -54,30 +90,36 @@ YAML
 }
 
 load_balancer() {
-  local count=$1
+  local id=$1
+  local gw_count=$2
+  local total_lbs=$3
+  local svc
+  svc=$(lb_service_name "$id" "$total_lbs")
+
   local gateways_list=""
-  for id in $(seq 0 $((count - 1))); do
+  for gw_id in $(seq 0 $((gw_count - 1))); do
     if [[ -n "$gateways_list" ]]; then
-      gateways_list="${gateways_list},gateway_${id}:5678"
+      gateways_list="${gateways_list},gateway_${gw_id}:5678"
     else
-      gateways_list="gateway_${id}:5678"
+      gateways_list="gateway_${gw_id}:5678"
     fi
   done
 
   cat <<YAML
-  load_balancer:
+  ${svc}:
     build:
       context: ./src/
       dockerfile: loadbalancer/Dockerfile
-    container_name: load_balancer
+    container_name: ${svc}
     depends_on:
 YAML
-  for id in $(seq 0 $((count - 1))); do
-    echo "    - gateway_${id}"
+  for gw_id in $(seq 0 $((gw_count - 1))); do
+    echo "    - gateway_${gw_id}"
   done
   cat <<YAML
     environment:
-    - SERVER_HOST=load_balancer
+    - LB_ID=${id}
+    - SERVER_HOST=${svc}
     - SERVER_PORT=5000
     - GATEWAYS=${gateways_list}
 
@@ -160,10 +202,12 @@ YAML
   echo "services:"
 
   for id in $(seq 0 $((client_count - 1))); do
-    cliente "$id"
+    cliente "$id" "$lb_count"
   done
 
-  load_balancer "$gateway_count"
+  for id in $(seq 0 $((lb_count - 1))); do
+    load_balancer "$id" "$gateway_count" "$lb_count"
+  done
 
   for id in $(seq 0 $((gateway_count - 1))); do
     gateway "$id"
@@ -202,4 +246,4 @@ YAML
   rabbitmq
 } > "$output_file"
 
-echo "Docker Compose generado en $output_file con $client_count cliente(s), $gateway_count gateway(s), $tokenizer_count tokenizer(s), $q4_counter_count q4-counter(s), $q5_avg_partial_count q5-avgpartial(s), $q5_filter_count q5-filter(s), $q1_filter_count q1-filter(s), $q2_filter_count q2-filter(s), $q2_fetcher_count q2-fetcher(s) y $q3_join_count q3-join(s)."
+echo "Docker Compose generado en $output_file con $client_count cliente(s), $lb_count load-balancer(s), $gateway_count gateway(s), $tokenizer_count tokenizer(s), $q4_counter_count q4-counter(s), $q5_avg_partial_count q5-avgpartial(s), $q5_filter_count q5-filter(s), $q1_filter_count q1-filter(s), $q2_filter_count q2-filter(s), $q2_fetcher_count q2-fetcher(s) y $q3_join_count q3-join(s)."

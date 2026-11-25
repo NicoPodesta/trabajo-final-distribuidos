@@ -7,12 +7,13 @@ services:
     container_name: client_0
     user: "1000:1000"
     depends_on:
-    - load_balancer
+    - load_balancer_0
+    - load_balancer_1
+    - load_balancer_2
     environment:
     - INPUT_DIR=/datasets
     - OUTPUT_DIR=/output
-    - SERVER_HOST=load_balancer
-    - SERVER_PORT=5000
+    - LOAD_BALANCERS=load_balancer_0:5000,load_balancer_1:5000,load_balancer_2:5000
     volumes:
     - ../input/client_0:/datasets
     - ../output/client_0:/output
@@ -24,12 +25,13 @@ services:
     container_name: client_1
     user: "1000:1000"
     depends_on:
-    - load_balancer
+    - load_balancer_0
+    - load_balancer_1
+    - load_balancer_2
     environment:
     - INPUT_DIR=/datasets
     - OUTPUT_DIR=/output
-    - SERVER_HOST=load_balancer
-    - SERVER_PORT=5000
+    - LOAD_BALANCERS=load_balancer_0:5000,load_balancer_1:5000,load_balancer_2:5000
     volumes:
     - ../input/client_1:/datasets
     - ../output/client_1:/output
@@ -41,27 +43,59 @@ services:
     container_name: client_2
     user: "1000:1000"
     depends_on:
-    - load_balancer
+    - load_balancer_0
+    - load_balancer_1
+    - load_balancer_2
     environment:
     - INPUT_DIR=/datasets
     - OUTPUT_DIR=/output
-    - SERVER_HOST=load_balancer
-    - SERVER_PORT=5000
+    - LOAD_BALANCERS=load_balancer_0:5000,load_balancer_1:5000,load_balancer_2:5000
     volumes:
     - ../input/client_2:/datasets
     - ../output/client_2:/output
 
-  load_balancer:
+  load_balancer_0:
     build:
       context: ./src/
       dockerfile: loadbalancer/Dockerfile
-    container_name: load_balancer
+    container_name: load_balancer_0
     depends_on:
     - gateway_0
     - gateway_1
     - gateway_2
     environment:
-    - SERVER_HOST=load_balancer
+    - LB_ID=0
+    - SERVER_HOST=load_balancer_0
+    - SERVER_PORT=5000
+    - GATEWAYS=gateway_0:5678,gateway_1:5678,gateway_2:5678
+
+  load_balancer_1:
+    build:
+      context: ./src/
+      dockerfile: loadbalancer/Dockerfile
+    container_name: load_balancer_1
+    depends_on:
+    - gateway_0
+    - gateway_1
+    - gateway_2
+    environment:
+    - LB_ID=1
+    - SERVER_HOST=load_balancer_1
+    - SERVER_PORT=5000
+    - GATEWAYS=gateway_0:5678,gateway_1:5678,gateway_2:5678
+
+  load_balancer_2:
+    build:
+      context: ./src/
+      dockerfile: loadbalancer/Dockerfile
+    container_name: load_balancer_2
+    depends_on:
+    - gateway_0
+    - gateway_1
+    - gateway_2
+    environment:
+    - LB_ID=2
+    - SERVER_HOST=load_balancer_2
     - SERVER_PORT=5000
     - GATEWAYS=gateway_0:5678,gateway_1:5678,gateway_2:5678
 
