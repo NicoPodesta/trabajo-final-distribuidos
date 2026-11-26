@@ -68,6 +68,10 @@ func loadConfig() (gateway.GatewayConfig, error) {
 	if q2FetcherAmount < 1 {
 		return gateway.GatewayConfig{}, fmt.Errorf("Q2_FETCHER_AMOUNT must be positive")
 	}
+	resultsPrefetch, err := config.OptionalInt("GATEWAY_RESULTS_PREFETCH", 1)
+	if err != nil {
+		return gateway.GatewayConfig{}, err
+	}
 
 	return gateway.GatewayConfig{
 		ID:              id,
@@ -77,6 +81,7 @@ func loadConfig() (gateway.GatewayConfig, error) {
 		MOMPort:         momPort,
 		ExpectedQueries: expectedQueries,
 		ExpectedEOFs:    map[inner.QueryID]int{inner.Q1: q1FilterAmount, inner.Q2: q2FetcherAmount, inner.Q3: q3JoinAmount, inner.Q5: q5FilterAmount},
+		ResultsPrefetch: resultsPrefetch,
 	}, nil
 }
 

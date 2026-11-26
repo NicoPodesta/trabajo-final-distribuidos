@@ -27,6 +27,7 @@ type GatewayConfig struct {
 	MOMPort         int
 	ExpectedQueries int
 	ExpectedEOFs    map[inner.QueryID]int
+	ResultsPrefetch int
 }
 
 type Gateway struct {
@@ -74,7 +75,7 @@ func NewGateway(config GatewayConfig) (gw *Gateway, err error) {
 	}
 
 	resultsQueueName := fmt.Sprintf("results_%s", config.ID)
-	resultsQ, err := conns.Queue(resultsQueueName)
+	resultsQ, err := conns.QueueWithPrefetch(resultsQueueName, config.ResultsPrefetch)
 	if err != nil {
 		return nil, err
 	}

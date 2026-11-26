@@ -8,7 +8,7 @@ Los datos de entrada de cada cliente se ubican en `input/client_N/` (archivos `.
 
 ### 1. Selección de escenarios con `make switch`
 
-Desde el directorio `golang/` se puede seleccionar interactivamente entre cinco escenarios predefinidos:
+Desde el directorio `golang/` se puede seleccionar interactivamente entre cuatro escenarios predefinidos:
 
 ```bash
 cd golang
@@ -21,7 +21,6 @@ Los escenarios configurados corresponden a:
 - **Escenario 2**: 1 cliente, 3 réplicas en cada etapa del pipeline.
 - **Escenario 3**: 2 clientes concurrentes, 3 réplicas en cada etapa del pipeline.
 - **Escenario 4**: 3 clientes concurrentes, 3 réplicas en cada etapa del pipeline (incluye 3 Joins particionados en Q3).
-- **Escenario 5**: Escalabilidad intensiva en I/O (igual al escenario 4, pero escalando a 25 Fetchers concurrentes en Q2).
 
 ### 2. Generación manual de `docker-compose.yaml` (opcional)
 
@@ -63,6 +62,8 @@ make logs
 ### Ejecución
 
 - Ejecucion con cantidades configurables de clientes, gateways, tokenizers, contadores de Q4, Avg Partial y Filter de Q5 filtros de Q1 y Q2, Fetchers de Q2 y Joins de Q3. Un load balancer, el Merger de Q4 y el Aggregator de Q5.
+- Prefetch por componente sobre la cola que consume: `TOKENIZER_PREFETCH`, `Q3_JOIN_PREFETCH`, `Q4_WORD_COUNTER_PREFETCH`, `Q5_AVG_PARTIAL_PREFETCH`, `Q5_FILTER_PREFETCH` y `GATEWAY_RESULTS_PREFETCH` (20 en el compose generado, 1 si falta), además de `Q1_PREFETCH`, `Q2_PREFETCH` y `Q2_MAX_PENDING_REQUESTS`. El Merger de Q4, el Aggregator de Q5 y los exchanges de control quedan en 1: reciben pocos mensajes.
+- El middleware procesa los mensajes de una cola de a uno y hace ACK de cada uno al terminarlo, así que un prefetch mayor no agrega concurrencia dentro de la réplica: RabbitMQ le adelanta mensajes y la réplica no espera la entrega del siguiente. El orden de cada cola se conserva, así que el cierre no cambia.
 
 ### Cliente
 

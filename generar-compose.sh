@@ -106,6 +106,7 @@ gateway() {
     - Q2_FETCHER_AMOUNT=${q2_fetcher_count}
     - Q3_JOIN_AMOUNT=${q3_join_count}
     - Q5_FILTER_AMOUNT=${q5_filter_count}
+    - GATEWAY_RESULTS_PREFETCH=20
 
 YAML
 }

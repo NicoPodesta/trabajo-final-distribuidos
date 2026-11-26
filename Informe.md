@@ -192,7 +192,7 @@ La consulta Q2 involucra una operación fuertemente ligada a I/O sobre una API e
 
 ### 5.4. Escenarios de escalabilidad y validación de resultados
 
-El comportamiento del clúster fue evaluado a través de cinco escenarios representativos de carga y topología:
+El comportamiento del clúster fue evaluado a través de cuatro escenarios representativos de carga y topología:
 
 * **Escalamiento horizontal en cómputo**: Tokenizers, filtros de Q1 y contadores de Q4 distribuyen el trabajo en réplicas concurrentes sobre colas compartidas o particionadas, eliminando cuellos de botella en la ingesta masiva de abstracts y artículos.
 * **Concurrencia multicliente y aislamiento**: Los **Escenarios 3 y 4** ejecutan múltiples clientes independientes en paralelo (2 y 3 clientes), verificando la asignación balanceada por el Load Balancer, el aislamiento estricto de sesiones (`clientID`) y la convergencia de resultados en sus respectivos Gateways.
