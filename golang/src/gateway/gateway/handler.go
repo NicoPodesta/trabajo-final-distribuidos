@@ -98,7 +98,7 @@ func (h *ClientHandler) Handle(conn net.Conn, shutdownChannel <-chan struct{}) {
 				slog.Error("Unexpected ArticleBatch after EndOfRecords", "clientID", clientID)
 				return
 			}
-			count, err := h.handleArticleBatch(session, reader, clientID)
+			count, err := h.handleArticleBatch(session, reader, clientID, q1Batches+1)
 			if err != nil {
 				slog.Error("While handling article batch message", "clientID", clientID, "err", err)
 				return
@@ -133,7 +133,7 @@ func (h *ClientHandler) Handle(conn net.Conn, shutdownChannel <-chan struct{}) {
 	}
 }
 
-func (h *ClientHandler) handleArticleBatch(session *clientSession, reader *external.Reader, clientID string) (int, error) {
+func (h *ClientHandler) handleArticleBatch(session *clientSession, reader *external.Reader, clientID string, q1BatchID uint64) (int, error) {
 	records, err := reader.ReadArticleBatch()
 	if err != nil {
 		return 0, err
@@ -168,7 +168,7 @@ func (h *ClientHandler) handleArticleBatch(session *clientSession, reader *exter
 		}
 	}
 
-	if err := h.sendQ1Articles(clientID, q1Items); err != nil {
+	if err := h.sendQ1Articles(clientID, q1BatchID, q1Items); err != nil {
 		return 0, err
 	}
 	if err := h.sendQ2Articles(clientID, q2Items); err != nil {
@@ -201,8 +201,8 @@ func (h *ClientHandler) handleEndOfRecords(session *clientSession, clientID stri
 	return nil
 }
 
-func (h *ClientHandler) sendQ1Articles(clientID string, items []inner.Q1ArticleItem) error {
-	msg, err := inner.SerializeQ1Articles(clientID, items)
+func (h *ClientHandler) sendQ1Articles(clientID string, batchID uint64, items []inner.Q1ArticleItem) error {
+	msg, err := inner.SerializeQ1Articles(clientID, batchID, items)
 	if err != nil {
 		return err
 	}

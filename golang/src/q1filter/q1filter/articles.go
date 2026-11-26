@@ -15,7 +15,7 @@ func (filter *Filter) handleArticlesMessage(articleMsg *inner.Q1ArticlesMessage)
 			results = append(results, *matched)
 		}
 	}
-	if err := filter.publishResults(articleMsg.ClientID, results); err != nil {
+	if err := filter.publishResults(articleMsg.ClientID, articleMsg.BatchID, results); err != nil {
 		return err
 	}
 	stats := filter.statsByClient[articleMsg.ClientID]

@@ -5,12 +5,12 @@ import (
 	"trabajo-final-distribuidos/common/result"
 )
 
-func (filter *Filter) publishResults(clientID string, records []result.Q1Result) error {
+func (filter *Filter) publishResults(clientID string, batchID uint64, records []result.Q1Result) error {
 	// Un batch sin coincidencias no termina la consulta
 	if len(records) == 0 {
 		return nil
 	}
-	msg, err := inner.SerializeQ1Results(clientID, records)
+	msg, err := inner.SerializeQ1Results(clientID, batchID, records)
 	if err != nil {
 		return err
 	}

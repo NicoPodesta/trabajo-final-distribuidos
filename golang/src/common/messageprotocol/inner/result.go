@@ -10,6 +10,7 @@ type ResultHeader struct {
 	Type      MsgType `json:"type"`
 	ClientID  string  `json:"client_id"`
 	QueryID   QueryID `json:"query_id"`
+	BatchID   uint64  `json:"batch_id,omitempty"`
 	FilterID  *int    `json:"filter_id,omitempty"`
 	FetcherID *int    `json:"fetcher_id,omitempty"`
 }

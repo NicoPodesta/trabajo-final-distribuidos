@@ -16,6 +16,7 @@ type Q1ArticleItem struct {
 type Q1ArticlesMessage struct {
 	Type         MsgType         `json:"type"`
 	ClientID     string          `json:"client_id"`
+	BatchID      uint64          `json:"batch_id,omitempty"`
 	Records      []Q1ArticleItem `json:"records,omitempty"`
 	TotalBatches *uint64         `json:"total_batches,omitempty"`
 }
@@ -24,10 +25,11 @@ func (m *Q1ArticlesMessage) IsEOF() bool {
 	return m.Type == MsgEOF
 }
 
-func NewQ1ArticlesMessage(clientID string, records []Q1ArticleItem) *Q1ArticlesMessage {
+func NewQ1ArticlesMessage(clientID string, batchID uint64, records []Q1ArticleItem) *Q1ArticlesMessage {
 	return &Q1ArticlesMessage{
 		Type:     MsgData,
 		ClientID: clientID,
+		BatchID:  batchID,
 		Records:  records,
 	}
 }
@@ -48,8 +50,8 @@ func (m *Q1ArticlesMessage) Serialize() (*middleware.Message, error) {
 	return &middleware.Message{Body: string(body)}, nil
 }
 
-func SerializeQ1Articles(clientID string, records []Q1ArticleItem) (*middleware.Message, error) {
-	return NewQ1ArticlesMessage(clientID, records).Serialize()
+func SerializeQ1Articles(clientID string, batchID uint64, records []Q1ArticleItem) (*middleware.Message, error) {
+	return NewQ1ArticlesMessage(clientID, batchID, records).Serialize()
 }
 
 func SerializeQ1ArticlesEOF(clientID string, totalBatches uint64) (*middleware.Message, error) {
@@ -66,8 +68,12 @@ func DeserializeQ1Articles(message *middleware.Message) (*Q1ArticlesMessage, err
 
 type Q1ResultsMessage = ResultsMessage[result.Q1Result]
 
-func NewQ1ResultsMessage(clientID string, records []result.Q1Result) *Q1ResultsMessage {
-	return NewResultsMessage(Q1, clientID, records)
+func NewQ1ResultsMessage(clientID string, batchID uint64, records []result.Q1Result) *Q1ResultsMessage {
+	msg := NewResultsMessage(Q1, clientID, records)
+	if !msg.IsEOF() {
+		msg.BatchID = batchID
+	}
+	return msg
 }
 
 func NewQ1ResultsEOF(clientID string, filterID int) *Q1ResultsMessage {
@@ -76,8 +82,8 @@ func NewQ1ResultsEOF(clientID string, filterID int) *Q1ResultsMessage {
 	return msg
 }
 
-func SerializeQ1Results(clientID string, records []result.Q1Result) (*middleware.Message, error) {
-	return NewQ1ResultsMessage(clientID, records).Serialize()
+func SerializeQ1Results(clientID string, batchID uint64, records []result.Q1Result) (*middleware.Message, error) {
+	return NewQ1ResultsMessage(clientID, batchID, records).Serialize()
 }
 
 func SerializeQ1ResultsEOF(clientID string, filterID int) (*middleware.Message, error) {
