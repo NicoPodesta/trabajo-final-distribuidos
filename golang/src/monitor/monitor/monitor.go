@@ -25,7 +25,7 @@ func NewMonitor(config Config) *Monitor {
 }
 
 func (m *Monitor) Run(ctx context.Context) error {
-	watchdog := NewWatchdog(WatchdogConfig{
+	healthChecker := NewHealthChecker(HealthCheckerConfig{
 		MonitorID:       m.config.ID,
 		Targets:         m.config.Targets,
 		CheckInterval:   m.config.CheckInterval,
@@ -36,6 +36,6 @@ func (m *Monitor) Run(ctx context.Context) error {
 		Restarter:       NewDockerRestarter(m.config.DockerSocket),
 	})
 
-	watchdog.Run(ctx)
+	healthChecker.Run(ctx)
 	return nil
 }
