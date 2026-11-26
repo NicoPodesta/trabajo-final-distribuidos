@@ -23,24 +23,25 @@ type sessionDelivery struct {
 }
 
 type clientSession struct {
-	clientID        string
-	conn            net.Conn
-	writer          *external.Writer
-	writeLock       sync.Mutex
-	writeTimeout    time.Duration
-	ackTimeout      time.Duration
-	doneChannel     chan struct{}
-	closeOnce       sync.Once
-	inboundEOFDone  chan struct{}
-	inboundEOFOnce  sync.Once
-	expectedQueries int
-	expectedEOFs    map[inner.QueryID]int
-	receivedEOFs    map[inner.QueryID]int
-	completedCount  int
-	outboundEOFSent bool
-	q1EOFs          map[int]bool
-	q2EOFs          map[int]bool
-	ackChan         chan struct{}
+	clientID           string
+	conn               net.Conn
+	writer             *external.Writer
+	writeLock          sync.Mutex
+	writeTimeout       time.Duration
+	ackTimeout         time.Duration
+	doneChannel        chan struct{}
+	closeOnce          sync.Once
+	inboundEOFDone     chan struct{}
+	inboundEOFOnce     sync.Once
+	expectedQueries    int
+	expectedEOFs       map[inner.QueryID]int
+	receivedEOFs       map[inner.QueryID]int
+	completedCount     int
+	outboundEOFSent    bool
+	q1EOFs             map[int]bool
+	q2EOFs             map[int]bool
+	q1CompletedBatches map[uint64]struct{}
+	ackChan            chan struct{}
 
 	deliveryLock sync.Mutex
 	closed       bool
@@ -63,18 +64,19 @@ func newClientSession(
 		ackTimeout = defaultSessionAckTimeout
 	}
 	return &clientSession{
-		clientID:        clientID,
-		conn:            conn,
-		writer:          external.NewWriter(conn),
-		writeTimeout:    writeTimeout,
-		ackTimeout:      ackTimeout,
-		doneChannel:     make(chan struct{}),
-		inboundEOFDone:  make(chan struct{}),
-		expectedQueries: expectedQueries,
-		expectedEOFs:    expectedEOFs,
-		receivedEOFs:    make(map[inner.QueryID]int),
-		ackChan:         make(chan struct{}, 1),
-		notifyCh:        make(chan struct{}, 1),
+		clientID:           clientID,
+		conn:               conn,
+		writer:             external.NewWriter(conn),
+		writeTimeout:       writeTimeout,
+		ackTimeout:         ackTimeout,
+		doneChannel:        make(chan struct{}),
+		inboundEOFDone:     make(chan struct{}),
+		expectedQueries:    expectedQueries,
+		expectedEOFs:       expectedEOFs,
+		receivedEOFs:       make(map[inner.QueryID]int),
+		q1CompletedBatches: make(map[uint64]struct{}),
+		ackChan:            make(chan struct{}, 1),
+		notifyCh:           make(chan struct{}, 1),
 	}
 }
 
@@ -157,6 +159,21 @@ func (s *clientSession) runSender(onClose func(clientID string)) {
 }
 
 func (s *clientSession) processDelivery(d sessionDelivery) error {
+	if d.header.QueryID == inner.Q1 {
+		switch d.header.Type {
+		case inner.MsgData:
+			if d.header.BatchID == 0 || d.header.FilterID != nil || d.header.FetcherID != nil {
+				return errors.New("Q1 data result requires batch_id and no worker identifiers")
+			}
+		case inner.MsgEOF:
+			if d.header.BatchID != 0 || d.header.FetcherID != nil {
+				return errors.New("Q1 EOF must not contain batch_id or fetcher_id")
+			}
+		default:
+			return fmt.Errorf("unexpected Q1 result type: %d", d.header.Type)
+		}
+	}
+
 	if d.header.IsEOF() {
 		slog.Info("Results EOF received from workers for client", "clientID", s.clientID, "query", d.header.QueryID)
 		allDone, err := s.registerEOF(d.header.QueryID, d.header.FilterID, d.header.FetcherID)
@@ -169,7 +186,18 @@ func (s *clientSession) processDelivery(d sessionDelivery) error {
 		return nil
 	}
 
-	return deliverResultRecord(s, d.header, &d.msg)
+	if d.header.QueryID != inner.Q1 {
+		return deliverResultRecord(s, d.header, &d.msg)
+	}
+	if _, completed := s.q1CompletedBatches[d.header.BatchID]; completed {
+		slog.Debug("Discarding duplicate Q1 result batch", "clientID", s.clientID, "batchID", d.header.BatchID)
+		return nil
+	}
+	if err := deliverResultRecord(s, d.header, &d.msg); err != nil {
+		return err
+	}
+	s.q1CompletedBatches[d.header.BatchID] = struct{}{}
+	return nil
 }
 
 func (s *clientSession) eofsExpectedFor(queryID inner.QueryID) int {
