@@ -69,11 +69,15 @@ func DeserializeQ1Articles(message *middleware.Message) (*Q1ArticlesMessage, err
 type Q1ResultsMessage = ResultsMessage[result.Q1Result]
 
 func NewQ1ResultsMessage(clientID string, batchID uint64, records []result.Q1Result) *Q1ResultsMessage {
-	msg := NewResultsMessage(Q1, clientID, records)
-	if !msg.IsEOF() {
-		msg.BatchID = batchID
+	return &Q1ResultsMessage{
+		ResultHeader: ResultHeader{
+			Type:     MsgData,
+			ClientID: clientID,
+			QueryID:  Q1,
+			BatchID:  batchID,
+		},
+		Records: records,
 	}
-	return msg
 }
 
 func NewQ1ResultsEOF(clientID string, filterID int) *Q1ResultsMessage {
