@@ -30,11 +30,17 @@ func loadConfig() (q4wordcounter.WordCounterConfig, error) {
 		return q4wordcounter.WordCounterConfig{}, err
 	}
 
+	prefetch, err := config.OptionalInt("Q4_WORD_COUNTER_PREFETCH", 1)
+	if err != nil {
+		return q4wordcounter.WordCounterConfig{}, err
+	}
+
 	return q4wordcounter.WordCounterConfig{
 		MOMHost:         momHost,
 		MOMPort:         momPort,
 		ID:              id,
 		TokenizerAmount: tokenizerAmount,
+		Prefetch:        prefetch,
 	}, nil
 }
 

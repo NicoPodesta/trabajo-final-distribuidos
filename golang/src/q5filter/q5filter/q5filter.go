@@ -27,6 +27,7 @@ type FilterConfig struct {
 	FilterID     int
 	FilterAmount int
 	PendingDir   string
+	Prefetch     int
 }
 
 type Filter struct {
@@ -46,7 +47,7 @@ func NewFilter(config FilterConfig) (*Filter, error) {
 	}
 
 	settings := middleware.ConnSettings{Hostname: config.MOMHost, Port: config.MOMPort}
-	recentArticlesQueue, err := middleware.CreateQueueMiddleware(recentArticlesQueueName, settings)
+	recentArticlesQueue, err := middleware.CreateQueueWithPrefetchAndRetry(recentArticlesQueueName, settings, config.Prefetch)
 	if err != nil {
 		return nil, err
 	}

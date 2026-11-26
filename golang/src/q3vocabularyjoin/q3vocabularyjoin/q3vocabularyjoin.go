@@ -17,6 +17,7 @@ type VocabularyJoinConfig struct {
 	MOMPort         int
 	JoinID          int
 	TokenizerAmount int
+	Prefetch        int
 }
 
 type VocabularyJoin struct {
@@ -30,7 +31,7 @@ type VocabularyJoin struct {
 func NewVocabularyJoin(config VocabularyJoinConfig) (*VocabularyJoin, error) {
 	settings := middleware.ConnSettings{Hostname: config.MOMHost, Port: config.MOMPort}
 	queueName := fmt.Sprintf("%s%d", vocabularyQueuePrefix, config.JoinID)
-	queue, err := middleware.CreateQueueWithRetry(queueName, settings)
+	queue, err := middleware.CreateQueueWithPrefetchAndRetry(queueName, settings, config.Prefetch)
 	if err != nil {
 		return nil, err
 	}

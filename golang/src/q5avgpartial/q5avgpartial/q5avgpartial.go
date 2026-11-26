@@ -24,6 +24,7 @@ type AvgPartialConfig struct {
 	MOMPort          int
 	AvgPartialID     int
 	AvgPartialAmount int
+	Prefetch         int
 }
 
 type totals struct {
@@ -55,7 +56,7 @@ func NewAvgPartial(config AvgPartialConfig) (partial *AvgPartial, err error) {
 		}
 	}()
 
-	historicalCountsQueue, err := conns.Queue(historicalCountsQueueName)
+	historicalCountsQueue, err := conns.QueueWithPrefetch(historicalCountsQueueName, config.Prefetch)
 	if err != nil {
 		return nil, err
 	}

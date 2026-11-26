@@ -40,11 +40,16 @@ func loadConfig() (q3vocabularyjoin.VocabularyJoinConfig, error) {
 	if joinID < 0 {
 		return q3vocabularyjoin.VocabularyJoinConfig{}, fmt.Errorf("Q3_JOIN_ID must not be negative")
 	}
+	prefetch, err := config.OptionalInt("Q3_JOIN_PREFETCH", 1)
+	if err != nil {
+		return q3vocabularyjoin.VocabularyJoinConfig{}, err
+	}
 	return q3vocabularyjoin.VocabularyJoinConfig{
 		MOMHost:         momHost,
 		MOMPort:         momPort,
 		JoinID:          joinID,
 		TokenizerAmount: tokenizerAmount,
+		Prefetch:        prefetch,
 	}, nil
 }
 

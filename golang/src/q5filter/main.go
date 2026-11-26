@@ -35,12 +35,18 @@ func loadConfig() (q5filter.FilterConfig, error) {
 		return q5filter.FilterConfig{}, err
 	}
 
+	prefetch, err := config.OptionalInt("Q5_FILTER_PREFETCH", 1)
+	if err != nil {
+		return q5filter.FilterConfig{}, err
+	}
+
 	return q5filter.FilterConfig{
 		MOMHost:      momHost,
 		MOMPort:      momPort,
 		FilterID:     filterID,
 		FilterAmount: filterAmount,
 		PendingDir:   pendingDir,
+		Prefetch:     prefetch,
 	}, nil
 }
 

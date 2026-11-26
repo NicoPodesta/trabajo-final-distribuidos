@@ -21,6 +21,7 @@ type WordCounterConfig struct {
 	MOMPort         int
 	ID              int
 	TokenizerAmount int
+	Prefetch        int
 }
 
 type WordCounter struct {
@@ -35,7 +36,7 @@ type WordCounter struct {
 func NewWordCounter(config WordCounterConfig) (*WordCounter, error) {
 	conns := middleware.NewConnections(middleware.ConnSettings{Hostname: config.MOMHost, Port: config.MOMPort})
 	queueName := fmt.Sprintf("%s%d", wordCountsQueuePrefix, config.ID)
-	wordCountsQueue, err := conns.Queue(queueName)
+	wordCountsQueue, err := conns.QueueWithPrefetch(queueName, config.Prefetch)
 	if err != nil {
 		conns.Close()
 		return nil, err
