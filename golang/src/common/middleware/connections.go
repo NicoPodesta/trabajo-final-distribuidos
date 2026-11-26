@@ -12,7 +12,11 @@ func NewConnections(settings ConnSettings) *Connections {
 }
 
 func (conns *Connections) Queue(name string) (Middleware, error) {
-	created, err := CreateQueueWithRetry(name, conns.Settings)
+	return conns.QueueWithPrefetch(name, queuePrefetch)
+}
+
+func (conns *Connections) QueueWithPrefetch(name string, prefetch int) (Middleware, error) {
+	created, err := CreateQueueWithPrefetchAndRetry(name, conns.Settings, prefetch)
 	if err != nil {
 		return nil, err
 	}

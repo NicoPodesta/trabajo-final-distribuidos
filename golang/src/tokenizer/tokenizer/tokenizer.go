@@ -30,6 +30,7 @@ type TokenizerConfig struct {
 	TokenizerAmount      int
 	WordCounterAmount    int
 	VocabularyJoinAmount int
+	Prefetch             int
 }
 
 type Tokenizer struct {
@@ -52,7 +53,7 @@ func NewTokenizer(config TokenizerConfig) (tokenizer *Tokenizer, err error) {
 		}
 	}()
 
-	abstractsQueue, err := conns.Queue(abstractsQueueName)
+	abstractsQueue, err := conns.QueueWithPrefetch(abstractsQueueName, config.Prefetch)
 	if err != nil {
 		return nil, err
 	}

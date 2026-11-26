@@ -179,7 +179,7 @@ YAML
   done
 
   for id in $(seq 0 $((tokenizer_count - 1))); do
-    worker "tokenizer_${id}" tokenizer "TOKENIZER_ID=${id}" "TOKENIZER_AMOUNT=${tokenizer_count}" "Q4_WORD_COUNTER_AMOUNT=${q4_counter_count}" "Q3_JOIN_AMOUNT=${q3_join_count}"
+    worker "tokenizer_${id}" tokenizer "TOKENIZER_ID=${id}" "TOKENIZER_AMOUNT=${tokenizer_count}" "Q4_WORD_COUNTER_AMOUNT=${q4_counter_count}" "Q3_JOIN_AMOUNT=${q3_join_count}" "TOKENIZER_PREFETCH=20"
   done
 
   for id in $(seq 0 $((q3_join_count - 1))); do

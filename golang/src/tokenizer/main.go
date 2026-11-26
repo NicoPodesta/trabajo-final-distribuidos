@@ -40,6 +40,11 @@ func loadConfig() (tokenizer.TokenizerConfig, error) {
 		return tokenizer.TokenizerConfig{}, err
 	}
 
+	prefetch, err := config.OptionalInt("TOKENIZER_PREFETCH", 1)
+	if err != nil {
+		return tokenizer.TokenizerConfig{}, err
+	}
+
 	return tokenizer.TokenizerConfig{
 		MOMHost:              momHost,
 		MOMPort:              momPort,
@@ -47,6 +52,7 @@ func loadConfig() (tokenizer.TokenizerConfig, error) {
 		TokenizerAmount:      amount,
 		WordCounterAmount:    wordCounterAmount,
 		VocabularyJoinAmount: vocabularyJoinAmount,
+		Prefetch:             prefetch,
 	}, nil
 }
 
