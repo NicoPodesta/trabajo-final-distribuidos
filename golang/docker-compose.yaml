@@ -68,6 +68,7 @@ services:
     - SERVER_HOST=load_balancer_0
     - SERVER_PORT=5000
     - GATEWAYS=gateway_0:5678,gateway_1:5678,gateway_2:5678
+    - HEALTH_PORT=9090
 
   load_balancer_1:
     build:
@@ -83,6 +84,7 @@ services:
     - SERVER_HOST=load_balancer_1
     - SERVER_PORT=5000
     - GATEWAYS=gateway_0:5678,gateway_1:5678,gateway_2:5678
+    - HEALTH_PORT=9090
 
   load_balancer_2:
     build:
@@ -98,6 +100,7 @@ services:
     - SERVER_HOST=load_balancer_2
     - SERVER_PORT=5000
     - GATEWAYS=gateway_0:5678,gateway_1:5678,gateway_2:5678
+    - HEALTH_PORT=9090
 
   gateway_0:
     build:
@@ -118,7 +121,7 @@ services:
     - Q2_FETCHER_AMOUNT=3
     - Q3_JOIN_AMOUNT=3
     - Q5_FILTER_AMOUNT=3
-    - GATEWAY_RESULTS_PREFETCH=20
+    - HEALTH_PORT=9090
 
   gateway_1:
     build:
@@ -139,7 +142,7 @@ services:
     - Q2_FETCHER_AMOUNT=3
     - Q3_JOIN_AMOUNT=3
     - Q5_FILTER_AMOUNT=3
-    - GATEWAY_RESULTS_PREFETCH=20
+    - HEALTH_PORT=9090
 
   gateway_2:
     build:
@@ -160,7 +163,26 @@ services:
     - Q2_FETCHER_AMOUNT=3
     - Q3_JOIN_AMOUNT=3
     - Q5_FILTER_AMOUNT=3
-    - GATEWAY_RESULTS_PREFETCH=20
+    - HEALTH_PORT=9090
+
+  monitor_0:
+    build:
+      context: ./src/
+      dockerfile: monitor/Dockerfile
+    container_name: monitor_0
+    depends_on:
+    - load_balancer_0
+    - load_balancer_1
+    - load_balancer_2
+    - gateway_0
+    - gateway_1
+    - gateway_2
+    environment:
+    - MONITOR_ID=0
+    - TARGETS=load_balancer_0=load_balancer_0:9090,load_balancer_1=load_balancer_1:9090,load_balancer_2=load_balancer_2:9090,gateway_0=gateway_0:9090,gateway_1=gateway_1:9090,gateway_2=gateway_2:9090
+    - LOG_LEVEL=info
+    volumes:
+    - /var/run/docker.sock:/var/run/docker.sock
 
   q1_filter_0:
     build:

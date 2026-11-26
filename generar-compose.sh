@@ -122,6 +122,7 @@ YAML
     - SERVER_HOST=${svc}
     - SERVER_PORT=5000
     - GATEWAYS=${gateways_list}
+    - HEALTH_PORT=9090
 
 YAML
 }
@@ -148,7 +149,51 @@ gateway() {
     - Q2_FETCHER_AMOUNT=${q2_fetcher_count}
     - Q3_JOIN_AMOUNT=${q3_join_count}
     - Q5_FILTER_AMOUNT=${q5_filter_count}
-    - GATEWAY_RESULTS_PREFETCH=20
+    - HEALTH_PORT=9090
+
+YAML
+}
+
+monitor() {
+  local id=$1
+  local total_lbs=$2
+  local gw_count=$3
+
+  local targets_list=""
+  for lb_id in $(seq 0 $((total_lbs - 1))); do
+    local svc
+    svc=$(lb_service_name "$lb_id" "$total_lbs")
+    if [[ -n "$targets_list" ]]; then
+      targets_list="${targets_list},${svc}=${svc}:9090"
+    else
+      targets_list="${svc}=${svc}:9090"
+    fi
+  done
+  for gw_id in $(seq 0 $((gw_count - 1))); do
+    targets_list="${targets_list},gateway_${gw_id}=gateway_${gw_id}:9090"
+  done
+
+  cat <<YAML
+  monitor_${id}:
+    build:
+      context: ./src/
+      dockerfile: monitor/Dockerfile
+    container_name: monitor_${id}
+    depends_on:
+YAML
+  for lb_id in $(seq 0 $((total_lbs - 1))); do
+    echo "    - $(lb_service_name "$lb_id" "$total_lbs")"
+  done
+  for gw_id in $(seq 0 $((gw_count - 1))); do
+    echo "    - gateway_${gw_id}"
+  done
+  cat <<YAML
+    environment:
+    - MONITOR_ID=${id}
+    - TARGETS=${targets_list}
+    - LOG_LEVEL=info
+    volumes:
+    - /var/run/docker.sock:/var/run/docker.sock
 
 YAML
 }
@@ -212,6 +257,8 @@ YAML
   for id in $(seq 0 $((gateway_count - 1))); do
     gateway "$id"
   done
+
+  monitor 0 "$lb_count" "$gateway_count"
 
   for id in $(seq 0 $((q1_filter_count - 1))); do
     worker "q1_filter_${id}" q1filter "Q1_FILTER_ID=${id}" "Q1_FILTER_AMOUNT=${q1_filter_count}" 'Q1_PREFETCH=${Q1_PREFETCH:-4}'

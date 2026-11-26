@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"trabajo-final-distribuidos/common/config"
+	"trabajo-final-distribuidos/common/healthcheck"
 	"trabajo-final-distribuidos/loadbalancer/loadbalancer"
 )
 
@@ -70,6 +71,14 @@ func run() int {
 		slog.Error("While initializing load balancer", "err", err)
 		return 1
 	}
+
+	healthPort := config.OptionalString("HEALTH_PORT", healthcheck.DefaultPort)
+	healthSrv, err := healthcheck.StartServer(":" + healthPort)
+	if err != nil {
+		slog.Error("While starting load balancer healthcheck server", "err", err)
+		return 1
+	}
+	defer healthSrv.Close()
 
 	if err := lb.Run(); err != nil {
 		slog.Error("Load balancer stopped with error", "err", err)

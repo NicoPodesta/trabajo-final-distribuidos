@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"trabajo-final-distribuidos/common/config"
+	"trabajo-final-distribuidos/common/healthcheck"
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/gateway/gateway"
 )
@@ -129,6 +130,14 @@ func run() int {
 		slog.Error("While initializing gateway", "err", err)
 		return 1
 	}
+
+	healthPort := config.OptionalString("HEALTH_PORT", healthcheck.DefaultPort)
+	healthSrv, err := healthcheck.StartServer(":" + healthPort)
+	if err != nil {
+		slog.Error("While starting gateway healthcheck server", "err", err)
+		return 1
+	}
+	defer healthSrv.Close()
 
 	if err := server.Run(); err != nil {
 		slog.Error("Gateway stopped with error", "err", err)
