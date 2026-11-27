@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"trabajo-final-distribuidos/common/config"
+	"trabajo-final-distribuidos/common/healthcheck"
 	"trabajo-final-distribuidos/common/logger"
 	"trabajo-final-distribuidos/tokenizer/tokenizer"
 )
@@ -70,6 +71,18 @@ func run() int {
 		slog.Error("While initializing tokenizer", "err", err)
 		return 1
 	}
+
+	healthPort := config.OptionalString("HEALTH_PORT", healthcheck.DefaultPort)
+	healthSrv, err := healthcheck.StartServer(":" + healthPort)
+	if err != nil {
+		slog.Error("While starting tokenizer healthcheck server", "err", err)
+		return 1
+	}
+	defer func() {
+		if err := healthSrv.Close(); err != nil {
+			slog.Error("While closing tokenizer healthcheck server", "err", err)
+		}
+	}()
 
 	if err := worker.Run(); err != nil {
 		slog.Error("Tokenizer stopped with error", "err", err)

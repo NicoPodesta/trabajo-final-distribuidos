@@ -159,6 +159,9 @@ monitor() {
   local total_lbs=$2
   local gw_count=$3
   local q4_counter_count=$4
+  local tokenizer_count=$5
+  local q5_avg_partial_count=$6
+  local q5_filter_count=$7
 
   local targets_list=""
   for lb_id in $(seq 0 $((total_lbs - 1))); do
@@ -177,6 +180,16 @@ monitor() {
     targets_list="${targets_list},q4_word_counter_${counter_id}=q4_word_counter_${counter_id}:9090"
   done
   targets_list="${targets_list},q4_top20_merger=q4_top20_merger:9090"
+  for tokenizer_id in $(seq 0 $((tokenizer_count - 1))); do
+    targets_list="${targets_list},tokenizer_${tokenizer_id}=tokenizer_${tokenizer_id}:9090"
+  done
+  for partial_id in $(seq 0 $((q5_avg_partial_count - 1))); do
+    targets_list="${targets_list},q5_avg_partial_${partial_id}=q5_avg_partial_${partial_id}:9090"
+  done
+  targets_list="${targets_list},q5_avg_aggregator_0=q5_avg_aggregator_0:9090"
+  for filter_id in $(seq 0 $((q5_filter_count - 1))); do
+    targets_list="${targets_list},q5_filter_${filter_id}=q5_filter_${filter_id}:9090"
+  done
 
   cat <<YAML
   monitor_${id}:
@@ -196,6 +209,16 @@ YAML
     echo "    - q4_word_counter_${counter_id}"
   done
   echo "    - q4_top20_merger"
+  for tokenizer_id in $(seq 0 $((tokenizer_count - 1))); do
+    echo "    - tokenizer_${tokenizer_id}"
+  done
+  for partial_id in $(seq 0 $((q5_avg_partial_count - 1))); do
+    echo "    - q5_avg_partial_${partial_id}"
+  done
+  echo "    - q5_avg_aggregator_0"
+  for filter_id in $(seq 0 $((q5_filter_count - 1))); do
+    echo "    - q5_filter_${filter_id}"
+  done
   cat <<YAML
     environment:
     - MONITOR_ID=${id}
@@ -267,7 +290,7 @@ YAML
     gateway "$id"
   done
 
-  monitor 0 "$lb_count" "$gateway_count" "$q4_counter_count"
+  monitor 0 "$lb_count" "$gateway_count" "$q4_counter_count" "$tokenizer_count" "$q5_avg_partial_count" "$q5_filter_count"
 
   for id in $(seq 0 $((q1_filter_count - 1))); do
     worker "q1_filter_${id}" q1filter "Q1_FILTER_ID=${id}" "Q1_FILTER_AMOUNT=${q1_filter_count}" 'Q1_PREFETCH=${Q1_PREFETCH:-4}'
@@ -280,19 +303,19 @@ YAML
   done
 
   for id in $(seq 0 $((tokenizer_count - 1))); do
-    worker "tokenizer_${id}" tokenizer "TOKENIZER_ID=${id}" "TOKENIZER_AMOUNT=${tokenizer_count}" "Q4_WORD_COUNTER_AMOUNT=${q4_counter_count}" "Q3_JOIN_AMOUNT=${q3_join_count}" "TOKENIZER_PREFETCH=20"
+    worker "tokenizer_${id}" tokenizer "TOKENIZER_ID=${id}" "TOKENIZER_AMOUNT=${tokenizer_count}" "Q4_WORD_COUNTER_AMOUNT=${q4_counter_count}" "Q3_JOIN_AMOUNT=${q3_join_count}" "TOKENIZER_PREFETCH=20" "HEALTH_PORT=9090"
   done
 
   for id in $(seq 0 $((q3_join_count - 1))); do
     worker "q3_vocabulary_join_${id}" q3vocabularyjoin "Q3_JOIN_ID=${id}" "TOKENIZER_AMOUNT=${tokenizer_count}" "Q3_JOIN_PREFETCH=20"
   done
   for id in $(seq 0 $((q5_avg_partial_count - 1))); do
-    worker "q5_avg_partial_${id}" q5avgpartial "Q5_AVG_PARTIAL_ID=${id}" "Q5_AVG_PARTIAL_AMOUNT=${q5_avg_partial_count}" "Q5_AVG_PARTIAL_PREFETCH=20"
+    worker "q5_avg_partial_${id}" q5avgpartial "Q5_AVG_PARTIAL_ID=${id}" "Q5_AVG_PARTIAL_AMOUNT=${q5_avg_partial_count}" "Q5_AVG_PARTIAL_PREFETCH=20" "HEALTH_PORT=9090"
   done
   for id in $(seq 0 $((q5_filter_count - 1))); do
-    worker "q5_filter_${id}" q5filter "Q5_FILTER_ID=${id}" "Q5_FILTER_AMOUNT=${q5_filter_count}" "Q5_PENDING_DIR=/tmp/q5filter" "Q5_FILTER_PREFETCH=20"
+    worker "q5_filter_${id}" q5filter "Q5_FILTER_ID=${id}" "Q5_FILTER_AMOUNT=${q5_filter_count}" "Q5_PENDING_DIR=/tmp/q5filter" "Q5_FILTER_PREFETCH=20" "HEALTH_PORT=9090"
   done
-  worker q5_avg_aggregator_0 q5avgaggregator "Q5_AVG_PARTIAL_AMOUNT=${q5_avg_partial_count}" "Q5_FILTER_AMOUNT=${q5_filter_count}"
+  worker q5_avg_aggregator_0 q5avgaggregator "Q5_AVG_PARTIAL_AMOUNT=${q5_avg_partial_count}" "Q5_FILTER_AMOUNT=${q5_filter_count}" "HEALTH_PORT=9090"
 
   for id in $(seq 0 $((q4_counter_count - 1))); do
     worker "q4_word_counter_${id}" q4wordcounter "Q4_WORD_COUNTER_ID=${id}" "TOKENIZER_AMOUNT=${tokenizer_count}" "Q4_WORD_COUNTER_PREFETCH=20" "HEALTH_PORT=9090"

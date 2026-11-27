@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"trabajo-final-distribuidos/common/config"
+	"trabajo-final-distribuidos/common/healthcheck"
 	"trabajo-final-distribuidos/common/logger"
 	"trabajo-final-distribuidos/q5avgaggregator/q5avgaggregator"
 )
@@ -52,6 +53,18 @@ func run() int {
 		slog.Error("While initializing avg aggregator", "err", err)
 		return 1
 	}
+
+	healthPort := config.OptionalString("HEALTH_PORT", healthcheck.DefaultPort)
+	healthSrv, err := healthcheck.StartServer(":" + healthPort)
+	if err != nil {
+		slog.Error("While starting avg aggregator healthcheck server", "err", err)
+		return 1
+	}
+	defer func() {
+		if err := healthSrv.Close(); err != nil {
+			slog.Error("While closing avg aggregator healthcheck server", "err", err)
+		}
+	}()
 
 	if err := aggregator.Run(); err != nil {
 		slog.Error("Avg aggregator stopped with error", "err", err)
