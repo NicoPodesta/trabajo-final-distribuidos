@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"trabajo-final-distribuidos/common/config"
+	"trabajo-final-distribuidos/common/healthcheck"
 	"trabajo-final-distribuidos/common/logger"
 	"trabajo-final-distribuidos/q1filter/q1filter"
 )
@@ -55,6 +56,13 @@ func run() int {
 		slog.Error("While initializing Q1 filter", "err", err)
 		return 1
 	}
+
+	healthSrv, err := healthcheck.StartFromEnv()
+	if err != nil {
+		slog.Error("While starting Q1 filter healthcheck server", "err", err)
+		return 1
+	}
+	defer healthSrv.CloseAndLog()
 
 	if err := server.Run(); err != nil {
 		slog.Error("Q1 filter stopped with error", "err", err)

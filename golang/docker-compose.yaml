@@ -177,6 +177,9 @@ services:
     - gateway_0
     - gateway_1
     - gateway_2
+    - q1_filter_0
+    - q1_filter_1
+    - q1_filter_2
     - q4_word_counter_0
     - q4_word_counter_1
     - q4_word_counter_2
@@ -196,7 +199,7 @@ services:
     - MONITOR_PORT=9091
     - HEALTH_PORT=9090
     - PEERS=1=monitor_1,2=monitor_2
-    - TARGETS=load_balancer_0,load_balancer_1,load_balancer_2,gateway_0,gateway_1,gateway_2,q4_word_counter_0,q4_word_counter_1,q4_word_counter_2,q4_top20_merger,tokenizer_0,tokenizer_1,tokenizer_2,q5_avg_partial_0,q5_avg_partial_1,q5_avg_partial_2,q5_avg_aggregator_0,q5_filter_0,q5_filter_1,q5_filter_2
+    - TARGETS=load_balancer_0,load_balancer_1,load_balancer_2,gateway_0,gateway_1,gateway_2,q1_filter_0,q1_filter_1,q1_filter_2,q4_word_counter_0,q4_word_counter_1,q4_word_counter_2,q4_top20_merger,tokenizer_0,tokenizer_1,tokenizer_2,q5_avg_partial_0,q5_avg_partial_1,q5_avg_partial_2,q5_avg_aggregator_0,q5_filter_0,q5_filter_1,q5_filter_2
     - LOG_LEVEL=info
     volumes:
     - /var/run/docker.sock:/var/run/docker.sock
@@ -213,6 +216,9 @@ services:
     - gateway_0
     - gateway_1
     - gateway_2
+    - q1_filter_0
+    - q1_filter_1
+    - q1_filter_2
     - q4_word_counter_0
     - q4_word_counter_1
     - q4_word_counter_2
@@ -232,7 +238,7 @@ services:
     - MONITOR_PORT=9091
     - HEALTH_PORT=9090
     - PEERS=0=monitor_0,2=monitor_2
-    - TARGETS=load_balancer_0,load_balancer_1,load_balancer_2,gateway_0,gateway_1,gateway_2,q4_word_counter_0,q4_word_counter_1,q4_word_counter_2,q4_top20_merger,tokenizer_0,tokenizer_1,tokenizer_2,q5_avg_partial_0,q5_avg_partial_1,q5_avg_partial_2,q5_avg_aggregator_0,q5_filter_0,q5_filter_1,q5_filter_2
+    - TARGETS=load_balancer_0,load_balancer_1,load_balancer_2,gateway_0,gateway_1,gateway_2,q1_filter_0,q1_filter_1,q1_filter_2,q4_word_counter_0,q4_word_counter_1,q4_word_counter_2,q4_top20_merger,tokenizer_0,tokenizer_1,tokenizer_2,q5_avg_partial_0,q5_avg_partial_1,q5_avg_partial_2,q5_avg_aggregator_0,q5_filter_0,q5_filter_1,q5_filter_2
     - LOG_LEVEL=info
     volumes:
     - /var/run/docker.sock:/var/run/docker.sock
@@ -249,6 +255,9 @@ services:
     - gateway_0
     - gateway_1
     - gateway_2
+    - q1_filter_0
+    - q1_filter_1
+    - q1_filter_2
     - q4_word_counter_0
     - q4_word_counter_1
     - q4_word_counter_2
@@ -268,7 +277,7 @@ services:
     - MONITOR_PORT=9091
     - HEALTH_PORT=9090
     - PEERS=0=monitor_0,1=monitor_1
-    - TARGETS=load_balancer_0,load_balancer_1,load_balancer_2,gateway_0,gateway_1,gateway_2,q4_word_counter_0,q4_word_counter_1,q4_word_counter_2,q4_top20_merger,tokenizer_0,tokenizer_1,tokenizer_2,q5_avg_partial_0,q5_avg_partial_1,q5_avg_partial_2,q5_avg_aggregator_0,q5_filter_0,q5_filter_1,q5_filter_2
+    - TARGETS=load_balancer_0,load_balancer_1,load_balancer_2,gateway_0,gateway_1,gateway_2,q1_filter_0,q1_filter_1,q1_filter_2,q4_word_counter_0,q4_word_counter_1,q4_word_counter_2,q4_top20_merger,tokenizer_0,tokenizer_1,tokenizer_2,q5_avg_partial_0,q5_avg_partial_1,q5_avg_partial_2,q5_avg_aggregator_0,q5_filter_0,q5_filter_1,q5_filter_2
     - LOG_LEVEL=info
     volumes:
     - /var/run/docker.sock:/var/run/docker.sock
@@ -287,6 +296,7 @@ services:
     - Q1_FILTER_ID=0
     - Q1_FILTER_AMOUNT=3
     - Q1_PREFETCH=${Q1_PREFETCH:-4}
+    - HEALTH_PORT=9090
     - LOG_LEVEL=info
 
   q1_filter_1:
@@ -303,6 +313,7 @@ services:
     - Q1_FILTER_ID=1
     - Q1_FILTER_AMOUNT=3
     - Q1_PREFETCH=${Q1_PREFETCH:-4}
+    - HEALTH_PORT=9090
     - LOG_LEVEL=info
 
   q1_filter_2:
@@ -319,6 +330,7 @@ services:
     - Q1_FILTER_ID=2
     - Q1_FILTER_AMOUNT=3
     - Q1_PREFETCH=${Q1_PREFETCH:-4}
+    - HEALTH_PORT=9090
     - LOG_LEVEL=info
 
   q2_filter_0:

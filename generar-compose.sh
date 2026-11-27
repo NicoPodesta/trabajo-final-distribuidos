@@ -163,7 +163,8 @@ monitor() {
   local tokenizer_count=$5
   local q5_avg_partial_count=$6
   local q5_filter_count=$7
-  local total_monitors=$8
+  local q1_filter_count=$8
+  local total_monitors=$9
 
   local peers=()
   for mon_id in $(seq 0 $((total_monitors - 1))); do
@@ -183,6 +184,9 @@ monitor() {
   done
   for gw_id in $(seq 0 $((gw_count - 1))); do
     targets+=("gateway_${gw_id}")
+  done
+  for filter_id in $(seq 0 $((q1_filter_count - 1))); do
+    targets+=("q1_filter_${filter_id}")
   done
   for counter_id in $(seq 0 $((q4_counter_count - 1))); do
     targets+=("q4_word_counter_${counter_id}")
@@ -291,11 +295,11 @@ YAML
   done
 
   for id in $(seq 0 $((monitor_count - 1))); do
-    monitor "$id" "$lb_count" "$gateway_count" "$q4_counter_count" "$tokenizer_count" "$q5_avg_partial_count" "$q5_filter_count" "$monitor_count"
+    monitor "$id" "$lb_count" "$gateway_count" "$q4_counter_count" "$tokenizer_count" "$q5_avg_partial_count" "$q5_filter_count" "$q1_filter_count" "$monitor_count"
   done
 
   for id in $(seq 0 $((q1_filter_count - 1))); do
-    worker "q1_filter_${id}" q1filter "Q1_FILTER_ID=${id}" "Q1_FILTER_AMOUNT=${q1_filter_count}" 'Q1_PREFETCH=${Q1_PREFETCH:-4}'
+    worker "q1_filter_${id}" q1filter "Q1_FILTER_ID=${id}" "Q1_FILTER_AMOUNT=${q1_filter_count}" 'Q1_PREFETCH=${Q1_PREFETCH:-4}' "HEALTH_PORT=9090"
   done
   for id in $(seq 0 $((q2_filter_count - 1))); do
     worker "q2_filter_${id}" q2filter "Q2_FILTER_ID=${id}" "Q2_FILTER_AMOUNT=${q2_filter_count}" 'Q2_PREFETCH=${Q2_PREFETCH:-4}' "Q2_FETCHER_AMOUNT=${q2_fetcher_count}"
