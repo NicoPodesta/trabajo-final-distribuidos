@@ -86,9 +86,9 @@ make logs
 - El ACK de cada batch se envía después de publicar sus proyecciones en las tres colas.
 - Protocolo interno tipado con enums (`MsgData`, `MsgEOF`, `MsgChunk`): los batches sin coincidencias no se confunden con el fin de transmisión.
 - Cola única por Gateway `results_<gatewayID>`: los mensajes incluyen un header con `type`, `client_id` y `query_id`. Collector los reenvía por el socket de la sesión correspondiente.
-- Las cinco consultas usan `common/resultpublisher` para publicar resultados y EOF, reutilizando conexiones por Gateway.
-- Gateway espera el EOF de cada consulta (configurable con `EXPECTED_QUERIES`) antes de enviar el `EndOfRecords` final al cliente y cerrar la sesión. Cuenta consultas terminadas, no réplicas.
-- El Gateway espera el EOF de todas las réplicas de la última etapa de cada consulta. En Q1 y Q2 valida quién emite el EOF e ignora reportes repetidos.
+- Las cinco consultas usan `common/resultpublisher` para publicar resultados; Q2 a Q5 también publican EOF, reutilizando conexiones por Gateway.
+- Gateway espera el cierre de cada consulta (configurable con `EXPECTED_QUERIES`) antes de enviar el `EndOfRecords` final al cliente y cerrar la sesión. Q1 cierra al reunir los `batch_id` esperados; las demás consultas cierran por EOF.
+- En Q2 el Gateway espera el EOF de todos los fetchers, valida quién lo emite e ignora reportes repetidos.
 
 ### Tokenizer
 
@@ -100,19 +100,20 @@ make logs
 - Para Q3 publica los pares `(word, language)` sin repetirlos dentro del batch, y los reparte entre las colas `vocabulary_<k>` con `fnv32a(palabra) % Q3_JOIN_AMOUNT`.
 - Para Q4 cuenta en cuántos abstracts del batch aparece cada palabra. Cada abstract aporta como máximo 1 por palabra.
 - Para Q5 publica la cantidad de palabras de cada artículo, separando históricos hasta 2020 inclusive y posteriores a 2020. Omite los abstracts vacíos. Por cada batch envía **siempre un mensaje** a `historical_counts` y otro a `recent_articles`, vacío si el batch no tiene históricos o recientes, para que el total de mensajes de cada cola sea el de batches.
-- La coordinación de EOF usa el mismo protocolo de conteo que Q1 (ver "Coordinación distribuida de EOF"). La réplica que recibe el EOF del Gateway, con `total_batches`, coordina; las demás reportan cuántos batches procesaron y publicaron. Cuando la suma coincide con el total, cada réplica publica sus EOF. Antes de consumir datos espera a que todas las réplicas estén suscriptas a `tokenizer_control`.
+- La coordinación de EOF usa el protocolo de conteo (ver "Coordinación distribuida de EOF"). La réplica que recibe el EOF del Gateway, con `total_batches`, coordina; las demás reportan cuántos batches procesaron y publicaron. Cuando la suma coincide con el total, cada réplica publica sus EOF. Antes de consumir datos espera a que todas las réplicas estén suscriptas a `tokenizer_control`.
 - Hacia `vocabulary_<k>` y `word_counts_<k>` cada réplica publica su propio EOF (llegan tantos como Tokenizers). Hacia `historical_counts` y `recent_articles` publica un solo EOF, el de la réplica coordinadora, con `total_batches`.
 
 ### Q1
 
 - Selecciona artículos en inglés modificados hasta 2020 inclusive, usando la fecha en UTC. Devuelve la URL y la fecha, sin eliminar repetidos.
 - Los filtros comparten una cola: cada batch lo procesa una réplica. Los escenarios con réplicas usan tres filtros.
-- Antes de consumir, todos esperan que las réplicas estén suscriptas al canal de control para no perder avisos de coordinación.
-- Cada filtro publica las coincidencias y recién después cuenta el batch como terminado. Los batches sin coincidencias también cuentan, pero no generan resultados.
-- El Gateway envía un EOF con el total de batches de ese cliente. El filtro que lo recibe se vuelve coordinador y pide los conteos acumulados de todos.
-- Los filtros siguen procesando y actualizando sus conteos durante la coordinación. El coordinador autoriza el EOF definitivo cuando todos reportaron y la suma coincide con el total esperado.
-- Cada filtro publica su propio EOF después de sus resultados. El Gateway identifica quién emitió el EOF, ignora duplicados y termina Q1 cuando cerraron todos.
-- Los conteos se separan por cliente y también permiten cerrar entradas vacías. Las réplicas son fijas y el estado queda en memoria; no se recuperan caídas ni se deduplican batches reentregados.
+- El Gateway asigna un `batch_id` consecutivo a cada batch de la sesión. Al recibir `EndOfRecords` registra el total `T`; Q1 no usa EOF para cerrar.
+- Cada filtro publica un `MsgData` con el mismo `batch_id`, incluso si no hay coincidencias. Usa publisher confirms y confirma la entrada recién después de que RabbitMQ confirma la salida.
+- Si un filtro cae antes de confirmar la entrada, RabbitMQ reencola el batch y cualquier filtro disponible puede procesarlo.
+- El Gateway completa el `batch_id` después de entregar sus resultados y recibir sus ACKs; si está vacío lo completa directamente. Los batches ya completados se confirman y descartan.
+- Q1 termina cuando el Gateway reunió exactamente los `batch_id` de 1 a `T`. Esto también permite cerrar entradas vacías.
+- Cada filtro expone un healthcheck UDP. El monitor líder reinicia con Docker los filtros que dejan de responder.
+- La recuperación cubre la caída de un filtro mientras siguen vivos el cliente y el Gateway. Si cae el cliente o el Gateway, se inicia una sesión nueva desde cero.
 
 ### Q2
 
@@ -121,7 +122,7 @@ make logs
 - Seleccionan artículos modificados hasta 2020 inclusive, con una sección de biografía en inglés o francés. Ignoran mayúsculas y espacios en los extremos de la sección; omiten artículos sin referencia de imagen.
 - Comparten la cola de entrada y esperan que todas las réplicas estén listas en el canal de control antes de consumir.
 - Por cada coincidencia publican un pedido con nombre, URL del artículo y referencia de imagen. Reparten los pedidos por turnos entre los fetchers, cada uno con su propia cola.
-- Cuentan cada batch después de publicar todos sus pedidos, incluso si no produjo ninguno. El filtro que recibe el EOF del Gateway coordina los conteos, como en Q1.
+- Cuentan cada batch después de publicar todos sus pedidos, incluso si no produjo ninguno. El filtro que recibe el EOF del Gateway coordina los conteos.
 - Cuando todos reportaron y la suma alcanza el total esperado, cada filtro envía su EOF identificado a **todos los fetchers**, después de sus pedidos, aunque no les haya enviado imágenes.
 
 #### Fetchers y coordinación del EOF
@@ -162,12 +163,12 @@ make logs
 
 #### Coordinación del EOF
 
-- Los tokenizers coordinan sus batches por conteo, como los filtros de Q1. El que recibe el EOF del Gateway reúne los conteos y autoriza el cierre cuando todos reportaron y la suma coincide con el total esperado.
+- Los tokenizers coordinan sus batches por conteo. El que recibe el EOF del Gateway reúne los conteos y autoriza el cierre cuando todos reportaron y la suma coincide con el total esperado.
 - Cada tokenizer cuenta un batch después de publicar todas sus salidas. Una vez autorizado el cierre, envía su EOF a **todos los joins**, aunque no les haya enviado palabras.
 - Cada join espera tantos EOFs como tokenizers haya. No necesita otro coordinador: tiene un único consumidor y cada tokenizer publica sus palabras antes de su EOF por la misma cola.
 - Al recibir todos los EOFs, el join publica el suyo y libera el vocabulario del cliente. También cierra si no recibió palabras o no encontró coincidencias.
 - El Gateway espera tantos EOFs de Q3 como joins haya. El cliente recibe el EOF final cuando terminan todas las consultas esperadas.
-- En Q3 los EOFs se cuentan por cantidad, sin identificar al emisor. A diferencia de Q1 y Q2, este cierre no tolera EOFs duplicados.
+- En Q3 los EOFs se cuentan por cantidad, sin identificar al emisor. A diferencia de Q2, este cierre no tolera EOFs duplicados.
 
 ### Q4
 
@@ -189,7 +190,7 @@ make logs
 
 ### Coordinación distribuida de EOF (Cierre por conteo)
 
-- Lo usan los filtros de Q1 y Q2, el Tokenizer, el Avg Partial y el Filter de Q5, con `common/eofcoordinator`. Cada réplica cuenta los batches que procesó y publicó. La réplica que recibe el EOF con `total_batches` coordina: pide los conteos, y cuando la suma coincide con el total y reportaron todas, avisa a todas que emitan su EOF. El protocolo no depende del orden de llegada, evitando que un batch que una réplica tenía en procesamiento quede desfasado tras el EOF.
+- Lo usan los filtros de Q2, el Tokenizer, el Avg Partial y el Filter de Q5, con `common/eofcoordinator`. Cada réplica cuenta los batches que procesó y publicó. La réplica que recibe el EOF con `total_batches` coordina: pide los conteos, y cuando la suma coincide con el total y reportaron todas, avisa a todas que emitan su EOF. El protocolo no depende del orden de llegada, evitando que un batch que una réplica tenía en procesamiento quede desfasado tras el EOF.
 - El coordinador supone un único EOF con total por cliente. Por eso el Tokenizer publica un solo EOF hacia `historical_counts` y `recent_articles`: si cada réplica del Tokenizer publicara el suyo, varias réplicas del Avg Partial se declararían coordinadoras del mismo cliente y la barrera fallaría.
 - Cada componente espera a que todas sus réplicas estén suscriptas al canal de control antes de consumir datos (`WaitReady`). Un mensaje de control que llega a una réplica que todavía no se suscribió se pierde, y la coordinación no llegaría nunca. Si una réplica no arranca, las demás no procesan.
 - La cantidad de réplicas queda fija durante la ejecución. El estado permanece en memoria. Se cuentan batches procesados, no distintos: una reentrega por una caída no está soportada.
