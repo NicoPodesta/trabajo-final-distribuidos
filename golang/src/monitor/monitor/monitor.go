@@ -36,40 +36,40 @@ func NewMonitor(config Config) *Monitor {
 	return &Monitor{config: config}
 }
 
-func (monitor *Monitor) Run(ctx context.Context) error {
-	healthAddr := net.JoinHostPort(monitor.config.ListenHost, monitor.config.HealthPort)
+func (m *Monitor) Run(ctx context.Context) error {
+	healthAddr := net.JoinHostPort(m.config.ListenHost, m.config.HealthPort)
 	healthServer, err := healthcheck.StartServer(healthAddr)
 	if err != nil {
 		return err
 	}
 	defer healthServer.CloseAndLog()
 
-	allTargets := make([]Target, 0, len(monitor.config.Targets)+len(monitor.config.Peers))
-	seen := make(map[string]bool, len(monitor.config.Targets)+len(monitor.config.Peers))
-	for _, target := range monitor.config.Targets {
+	allTargets := make([]Target, 0, len(m.config.Targets)+len(m.config.Peers))
+	seen := make(map[string]bool, len(m.config.Targets)+len(m.config.Peers))
+	for _, target := range m.config.Targets {
 		allTargets = append(allTargets, target)
 		seen[target.Name] = true
 	}
-	for _, peer := range monitor.config.Peers {
-		if peer.ID == monitor.config.ID || peer.Name == "" || seen[peer.Name] {
+	for _, peer := range m.config.Peers {
+		if peer.ID == m.config.ID || peer.Name == "" || seen[peer.Name] {
 			continue
 		}
 		allTargets = append(allTargets, Target{
 			Name: peer.Name,
-			Addr: net.JoinHostPort(peer.Name, monitor.config.HealthPort),
+			Addr: net.JoinHostPort(peer.Name, m.config.HealthPort),
 		})
 		seen[peer.Name] = true
 	}
 
 	healthChecker := NewHealthChecker(HealthCheckerConfig{
-		MonitorID:       monitor.config.ID,
+		MonitorID:       m.config.ID,
 		Targets:         allTargets,
-		CheckInterval:   monitor.config.CheckInterval,
-		PingTimeout:     monitor.config.PingTimeout,
-		MaxMissedPings:  monitor.config.MaxMissedPings,
-		RestartCooldown: monitor.config.RestartCooldown,
-		StartupGrace:    monitor.config.StartupGrace,
-		Restarter:       NewDockerRestarter(monitor.config.DockerSocket),
+		CheckInterval:   m.config.CheckInterval,
+		PingTimeout:     m.config.PingTimeout,
+		MaxMissedPings:  m.config.MaxMissedPings,
+		RestartCooldown: m.config.RestartCooldown,
+		StartupGrace:    m.config.StartupGrace,
+		Restarter:       NewDockerRestarter(m.config.DockerSocket),
 	})
 
 	var (
@@ -98,13 +98,13 @@ func (monitor *Monitor) Run(ctx context.Context) error {
 	}
 
 	bully, err := NewBully(BullyConfig{
-		ID:                 monitor.config.ID,
-		ListenAddr:         net.JoinHostPort(monitor.config.ListenHost, monitor.config.ListenPort),
-		Peers:              monitor.config.Peers,
-		ElectionTimeout:    monitor.config.ElectionTimeout,
-		CoordinatorTimeout: monitor.config.CoordinatorTimeout,
-		HeartbeatInterval:  monitor.config.HeartbeatInterval,
-		LeaderTimeout:      monitor.config.LeaderTimeout,
+		ID:                 m.config.ID,
+		ListenAddr:         net.JoinHostPort(m.config.ListenHost, m.config.ListenPort),
+		Peers:              m.config.Peers,
+		ElectionTimeout:    m.config.ElectionTimeout,
+		CoordinatorTimeout: m.config.CoordinatorTimeout,
+		HeartbeatInterval:  m.config.HeartbeatInterval,
+		LeaderTimeout:      m.config.LeaderTimeout,
 		OnBecomeLeader:     startHealthChecker,
 		OnStepDown:         stopHealthChecker,
 	})

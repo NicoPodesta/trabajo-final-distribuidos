@@ -89,182 +89,182 @@ func NewBully(config BullyConfig) (*Bully, error) {
 	}, nil
 }
 
-func (bully *Bully) Run(ctx context.Context) error {
+func (b *Bully) Run(ctx context.Context) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	bully.timer = time.NewTimer(time.Hour)
-	bully.timer.Stop()
-	defer bully.timer.Stop()
+	b.timer = time.NewTimer(time.Hour)
+	b.timer.Stop()
+	defer b.timer.Stop()
 
 	incoming := make(chan bullyMessage, 64)
-	bully.protocol.start(incoming)
+	b.protocol.start(incoming)
 	defer func() {
-		bully.stepDownIfLeader()
+		b.stepDownIfLeader()
 		cancel()
-		bully.protocol.close()
+		b.protocol.close()
 	}()
 
-	slog.Info("Bully TCP server listening", "monitorID", bully.config.ID, "addr", bully.protocol.listener.Addr().String(), "peers", len(bully.peersByID))
-	bully.startElection(runCtx)
+	slog.Info("Bully TCP server listening", "monitorID", b.config.ID, "addr", b.protocol.listener.Addr().String(), "peers", len(b.peersByID))
+	b.startElection(runCtx)
 
 	for {
 		select {
 		case <-runCtx.Done():
 			return nil
 		case msg := <-incoming:
-			bully.handleMessage(runCtx, msg)
-		case <-bully.timer.C:
-			bully.handleTimeout(runCtx)
+			b.handleMessage(runCtx, msg)
+		case <-b.timer.C:
+			b.handleTimeout(runCtx)
 		}
 	}
 }
 
-func (bully *Bully) handleMessage(ctx context.Context, msg bullyMessage) {
+func (b *Bully) handleMessage(ctx context.Context, msg bullyMessage) {
 	switch msg.Type {
 	case msgElection:
-		bully.onElection(ctx, msg.FromID)
+		b.onElection(ctx, msg.FromID)
 	case msgOK:
-		bully.onOK(msg.FromID)
+		b.onOK(msg.FromID)
 	case msgCoordinator:
-		bully.onCoordinator(ctx, msg.FromID)
+		b.onCoordinator(ctx, msg.FromID)
 	case msgHeartbeat:
-		bully.onHeartbeat(ctx, msg.FromID)
+		b.onHeartbeat(ctx, msg.FromID)
 	}
 }
 
-func (bully *Bully) onElection(ctx context.Context, fromID int) {
-	if fromID >= bully.config.ID {
+func (b *Bully) onElection(ctx context.Context, fromID int) {
+	if fromID >= b.config.ID {
 		return
 	}
-	bully.sendToPeer(ctx, fromID, msgOK)
-	if bully.state == stateLeader {
-		bully.sendToPeer(ctx, fromID, msgCoordinator)
+	b.sendToPeer(ctx, fromID, msgOK)
+	if b.state == stateLeader {
+		b.sendToPeer(ctx, fromID, msgCoordinator)
 		return
 	}
-	if bully.state == stateFollower {
-		bully.startElection(ctx)
+	if b.state == stateFollower {
+		b.startElection(ctx)
 	}
 }
 
-func (bully *Bully) onOK(fromID int) {
-	if bully.state == stateWaitingOK && fromID > bully.config.ID {
-		bully.state = stateWaitingCoordinator
-		bully.timer.Reset(bully.config.CoordinatorTimeout)
+func (b *Bully) onOK(fromID int) {
+	if b.state == stateWaitingOK && fromID > b.config.ID {
+		b.state = stateWaitingCoordinator
+		b.timer.Reset(b.config.CoordinatorTimeout)
 	}
 }
 
-func (bully *Bully) onCoordinator(ctx context.Context, fromID int) {
-	if fromID > bully.config.ID {
-		bully.becomeFollower(fromID)
+func (b *Bully) onCoordinator(ctx context.Context, fromID int) {
+	if fromID > b.config.ID {
+		b.becomeFollower(fromID)
 		return
 	}
-	bully.challengeLowerLeader(ctx, fromID)
+	b.challengeLowerLeader(ctx, fromID)
 }
 
-func (bully *Bully) onHeartbeat(ctx context.Context, fromID int) {
-	if fromID > bully.config.ID {
-		if bully.state != stateFollower || bully.leaderID != fromID {
-			bully.becomeFollower(fromID)
+func (b *Bully) onHeartbeat(ctx context.Context, fromID int) {
+	if fromID > b.config.ID {
+		if b.state != stateFollower || b.leaderID != fromID {
+			b.becomeFollower(fromID)
 		} else {
-			bully.timer.Reset(bully.config.LeaderTimeout)
+			b.timer.Reset(b.config.LeaderTimeout)
 		}
 		return
 	}
-	bully.challengeLowerLeader(ctx, fromID)
+	b.challengeLowerLeader(ctx, fromID)
 }
 
-func (bully *Bully) challengeLowerLeader(ctx context.Context, fromID int) {
-	switch bully.state {
+func (b *Bully) challengeLowerLeader(ctx context.Context, fromID int) {
+	switch b.state {
 	case stateLeader:
-		bully.sendToPeer(ctx, fromID, msgCoordinator)
+		b.sendToPeer(ctx, fromID, msgCoordinator)
 	case stateFollower:
-		bully.startElection(ctx)
+		b.startElection(ctx)
 	}
 }
 
-func (bully *Bully) handleTimeout(ctx context.Context) {
-	switch bully.state {
+func (b *Bully) handleTimeout(ctx context.Context) {
+	switch b.state {
 	case stateWaitingOK:
-		bully.becomeLeader(ctx)
+		b.becomeLeader(ctx)
 	case stateWaitingCoordinator:
-		slog.Warn("Coordinator timeout expired, restarting election", "monitorID", bully.config.ID)
-		bully.startElection(ctx)
+		slog.Warn("Coordinator timeout expired, restarting election", "monitorID", b.config.ID)
+		b.startElection(ctx)
 	case stateFollower:
-		slog.Warn("Leader heartbeat timed out, starting election", "monitorID", bully.config.ID, "lastLeaderID", bully.leaderID)
-		bully.startElection(ctx)
+		slog.Warn("Leader heartbeat timed out, starting election", "monitorID", b.config.ID, "lastLeaderID", b.leaderID)
+		b.startElection(ctx)
 	case stateLeader:
-		bully.broadcast(ctx, msgHeartbeat)
-		bully.timer.Reset(bully.config.HeartbeatInterval)
+		b.broadcast(ctx, msgHeartbeat)
+		b.timer.Reset(b.config.HeartbeatInterval)
 	}
 }
 
-func (bully *Bully) startElection(ctx context.Context) {
-	bully.stepDownIfLeader()
+func (b *Bully) startElection(ctx context.Context) {
+	b.stepDownIfLeader()
 
 	higherCount := 0
-	for peerID := range bully.peersByID {
-		if peerID > bully.config.ID {
-			bully.sendToPeer(ctx, peerID, msgElection)
+	for peerID := range b.peersByID {
+		if peerID > b.config.ID {
+			b.sendToPeer(ctx, peerID, msgElection)
 			higherCount++
 		}
 	}
 
 	if higherCount == 0 {
-		bully.becomeLeader(ctx)
+		b.becomeLeader(ctx)
 		return
 	}
 
-	bully.state = stateWaitingOK
-	bully.leaderID = -1
-	bully.timer.Reset(bully.config.ElectionTimeout)
-	slog.Info("Started Bully election", "monitorID", bully.config.ID, "higherPeers", higherCount)
+	b.state = stateWaitingOK
+	b.leaderID = -1
+	b.timer.Reset(b.config.ElectionTimeout)
+	slog.Info("Started Bully election", "monitorID", b.config.ID, "higherPeers", higherCount)
 }
 
-func (bully *Bully) becomeLeader(ctx context.Context) {
-	if bully.state == stateLeader {
+func (b *Bully) becomeLeader(ctx context.Context) {
+	if b.state == stateLeader {
 		return
 	}
-	bully.state = stateLeader
-	bully.leaderID = bully.config.ID
-	slog.Info("Became cluster leader", "monitorID", bully.config.ID)
+	b.state = stateLeader
+	b.leaderID = b.config.ID
+	slog.Info("Became cluster leader", "monitorID", b.config.ID)
 
-	bully.broadcast(ctx, msgCoordinator)
-	bully.timer.Reset(bully.config.HeartbeatInterval)
+	b.broadcast(ctx, msgCoordinator)
+	b.timer.Reset(b.config.HeartbeatInterval)
 
-	if bully.config.OnBecomeLeader != nil {
-		bully.config.OnBecomeLeader()
+	if b.config.OnBecomeLeader != nil {
+		b.config.OnBecomeLeader()
 	}
 }
 
-func (bully *Bully) becomeFollower(leaderID int) {
-	bully.stepDownIfLeader()
-	if bully.leaderID != leaderID {
-		slog.Info("Following cluster leader", "monitorID", bully.config.ID, "leaderID", leaderID)
+func (b *Bully) becomeFollower(leaderID int) {
+	b.stepDownIfLeader()
+	if b.leaderID != leaderID {
+		slog.Info("Following cluster leader", "monitorID", b.config.ID, "leaderID", leaderID)
 	}
-	bully.state = stateFollower
-	bully.leaderID = leaderID
-	bully.timer.Reset(bully.config.LeaderTimeout)
+	b.state = stateFollower
+	b.leaderID = leaderID
+	b.timer.Reset(b.config.LeaderTimeout)
 }
 
-func (bully *Bully) stepDownIfLeader() {
-	if bully.state != stateLeader {
+func (b *Bully) stepDownIfLeader() {
+	if b.state != stateLeader {
 		return
 	}
-	bully.state = stateFollower
-	if bully.config.OnStepDown != nil {
-		bully.config.OnStepDown()
+	b.state = stateFollower
+	if b.config.OnStepDown != nil {
+		b.config.OnStepDown()
 	}
 }
 
-func (bully *Bully) sendToPeer(ctx context.Context, peerID int, msgType bullyMessageType) {
-	if addr, ok := bully.peersByID[peerID]; ok {
-		bully.protocol.sendAsync(ctx, addr, bullyMessage{Type: msgType, FromID: bully.config.ID})
+func (b *Bully) sendToPeer(ctx context.Context, peerID int, msgType bullyMessageType) {
+	if addr, ok := b.peersByID[peerID]; ok {
+		b.protocol.sendAsync(ctx, addr, bullyMessage{Type: msgType, FromID: b.config.ID})
 	}
 }
 
-func (bully *Bully) broadcast(ctx context.Context, msgType bullyMessageType) {
-	for peerID := range bully.peersByID {
-		bully.sendToPeer(ctx, peerID, msgType)
+func (b *Bully) broadcast(ctx context.Context, msgType bullyMessageType) {
+	for peerID := range b.peersByID {
+		b.sendToPeer(ctx, peerID, msgType)
 	}
 }

@@ -54,45 +54,45 @@ func newBullyProtocol(monitorID int, listenAddr string, dialTimeout time.Duratio
 	}, nil
 }
 
-func (protocol *bullyProtocol) start(incoming chan<- bullyMessage) {
+func (p *bullyProtocol) start(incoming chan<- bullyMessage) {
 	go func() {
-		defer close(protocol.serveDone)
+		defer close(p.serveDone)
 		for {
-			conn, err := protocol.listener.Accept()
+			conn, err := p.listener.Accept()
 			if err != nil {
 				if errors.Is(err, net.ErrClosed) {
 					return
 				}
-				slog.Debug("Bully TCP accept error", "monitorID", protocol.monitorID, "err", err)
+				slog.Debug("Bully TCP accept error", "monitorID", p.monitorID, "err", err)
 				continue
 			}
-			protocol.waitGroup.Add(1)
-			go protocol.handleConnection(conn, incoming)
+			p.waitGroup.Add(1)
+			go p.handleConnection(conn, incoming)
 		}
 	}()
 }
 
-func (protocol *bullyProtocol) handleConnection(conn net.Conn, incoming chan<- bullyMessage) {
-	defer protocol.waitGroup.Done()
+func (p *bullyProtocol) handleConnection(conn net.Conn, incoming chan<- bullyMessage) {
+	defer p.waitGroup.Done()
 	defer conn.Close()
 
 	msg, err := readBullyMessage(conn)
-	if err != nil || msg.FromID == protocol.monitorID {
+	if err != nil || msg.FromID == p.monitorID {
 		return
 	}
 
 	select {
 	case incoming <- msg:
 	default:
-		slog.Warn("Dropping Bully message because queue is full", "monitorID", protocol.monitorID, "type", msg.Type, "fromID", msg.FromID)
+		slog.Warn("Dropping Bully message because queue is full", "monitorID", p.monitorID, "type", msg.Type, "fromID", msg.FromID)
 	}
 }
 
-func (protocol *bullyProtocol) sendAsync(ctx context.Context, addr string, msg bullyMessage) {
-	protocol.waitGroup.Add(1)
+func (p *bullyProtocol) sendAsync(ctx context.Context, addr string, msg bullyMessage) {
+	p.waitGroup.Add(1)
 	go func() {
-		defer protocol.waitGroup.Done()
-		dialer := net.Dialer{Timeout: protocol.dialTimeout}
+		defer p.waitGroup.Done()
+		dialer := net.Dialer{Timeout: p.dialTimeout}
 		conn, err := dialer.DialContext(ctx, "tcp", addr)
 		if err != nil {
 			return
@@ -102,10 +102,10 @@ func (protocol *bullyProtocol) sendAsync(ctx context.Context, addr string, msg b
 	}()
 }
 
-func (protocol *bullyProtocol) close() {
-	_ = protocol.listener.Close()
-	<-protocol.serveDone
-	protocol.waitGroup.Wait()
+func (p *bullyProtocol) close() {
+	_ = p.listener.Close()
+	<-p.serveDone
+	p.waitGroup.Wait()
 }
 
 func writeBullyMessage(conn net.Conn, msg bullyMessage) error {
