@@ -36,9 +36,6 @@ func (tokenizer *Tokenizer) publishVocabulary(clientID string, batchID uint64, v
 	}
 
 	for shard, items := range byShard {
-		if len(items) == 0 {
-			continue
-		}
 		msg, err := inner.SerializeVocabulary(clientID, batchID, items)
 		if err := send(tokenizer.vocabularyQueues[shard], msg, err); err != nil {
 			return err
@@ -55,9 +52,6 @@ func (tokenizer *Tokenizer) publishWordCounts(clientID string, batchID uint64, w
 	}
 
 	for shard, items := range byShard {
-		if len(items) == 0 {
-			continue
-		}
 		msg, err := inner.SerializeWordCounts(clientID, batchID, items)
 		if err := send(tokenizer.wordCountsQueues[shard], msg, err); err != nil {
 			return err
