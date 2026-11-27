@@ -10,6 +10,7 @@ import (
 type RecordsMessage[T any] struct {
 	Type         MsgType `json:"type"`
 	ClientID     string  `json:"client_id"`
+	BatchID      uint64  `json:"batch_id,omitempty"`
 	Records      []T     `json:"records,omitempty"`
 	TotalBatches *uint64 `json:"total_batches,omitempty"`
 }
@@ -27,7 +28,11 @@ func (m *RecordsMessage[T]) Serialize() (*middleware.Message, error) {
 }
 
 func serializeRecords[T any](clientID string, records []T) (*middleware.Message, error) {
-	return (&RecordsMessage[T]{Type: MsgData, ClientID: clientID, Records: records}).Serialize()
+	return serializeBatchRecords(clientID, 0, records)
+}
+
+func serializeBatchRecords[T any](clientID string, batchID uint64, records []T) (*middleware.Message, error) {
+	return (&RecordsMessage[T]{Type: MsgData, ClientID: clientID, BatchID: batchID, Records: records}).Serialize()
 }
 
 func serializeRecordsEOF[T any](clientID string) (*middleware.Message, error) {

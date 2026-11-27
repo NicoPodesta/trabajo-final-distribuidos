@@ -11,8 +11,8 @@ type RecentArticleItem struct {
 
 type RecentArticlesMessage = RecordsMessage[RecentArticleItem]
 
-func SerializeRecentArticles(clientID string, records []RecentArticleItem) (*middleware.Message, error) {
-	return serializeRecords(clientID, records)
+func SerializeRecentArticles(clientID string, batchID uint64, records []RecentArticleItem) (*middleware.Message, error) {
+	return serializeBatchRecords(clientID, batchID, records)
 }
 
 func SerializeRecentArticlesEOF(clientID string, totalBatches uint64) (*middleware.Message, error) {

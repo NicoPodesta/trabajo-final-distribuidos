@@ -11,8 +11,8 @@ type VocabularyItem struct {
 
 type VocabularyMessage = RecordsMessage[VocabularyItem]
 
-func SerializeVocabulary(clientID string, records []VocabularyItem) (*middleware.Message, error) {
-	return serializeRecords(clientID, records)
+func SerializeVocabulary(clientID string, batchID uint64, records []VocabularyItem) (*middleware.Message, error) {
+	return serializeBatchRecords(clientID, batchID, records)
 }
 
 func SerializeVocabularyEOF(clientID string) (*middleware.Message, error) {

@@ -6,8 +6,8 @@ import (
 
 type HistoricalCountsMessage = RecordsMessage[uint32]
 
-func SerializeHistoricalCounts(clientID string, records []uint32) (*middleware.Message, error) {
-	return serializeRecords(clientID, records)
+func SerializeHistoricalCounts(clientID string, batchID uint64, records []uint32) (*middleware.Message, error) {
+	return serializeBatchRecords(clientID, batchID, records)
 }
 
 func SerializeHistoricalCountsEOF(clientID string, totalBatches uint64) (*middleware.Message, error) {

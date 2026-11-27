@@ -13,22 +13,22 @@ func wordShard(word string, amount int) int {
 	return int(hasher.Sum32() % uint32(amount))
 }
 
-func (tokenizer *Tokenizer) publish(clientID string, result batchResult) error {
-	if err := tokenizer.publishVocabulary(clientID, result.vocabulary); err != nil {
+func (tokenizer *Tokenizer) publish(clientID string, batchID uint64, result batchResult) error {
+	if err := tokenizer.publishVocabulary(clientID, batchID, result.vocabulary); err != nil {
 		return err
 	}
-	if err := tokenizer.publishWordCounts(clientID, result.wordCounts); err != nil {
+	if err := tokenizer.publishWordCounts(clientID, batchID, result.wordCounts); err != nil {
 		return err
 	}
-	msg, err := inner.SerializeHistoricalCounts(clientID, result.historicalCounts)
+	msg, err := inner.SerializeHistoricalCounts(clientID, batchID, result.historicalCounts)
 	if err := send(tokenizer.historicalCountsQueue, msg, err); err != nil {
 		return err
 	}
-	msg, err = inner.SerializeRecentArticles(clientID, result.recentArticles)
+	msg, err = inner.SerializeRecentArticles(clientID, batchID, result.recentArticles)
 	return send(tokenizer.recentArticlesQueue, msg, err)
 }
 
-func (tokenizer *Tokenizer) publishVocabulary(clientID string, vocabulary []inner.VocabularyItem) error {
+func (tokenizer *Tokenizer) publishVocabulary(clientID string, batchID uint64, vocabulary []inner.VocabularyItem) error {
 	byShard := make([][]inner.VocabularyItem, len(tokenizer.vocabularyQueues))
 	for _, item := range vocabulary {
 		shard := wordShard(item.Word, len(byShard))
@@ -39,7 +39,7 @@ func (tokenizer *Tokenizer) publishVocabulary(clientID string, vocabulary []inne
 		if len(items) == 0 {
 			continue
 		}
-		msg, err := inner.SerializeVocabulary(clientID, items)
+		msg, err := inner.SerializeVocabulary(clientID, batchID, items)
 		if err := send(tokenizer.vocabularyQueues[shard], msg, err); err != nil {
 			return err
 		}
@@ -47,7 +47,7 @@ func (tokenizer *Tokenizer) publishVocabulary(clientID string, vocabulary []inne
 	return nil
 }
 
-func (tokenizer *Tokenizer) publishWordCounts(clientID string, wordCounts []inner.WordCountItem) error {
+func (tokenizer *Tokenizer) publishWordCounts(clientID string, batchID uint64, wordCounts []inner.WordCountItem) error {
 	byShard := make([][]inner.WordCountItem, len(tokenizer.wordCountsQueues))
 	for _, item := range wordCounts {
 		shard := wordShard(item.Word, len(byShard))
@@ -58,7 +58,7 @@ func (tokenizer *Tokenizer) publishWordCounts(clientID string, wordCounts []inne
 		if len(items) == 0 {
 			continue
 		}
-		msg, err := inner.SerializeWordCounts(clientID, items)
+		msg, err := inner.SerializeWordCounts(clientID, batchID, items)
 		if err := send(tokenizer.wordCountsQueues[shard], msg, err); err != nil {
 			return err
 		}

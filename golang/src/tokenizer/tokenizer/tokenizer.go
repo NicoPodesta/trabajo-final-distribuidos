@@ -154,7 +154,7 @@ func (tokenizer *Tokenizer) handleGatewayMessage(msg middleware.Message) error {
 	tokenizer.mu.Lock()
 	result := tokenizeBatch(abstractMsg.Records)
 	tokenizer.logProgress(abstractMsg.ClientID, len(abstractMsg.Records))
-	err = tokenizer.publish(abstractMsg.ClientID, result)
+	err = tokenizer.publish(abstractMsg.ClientID, abstractMsg.BatchID, result)
 	tokenizer.mu.Unlock()
 	if err != nil {
 		return err

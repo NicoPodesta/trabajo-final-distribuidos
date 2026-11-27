@@ -11,8 +11,8 @@ type WordCountItem struct {
 
 type WordCountsMessage = RecordsMessage[WordCountItem]
 
-func SerializeWordCounts(clientID string, records []WordCountItem) (*middleware.Message, error) {
-	return serializeRecords(clientID, records)
+func SerializeWordCounts(clientID string, batchID uint64, records []WordCountItem) (*middleware.Message, error) {
+	return serializeBatchRecords(clientID, batchID, records)
 }
 
 func SerializeWordCountsEOF(clientID string) (*middleware.Message, error) {
