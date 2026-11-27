@@ -1,17 +1,26 @@
 package middleware
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
-// constants
+
+type queueMiddleware struct {
+	name           string
+	broker         *rabbitBroker
+	prefetch       int
+	confirmTimeout time.Duration
+}
+
 
 const (
 	brokerUser       = "guest"
@@ -22,10 +31,24 @@ const (
 
 var consumerSeq atomic.Uint64
 
-// Initialize middleware
 
 func CreateQueueMiddleware(queueName string, connectionSettings ConnSettings) (Middleware, error) {
 	return CreateQueueMiddlewareWithPrefetch(queueName, connectionSettings, queuePrefetch)
+}
+
+func CreateConfirmedQueueMiddleware(queueName string, connectionSettings ConnSettings, confirmTimeout time.Duration) (Middleware, error) {
+	if err := validateConfirmTimeout(confirmTimeout); err != nil {
+		return nil, err
+	}
+	broker, err := connectBroker(connectionSettings)
+	if err != nil {
+		return nil, err
+	}
+	if err := broker.enablePublisherConfirms(); err != nil {
+		_ = broker.close()
+		return nil, err
+	}
+	return &queueMiddleware{name: queueName, broker: broker, prefetch: queuePrefetch, confirmTimeout: confirmTimeout}, nil
 }
 
 // Configura el límite de mensajes sin ACK de esta cola
@@ -47,6 +70,13 @@ func validateQueuePrefetch(prefetch int) error {
 	return nil
 }
 
+func validateConfirmTimeout(confirmTimeout time.Duration) error {
+	if confirmTimeout <= 0 {
+		return fmt.Errorf("publisher confirm timeout must be positive")
+	}
+	return nil
+}
+
 func CreateExchangeMiddleware(exchange string, keys []string, connectionSettings ConnSettings) (Middleware, error) {
 	broker, err := connectBroker(connectionSettings)
 	if err != nil {
@@ -64,13 +94,6 @@ func connectBroker(settings ConnSettings) (*rabbitBroker, error) {
 	return broker, nil
 }
 
-// queueMiddleware methods
-
-type queueMiddleware struct {
-	name     string
-	broker   *rabbitBroker
-	prefetch int
-}
 
 func (q *queueMiddleware) StartConsuming(callback func(msg Message, ack func(), nack func())) error {
 	if err := q.broker.declareQueue(q.name); err != nil {
@@ -87,6 +110,9 @@ func (q *queueMiddleware) StopConsuming() error {
 func (q *queueMiddleware) Send(msg Message) error {
 	if err := q.broker.declareQueue(q.name); err != nil {
 		return err
+	}
+	if q.confirmTimeout > 0 {
+		return q.broker.publishConfirmed("", q.name, []byte(msg.Body), q.confirmTimeout)
 	}
 	return q.broker.publish("", q.name, []byte(msg.Body))
 }
@@ -205,6 +231,15 @@ func (b *rabbitBroker) declareExchangeConsumer(exchange string, keys []string) (
 	return queue.Name, nil
 }
 
+func (b *rabbitBroker) enablePublisherConfirms() error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if err := b.ensureChannel(); err != nil {
+		return err
+	}
+	return classifyBrokerError(b.conn, b.channel.Confirm(false))
+}
+
 func (b *rabbitBroker) publish(exchange string, key string, body []byte) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -215,6 +250,49 @@ func (b *rabbitBroker) publish(exchange string, key string, body []byte) error {
 		Body: body,
 	})
 	return classifyBrokerError(b.conn, err)
+}
+
+func (b *rabbitBroker) publishConfirmed(exchange string, key string, body []byte, timeout time.Duration) error {
+	b.mu.Lock()
+	if err := b.ensureChannel(); err != nil {
+		b.mu.Unlock()
+		return err
+	}
+	confirmation, err := b.channel.PublishWithDeferredConfirm(exchange, key, false, false, amqp.Publishing{
+		Body: body,
+	})
+	if err != nil {
+		err = classifyBrokerError(b.conn, err)
+		b.mu.Unlock()
+		return err
+	}
+	b.mu.Unlock()
+
+	if confirmation == nil {
+		return ErrMessageMiddlewareMessage
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	acked, err := confirmation.WaitContext(ctx)
+	if err == nil && acked {
+		return nil
+	}
+	return b.publisherConfirmError(err)
+}
+
+func (b *rabbitBroker) publisherConfirmError(waitErr error) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.conn == nil || b.conn.IsClosed() {
+		return ErrMessageMiddlewareDisconnected
+	}
+	if b.channel == nil || b.channel.IsClosed() {
+		return ErrMessageMiddlewareMessage
+	}
+	if waitErr != nil {
+		return fmt.Errorf("%w: waiting for publisher confirmation: %w", ErrMessageMiddlewareMessage, waitErr)
+	}
+	return ErrMessageMiddlewareMessage
 }
 
 func (b *rabbitBroker) consume(queue string, prefetch int, callback func(msg Message, ack func(), nack func())) error {

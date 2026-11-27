@@ -4,17 +4,27 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/common/middleware"
 )
 
 // Envía mensajes ya serializados al gateway de cada cliente
-// TODO: Hablar con los chicos, creo que deberia ser usado por 
-// una única goroutine y close creo que tambien
 type Publisher struct {
-	queues   map[string]middleware.Middleware
-	settings middleware.ConnSettings
+	queues         map[string]middleware.Middleware
+	settings       middleware.ConnSettings
+	confirmed      bool
+	confirmTimeout time.Duration
+}
+
+func NewConfirmed(settings middleware.ConnSettings, confirmTimeout time.Duration) *Publisher {
+	return &Publisher{
+		queues:         make(map[string]middleware.Middleware),
+		settings:       settings,
+		confirmed:      true,
+		confirmTimeout: confirmTimeout,
+	}
 }
 
 func New(settings middleware.ConnSettings) *Publisher {
@@ -31,7 +41,11 @@ func (p *Publisher) Publish(clientID string, msg middleware.Message) error {
 	if queue == nil {
 		queueName := fmt.Sprintf("results_%s", gatewayID)
 		var err error
-		queue, err = middleware.CreateQueueWithRetry(queueName, p.settings)
+		if p.confirmed {
+			queue, err = middleware.CreateConfirmedQueueWithRetry(queueName, p.settings, p.confirmTimeout)
+		} else {
+			queue, err = middleware.CreateQueueWithRetry(queueName, p.settings)
+		}
 		if err != nil {
 			return err
 		}

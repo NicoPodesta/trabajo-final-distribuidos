@@ -16,7 +16,10 @@ import (
 	"trabajo-final-distribuidos/common/shutdown"
 )
 
-const articlesQueueName = "article_dates"
+const (
+	articlesQueueName           = "article_dates"
+	resultPublishConfirmTimeout = 5 * time.Second
+)
 
 type FilterConfig struct {
 	MOMHost      string
@@ -53,7 +56,7 @@ func NewFilter(config FilterConfig) (*Filter, error) {
 		id:               config.FilterID,
 		coordinator:      coordinator,
 		articlesQueue:    articlesQueue,
-		resultsPublisher: resultpublisher.New(settings),
+		resultsPublisher: resultpublisher.NewConfirmed(settings, resultPublishConfirmTimeout),
 		statsByClient:    make(map[string]clientStats),
 	}, nil
 }
