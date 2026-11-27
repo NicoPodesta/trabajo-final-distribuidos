@@ -37,42 +37,16 @@ def coincide_prefijo(nombre, prefijos):
 
 
 def filtrar_objetivos(contenedores, excluir):
-    monitores_vivos = [c for c in contenedores if c.startswith("monitor_")]
-    objetivos = []
-
-    for nombre in contenedores:
-        if nombre == "rabbitmq" or nombre.startswith("client_") or nombre.startswith("gateway_"):
-            continue
-        if excluir and coincide_prefijo(nombre, excluir):
-            continue
-        objetivos.append(nombre)
-
-    return objetivos, monitores_vivos
-
-
-def elegir_victimas(objetivos, monitores_vivos, cantidad):
-    monitores_objetivo = [c for c in objetivos if c.startswith("monitor_")]
-    otros_objetivos = [c for c in objetivos if not c.startswith("monitor_")]
-
-    max_monitores_a_matar = max(0, len(monitores_vivos) - 1) if monitores_vivos else 0
-    candidatos = list(otros_objetivos)
-    if max_monitores_a_matar > 0:
-        candidatos.extend(monitores_objetivo)
-
-    random.shuffle(candidatos)
-    victimas = []
-    monitores_elegidos = 0
-
-    for nombre in candidatos:
-        if len(victimas) >= cantidad:
-            break
-        if nombre.startswith("monitor_"):
-            if monitores_elegidos >= max_monitores_a_matar:
-                continue
-            monitores_elegidos += 1
-        victimas.append(nombre)
-
-    return victimas
+    objetivos = [
+        nombre for nombre in contenedores
+        if nombre != "rabbitmq"
+        and not nombre.startswith(("client_", "gateway_"))
+        and not (excluir and coincide_prefijo(nombre, excluir))
+    ]
+    monitores = [c for c in objetivos if c.startswith("monitor_")]
+    if monitores:
+        objetivos.remove(random.choice(monitores))
+    return objetivos
 
 
 def matar_contenedor(nombre):
@@ -129,14 +103,15 @@ def modo_aleatorio(args):
             esperar_interrumpible(args.interval, detener)
             continue
 
-        objetivos, monitores_vivos = filtrar_objetivos(contenedores, args.exclude)
-        victimas = elegir_victimas(objetivos, monitores_vivos, cantidad=1)
+        objetivos = filtrar_objetivos(contenedores, args.exclude)
 
         ronda += 1
-        if not victimas:
+        if not objetivos:
             print(f"[{ahora()}] Ronda #{ronda}: sin objetivos elegibles activos.", flush=True)
-        elif matar_contenedor(victimas[0]):
-            conteo[victimas[0]] += 1
+        else:
+            victima = random.choice(objetivos)
+            if matar_contenedor(victima):
+                conteo[victima] += 1
 
         esperar_interrumpible(args.interval, detener)
 
@@ -148,14 +123,13 @@ def modo_aleatorio(args):
 
 def modo_catastrofe(args):
     contenedores = contenedores_activos(args.compose)
-    objetivos, monitores_vivos = filtrar_objetivos(contenedores, args.exclude)
-    victimas = elegir_victimas(objetivos, monitores_vivos, cantidad=len(objetivos))
+    victimas = filtrar_objetivos(contenedores, args.exclude)
 
     if not victimas:
         print(f"[{ahora()}] No hay contenedores elegibles activos para catastrofe.", flush=True)
         return 0
 
-    sobrevivientes = [m for m in monitores_vivos if m not in victimas]
+    sobrevivientes = [c for c in contenedores if c.startswith("monitor_") and c not in victimas]
     print(f"[{ahora()}] Escenario 'catastrophe': matando {len(victimas)} contenedor(es) (monitores preservados: {sobrevivientes})", flush=True)
 
     muertos = sum(1 for nombre in victimas if matar_contenedor(nombre))
