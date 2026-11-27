@@ -156,6 +156,9 @@ func (b *Bully) onOK(fromID int) {
 
 func (b *Bully) onCoordinator(ctx context.Context, fromID int) {
 	if fromID > b.config.ID {
+		if b.state == stateFollower && fromID < b.leaderID {
+			return
+		}
 		b.becomeFollower(fromID)
 		return
 	}
@@ -164,6 +167,9 @@ func (b *Bully) onCoordinator(ctx context.Context, fromID int) {
 
 func (b *Bully) onHeartbeat(ctx context.Context, fromID int) {
 	if fromID > b.config.ID {
+		if b.state == stateFollower && fromID < b.leaderID {
+			return
+		}
 		if b.state != stateFollower || b.leaderID != fromID {
 			b.becomeFollower(fromID)
 		} else {
