@@ -193,7 +193,8 @@ services:
     - q5_filter_2
     environment:
     - MONITOR_ID=0
-    - TARGETS=load_balancer_0=load_balancer_0:9090,load_balancer_1=load_balancer_1:9090,load_balancer_2=load_balancer_2:9090,gateway_0=gateway_0:9090,gateway_1=gateway_1:9090,gateway_2=gateway_2:9090,q4_word_counter_0=q4_word_counter_0:9090,q4_word_counter_1=q4_word_counter_1:9090,q4_word_counter_2=q4_word_counter_2:9090,q4_top20_merger=q4_top20_merger:9090,tokenizer_0=tokenizer_0:9090,tokenizer_1=tokenizer_1:9090,tokenizer_2=tokenizer_2:9090,q5_avg_partial_0=q5_avg_partial_0:9090,q5_avg_partial_1=q5_avg_partial_1:9090,q5_avg_partial_2=q5_avg_partial_2:9090,q5_avg_aggregator_0=q5_avg_aggregator_0:9090,q5_filter_0=q5_filter_0:9090,q5_filter_1=q5_filter_1:9090,q5_filter_2=q5_filter_2:9090
+    - TARGETS=load_balancer_0,load_balancer_1,load_balancer_2,gateway_0,gateway_1,gateway_2,q4_word_counter_0,q4_word_counter_1,q4_word_counter_2,q4_top20_merger,tokenizer_0,tokenizer_1,tokenizer_2,q5_avg_partial_0,q5_avg_partial_1,q5_avg_partial_2,q5_avg_aggregator_0,q5_filter_0,q5_filter_1,q5_filter_2
+    - HEALTH_PORT=9090
     - LOG_LEVEL=info
     volumes:
     - /var/run/docker.sock:/var/run/docker.sock

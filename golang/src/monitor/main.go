@@ -4,36 +4,28 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"strings"
 	"time"
 
 	"trabajo-final-distribuidos/common/config"
+	"trabajo-final-distribuidos/common/healthcheck"
 	"trabajo-final-distribuidos/common/logger"
 	"trabajo-final-distribuidos/common/shutdown"
 	"trabajo-final-distribuidos/monitor/monitor"
 )
 
-func parseTargets(raw string) ([]monitor.Target, error) {
-	if strings.TrimSpace(raw) == "" {
-		return nil, nil
-	}
+func parseTargets(raw string, port string) []monitor.Target {
 	var targets []monitor.Target
-	for _, entry := range strings.Split(raw, ",") {
-		entry = strings.TrimSpace(entry)
-		if entry == "" {
+	for _, name := range strings.Split(raw, ",") {
+		name = strings.TrimSpace(name)
+		if name == "" {
 			continue
 		}
-		name, addr, ok := strings.Cut(entry, "=")
-		if !ok || strings.TrimSpace(name) == "" || strings.TrimSpace(addr) == "" {
-			return nil, fmt.Errorf("invalid TARGETS entry %q (expected name=host:port)", entry)
-		}
-		targets = append(targets, monitor.Target{
-			Name: strings.TrimSpace(name),
-			Addr: strings.TrimSpace(addr),
-		})
+		targets = append(targets, monitor.Target{Name: name, Addr: net.JoinHostPort(name, port)})
 	}
-	return targets, nil
+	return targets
 }
 
 func loadConfig() (monitor.Config, error) {
@@ -45,10 +37,8 @@ func loadConfig() (monitor.Config, error) {
 		return monitor.Config{}, fmt.Errorf("MONITOR_ID must be non-negative")
 	}
 
-	targets, err := parseTargets(os.Getenv("TARGETS"))
-	if err != nil {
-		return monitor.Config{}, err
-	}
+	healthPort := config.OptionalString("HEALTH_PORT", healthcheck.DefaultPort)
+	targets := parseTargets(os.Getenv("TARGETS"), healthPort)
 
 	checkIntervalMs, err := config.OptionalInt("CHECK_INTERVAL_MS", 1000)
 	if err != nil || checkIntervalMs < 1 {

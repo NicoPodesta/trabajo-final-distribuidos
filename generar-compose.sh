@@ -163,33 +163,29 @@ monitor() {
   local q5_avg_partial_count=$6
   local q5_filter_count=$7
 
-  local targets_list=""
+  local targets=()
   for lb_id in $(seq 0 $((total_lbs - 1))); do
-    local svc
-    svc=$(lb_service_name "$lb_id" "$total_lbs")
-    if [[ -n "$targets_list" ]]; then
-      targets_list="${targets_list},${svc}=${svc}:9090"
-    else
-      targets_list="${svc}=${svc}:9090"
-    fi
+    targets+=("$(lb_service_name "$lb_id" "$total_lbs")")
   done
   for gw_id in $(seq 0 $((gw_count - 1))); do
-    targets_list="${targets_list},gateway_${gw_id}=gateway_${gw_id}:9090"
+    targets+=("gateway_${gw_id}")
   done
   for counter_id in $(seq 0 $((q4_counter_count - 1))); do
-    targets_list="${targets_list},q4_word_counter_${counter_id}=q4_word_counter_${counter_id}:9090"
+    targets+=("q4_word_counter_${counter_id}")
   done
-  targets_list="${targets_list},q4_top20_merger=q4_top20_merger:9090"
+  targets+=("q4_top20_merger")
   for tokenizer_id in $(seq 0 $((tokenizer_count - 1))); do
-    targets_list="${targets_list},tokenizer_${tokenizer_id}=tokenizer_${tokenizer_id}:9090"
+    targets+=("tokenizer_${tokenizer_id}")
   done
   for partial_id in $(seq 0 $((q5_avg_partial_count - 1))); do
-    targets_list="${targets_list},q5_avg_partial_${partial_id}=q5_avg_partial_${partial_id}:9090"
+    targets+=("q5_avg_partial_${partial_id}")
   done
-  targets_list="${targets_list},q5_avg_aggregator_0=q5_avg_aggregator_0:9090"
+  targets+=("q5_avg_aggregator_0")
   for filter_id in $(seq 0 $((q5_filter_count - 1))); do
-    targets_list="${targets_list},q5_filter_${filter_id}=q5_filter_${filter_id}:9090"
+    targets+=("q5_filter_${filter_id}")
   done
+  local targets_list
+  targets_list=$(IFS=,; echo "${targets[*]}")
 
   cat <<YAML
   monitor_${id}:
@@ -199,30 +195,14 @@ monitor() {
     container_name: monitor_${id}
     depends_on:
 YAML
-  for lb_id in $(seq 0 $((total_lbs - 1))); do
-    echo "    - $(lb_service_name "$lb_id" "$total_lbs")"
-  done
-  for gw_id in $(seq 0 $((gw_count - 1))); do
-    echo "    - gateway_${gw_id}"
-  done
-  for counter_id in $(seq 0 $((q4_counter_count - 1))); do
-    echo "    - q4_word_counter_${counter_id}"
-  done
-  echo "    - q4_top20_merger"
-  for tokenizer_id in $(seq 0 $((tokenizer_count - 1))); do
-    echo "    - tokenizer_${tokenizer_id}"
-  done
-  for partial_id in $(seq 0 $((q5_avg_partial_count - 1))); do
-    echo "    - q5_avg_partial_${partial_id}"
-  done
-  echo "    - q5_avg_aggregator_0"
-  for filter_id in $(seq 0 $((q5_filter_count - 1))); do
-    echo "    - q5_filter_${filter_id}"
+  for target in "${targets[@]}"; do
+    echo "    - ${target}"
   done
   cat <<YAML
     environment:
     - MONITOR_ID=${id}
     - TARGETS=${targets_list}
+    - HEALTH_PORT=9090
     - LOG_LEVEL=info
     volumes:
     - /var/run/docker.sock:/var/run/docker.sock
