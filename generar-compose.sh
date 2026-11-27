@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -lt 1 || $# -gt 12 ]]; then
-  echo "Uso: $0 <archivo-salida> [cantidad-clientes] [cantidad-gateways] [cantidad-tokenizers] [cantidad-q4-wordcounters] [cantidad-q5-avgpartials] [cantidad-q5-filters] [cantidad-q1-filters] [cantidad-q2-filters] [cantidad-q2-fetchers] [cantidad-q3-joins] [cantidad-load-balancers]" >&2
+if [[ $# -lt 1 || $# -gt 13 ]]; then
+  echo "Uso: $0 <archivo-salida> [cantidad-clientes] [cantidad-gateways] [cantidad-tokenizers] [cantidad-q4-wordcounters] [cantidad-q5-avgpartials] [cantidad-q5-filters] [cantidad-q1-filters] [cantidad-q2-filters] [cantidad-q2-fetchers] [cantidad-q3-joins] [cantidad-load-balancers] [cantidad-monitores]" >&2
   exit 1
 fi
 
@@ -18,8 +18,9 @@ q2_filter_count="${9:-1}"
 q2_fetcher_count="${10:-1}"
 q3_join_count="${11:-1}"
 lb_count="${12:-1}"
+monitor_count="${13:-1}"
 
-for val in "$client_count" "$gateway_count" "$tokenizer_count" "$q4_counter_count" "$q5_avg_partial_count" "$q5_filter_count" "$q1_filter_count" "$q2_filter_count" "$q2_fetcher_count" "$q3_join_count" "$lb_count"; do
+for val in "$client_count" "$gateway_count" "$tokenizer_count" "$q4_counter_count" "$q5_avg_partial_count" "$q5_filter_count" "$q1_filter_count" "$q2_filter_count" "$q2_fetcher_count" "$q3_join_count" "$lb_count" "$monitor_count"; do
   if ! [[ "$val" =~ ^[0-9]+$ ]] || [[ "$val" -lt 1 ]]; then
     echo "Error: los conteos deben ser enteros positivos" >&2
     exit 1
@@ -162,6 +163,19 @@ monitor() {
   local tokenizer_count=$5
   local q5_avg_partial_count=$6
   local q5_filter_count=$7
+  local total_monitors=$8
+
+  local peers=()
+  for mon_id in $(seq 0 $((total_monitors - 1))); do
+    if [[ "$mon_id" -eq "$id" ]]; then
+      continue
+    fi
+    peers+=("${mon_id}=monitor_${mon_id}")
+  done
+  local peers_list=""
+  if [[ ${#peers[@]} -gt 0 ]]; then
+    peers_list=$(IFS=,; echo "${peers[*]}")
+  fi
 
   local targets=()
   for lb_id in $(seq 0 $((total_lbs - 1))); do
@@ -201,8 +215,14 @@ YAML
   cat <<YAML
     environment:
     - MONITOR_ID=${id}
-    - TARGETS=${targets_list}
+    - MONITOR_PORT=9091
     - HEALTH_PORT=9090
+YAML
+  if [[ -n "$peers_list" ]]; then
+    echo "    - PEERS=${peers_list}"
+  fi
+  cat <<YAML
+    - TARGETS=${targets_list}
     - LOG_LEVEL=info
     volumes:
     - /var/run/docker.sock:/var/run/docker.sock
@@ -270,7 +290,9 @@ YAML
     gateway "$id"
   done
 
-  monitor 0 "$lb_count" "$gateway_count" "$q4_counter_count" "$tokenizer_count" "$q5_avg_partial_count" "$q5_filter_count"
+  for id in $(seq 0 $((monitor_count - 1))); do
+    monitor "$id" "$lb_count" "$gateway_count" "$q4_counter_count" "$tokenizer_count" "$q5_avg_partial_count" "$q5_filter_count" "$monitor_count"
+  done
 
   for id in $(seq 0 $((q1_filter_count - 1))); do
     worker "q1_filter_${id}" q1filter "Q1_FILTER_ID=${id}" "Q1_FILTER_AMOUNT=${q1_filter_count}" 'Q1_PREFETCH=${Q1_PREFETCH:-4}'
@@ -305,4 +327,4 @@ YAML
   rabbitmq
 } > "$output_file"
 
-echo "Docker Compose generado en $output_file con $client_count cliente(s), $lb_count load-balancer(s), $gateway_count gateway(s), $tokenizer_count tokenizer(s), $q4_counter_count q4-counter(s), $q5_avg_partial_count q5-avgpartial(s), $q5_filter_count q5-filter(s), $q1_filter_count q1-filter(s), $q2_filter_count q2-filter(s), $q2_fetcher_count q2-fetcher(s) y $q3_join_count q3-join(s)."
+echo "Docker Compose generado en $output_file con $client_count cliente(s), $lb_count load-balancer(s), $gateway_count gateway(s), $monitor_count monitor(es), $tokenizer_count tokenizer(s), $q4_counter_count q4-counter(s), $q5_avg_partial_count q5-avgpartial(s), $q5_filter_count q5-filter(s), $q1_filter_count q1-filter(s), $q2_filter_count q2-filter(s), $q2_fetcher_count q2-fetcher(s) y $q3_join_count q3-join(s)."

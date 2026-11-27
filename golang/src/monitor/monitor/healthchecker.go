@@ -58,22 +58,22 @@ func NewHealthChecker(config HealthCheckerConfig) *HealthChecker {
 	return &HealthChecker{config: config}
 }
 
-func (hc *HealthChecker) Run(ctx context.Context) {
-	if len(hc.config.Targets) == 0 {
-		slog.Info("HealthChecker started with no targets", "monitorID", hc.config.MonitorID)
+func (checker *HealthChecker) Run(ctx context.Context) {
+	if len(checker.config.Targets) == 0 {
+		slog.Info("HealthChecker started with no targets", "monitorID", checker.config.MonitorID)
 		<-ctx.Done()
 		return
 	}
 
 	slog.Info("HealthChecker started",
-		"monitorID", hc.config.MonitorID,
-		"targets", len(hc.config.Targets),
-		"checkInterval", hc.config.CheckInterval,
-		"maxMissedPings", hc.config.MaxMissedPings,
+		"monitorID", checker.config.MonitorID,
+		"targets", len(checker.config.Targets),
+		"checkInterval", checker.config.CheckInterval,
+		"maxMissedPings", checker.config.MaxMissedPings,
 	)
 
-	if hc.config.StartupGrace > 0 {
-		timer := time.NewTimer(hc.config.StartupGrace)
+	if checker.config.StartupGrace > 0 {
+		timer := time.NewTimer(checker.config.StartupGrace)
 		select {
 		case <-ctx.Done():
 			timer.Stop()
@@ -82,50 +82,50 @@ func (hc *HealthChecker) Run(ctx context.Context) {
 		}
 	}
 
-	missedPings := make(map[string]int, len(hc.config.Targets))
-	cooldownUntil := make(map[string]time.Time, len(hc.config.Targets))
+	missedPings := make(map[string]int, len(checker.config.Targets))
+	cooldownUntil := make(map[string]time.Time, len(checker.config.Targets))
 
-	ticker := time.NewTicker(hc.config.CheckInterval)
+	ticker := time.NewTicker(checker.config.CheckInterval)
 	defer ticker.Stop()
 
 	for {
-		hc.checkAll(ctx, missedPings, cooldownUntil)
+		checker.checkAll(ctx, missedPings, cooldownUntil)
 
 		select {
 		case <-ctx.Done():
-			slog.Info("HealthChecker stopped", "monitorID", hc.config.MonitorID)
+			slog.Info("HealthChecker stopped", "monitorID", checker.config.MonitorID)
 			return
 		case <-ticker.C:
 		}
 	}
 }
 
-func (hc *HealthChecker) checkAll(ctx context.Context, missedPings map[string]int, cooldownUntil map[string]time.Time) {
+func (checker *HealthChecker) checkAll(ctx context.Context, missedPings map[string]int, cooldownUntil map[string]time.Time) {
 	if ctx.Err() != nil {
 		return
 	}
 
-	results := make([]error, len(hc.config.Targets))
-	var wg sync.WaitGroup
+	results := make([]error, len(checker.config.Targets))
+	var waitGroup sync.WaitGroup
 
-	for i, target := range hc.config.Targets {
-		wg.Add(1)
-		go func(idx int, t Target) {
-			defer wg.Done()
-			results[idx] = hc.config.Ping(ctx, t.Addr, hc.config.PingTimeout)
+	for i, target := range checker.config.Targets {
+		waitGroup.Add(1)
+		go func(idx int, currentTarget Target) {
+			defer waitGroup.Done()
+			results[idx] = checker.config.Ping(ctx, currentTarget.Addr, checker.config.PingTimeout)
 		}(i, target)
 	}
-	wg.Wait()
+	waitGroup.Wait()
 
 	if ctx.Err() != nil {
 		return
 	}
 
 	now := time.Now()
-	for i, target := range hc.config.Targets {
+	for i, target := range checker.config.Targets {
 		if results[i] == nil {
 			if missedPings[target.Name] > 0 {
-				slog.Info("Target recovered", "monitorID", hc.config.MonitorID, "target", target.Name)
+				slog.Info("Target recovered", "monitorID", checker.config.MonitorID, "target", target.Name)
 			}
 			missedPings[target.Name] = 0
 			continue
@@ -137,26 +137,26 @@ func (hc *HealthChecker) checkAll(ctx context.Context, missedPings map[string]in
 
 		missedPings[target.Name]++
 		slog.Warn("Target healthcheck failed",
-			"monitorID", hc.config.MonitorID,
+			"monitorID", checker.config.MonitorID,
 			"target", target.Name,
 			"missed", missedPings[target.Name],
-			"maxMissed", hc.config.MaxMissedPings,
+			"maxMissed", checker.config.MaxMissedPings,
 			"err", results[i],
 		)
 
-		if missedPings[target.Name] < hc.config.MaxMissedPings {
+		if missedPings[target.Name] < checker.config.MaxMissedPings {
 			continue
 		}
 
 		missedPings[target.Name] = 0
-		cooldownUntil[target.Name] = now.Add(hc.config.RestartCooldown)
+		cooldownUntil[target.Name] = now.Add(checker.config.RestartCooldown)
 
-		slog.Warn("Restarting unresponsive target", "monitorID", hc.config.MonitorID, "target", target.Name)
-		if hc.config.Restarter != nil {
-			if err := hc.config.Restarter.Restart(ctx, target.Name); err != nil {
-				slog.Error("While restarting target", "monitorID", hc.config.MonitorID, "target", target.Name, "err", err)
+		slog.Warn("Restarting unresponsive target", "monitorID", checker.config.MonitorID, "target", target.Name)
+		if checker.config.Restarter != nil {
+			if err := checker.config.Restarter.Restart(ctx, target.Name); err != nil {
+				slog.Error("While restarting target", "monitorID", checker.config.MonitorID, "target", target.Name, "err", err)
 			} else {
-				slog.Info("Target restart requested successfully", "monitorID", hc.config.MonitorID, "target", target.Name)
+				slog.Info("Target restart requested successfully", "monitorID", checker.config.MonitorID, "target", target.Name)
 			}
 		}
 	}

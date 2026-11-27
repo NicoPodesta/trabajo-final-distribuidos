@@ -193,8 +193,82 @@ services:
     - q5_filter_2
     environment:
     - MONITOR_ID=0
-    - TARGETS=load_balancer_0,load_balancer_1,load_balancer_2,gateway_0,gateway_1,gateway_2,q4_word_counter_0,q4_word_counter_1,q4_word_counter_2,q4_top20_merger,tokenizer_0,tokenizer_1,tokenizer_2,q5_avg_partial_0,q5_avg_partial_1,q5_avg_partial_2,q5_avg_aggregator_0,q5_filter_0,q5_filter_1,q5_filter_2
+    - MONITOR_PORT=9091
     - HEALTH_PORT=9090
+    - PEERS=1=monitor_1,2=monitor_2
+    - TARGETS=load_balancer_0,load_balancer_1,load_balancer_2,gateway_0,gateway_1,gateway_2,q4_word_counter_0,q4_word_counter_1,q4_word_counter_2,q4_top20_merger,tokenizer_0,tokenizer_1,tokenizer_2,q5_avg_partial_0,q5_avg_partial_1,q5_avg_partial_2,q5_avg_aggregator_0,q5_filter_0,q5_filter_1,q5_filter_2
+    - LOG_LEVEL=info
+    volumes:
+    - /var/run/docker.sock:/var/run/docker.sock
+
+  monitor_1:
+    build:
+      context: ./src/
+      dockerfile: monitor/Dockerfile
+    container_name: monitor_1
+    depends_on:
+    - load_balancer_0
+    - load_balancer_1
+    - load_balancer_2
+    - gateway_0
+    - gateway_1
+    - gateway_2
+    - q4_word_counter_0
+    - q4_word_counter_1
+    - q4_word_counter_2
+    - q4_top20_merger
+    - tokenizer_0
+    - tokenizer_1
+    - tokenizer_2
+    - q5_avg_partial_0
+    - q5_avg_partial_1
+    - q5_avg_partial_2
+    - q5_avg_aggregator_0
+    - q5_filter_0
+    - q5_filter_1
+    - q5_filter_2
+    environment:
+    - MONITOR_ID=1
+    - MONITOR_PORT=9091
+    - HEALTH_PORT=9090
+    - PEERS=0=monitor_0,2=monitor_2
+    - TARGETS=load_balancer_0,load_balancer_1,load_balancer_2,gateway_0,gateway_1,gateway_2,q4_word_counter_0,q4_word_counter_1,q4_word_counter_2,q4_top20_merger,tokenizer_0,tokenizer_1,tokenizer_2,q5_avg_partial_0,q5_avg_partial_1,q5_avg_partial_2,q5_avg_aggregator_0,q5_filter_0,q5_filter_1,q5_filter_2
+    - LOG_LEVEL=info
+    volumes:
+    - /var/run/docker.sock:/var/run/docker.sock
+
+  monitor_2:
+    build:
+      context: ./src/
+      dockerfile: monitor/Dockerfile
+    container_name: monitor_2
+    depends_on:
+    - load_balancer_0
+    - load_balancer_1
+    - load_balancer_2
+    - gateway_0
+    - gateway_1
+    - gateway_2
+    - q4_word_counter_0
+    - q4_word_counter_1
+    - q4_word_counter_2
+    - q4_top20_merger
+    - tokenizer_0
+    - tokenizer_1
+    - tokenizer_2
+    - q5_avg_partial_0
+    - q5_avg_partial_1
+    - q5_avg_partial_2
+    - q5_avg_aggregator_0
+    - q5_filter_0
+    - q5_filter_1
+    - q5_filter_2
+    environment:
+    - MONITOR_ID=2
+    - MONITOR_PORT=9091
+    - HEALTH_PORT=9090
+    - PEERS=0=monitor_0,1=monitor_1
+    - TARGETS=load_balancer_0,load_balancer_1,load_balancer_2,gateway_0,gateway_1,gateway_2,q4_word_counter_0,q4_word_counter_1,q4_word_counter_2,q4_top20_merger,tokenizer_0,tokenizer_1,tokenizer_2,q5_avg_partial_0,q5_avg_partial_1,q5_avg_partial_2,q5_avg_aggregator_0,q5_filter_0,q5_filter_1,q5_filter_2
     - LOG_LEVEL=info
     volumes:
     - /var/run/docker.sock:/var/run/docker.sock
