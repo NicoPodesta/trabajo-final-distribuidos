@@ -62,7 +62,7 @@ make logs
 ### Ejecución
 
 - Ejecucion con cantidades configurables de clientes, gateways, tokenizers, contadores de Q4, Avg Partial y Filter de Q5 filtros de Q1 y Q2, Fetchers de Q2 y Joins de Q3. Un load balancer, el Merger de Q4 y el Aggregator de Q5.
-- Prefetch por componente sobre la cola que consume: `TOKENIZER_PREFETCH`, `Q3_JOIN_PREFETCH`, `Q4_WORD_COUNTER_PREFETCH`, `Q5_AVG_PARTIAL_PREFETCH`, `Q5_FILTER_PREFETCH` y `GATEWAY_RESULTS_PREFETCH` (20 en el compose generado, 1 si falta), además de `Q1_PREFETCH`, `Q2_PREFETCH` y `Q2_MAX_PENDING_REQUESTS`. El Merger de Q4, el Aggregator de Q5 y los exchanges de control quedan en 1: reciben pocos mensajes.
+- Prefetch por componente sobre la cola que consume: `TOKENIZER_PREFETCH`, `Q3_JOIN_PREFETCH`, `Q4_WORD_COUNTER_PREFETCH`, `Q5_AVG_PARTIAL_PREFETCH` y `Q5_FILTER_PREFETCH` (20 en el compose generado, 1 si falta), `RESULTS_PREFETCH` del Gateway (100 por defecto), además de `Q1_PREFETCH`, `Q2_PREFETCH` y `Q2_MAX_PENDING_REQUESTS`. El Merger de Q4, el Aggregator de Q5 y los exchanges de control quedan en 1: reciben pocos mensajes.
 - El middleware procesa los mensajes de una cola de a uno y hace ACK de cada uno al terminarlo, así que un prefetch mayor no agrega concurrencia dentro de la réplica: RabbitMQ le adelanta mensajes y la réplica no espera la entrega del siguiente. El orden de cada cola se conserva, así que el cierre no cambia.
 
 ### Cliente

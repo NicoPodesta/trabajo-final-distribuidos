@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"trabajo-final-distribuidos/common/config"
+	"trabajo-final-distribuidos/common/healthcheck"
 	"trabajo-final-distribuidos/common/logger"
 	"trabajo-final-distribuidos/q4wordcounter/q4wordcounter"
 )
@@ -58,6 +59,18 @@ func run() int {
 		slog.Error("While initializing word counter", "err", err)
 		return 1
 	}
+
+	healthPort := config.OptionalString("HEALTH_PORT", healthcheck.DefaultPort)
+	healthSrv, err := healthcheck.StartServer(":" + healthPort)
+	if err != nil {
+		slog.Error("While starting word counter healthcheck server", "err", err)
+		return 1
+	}
+	defer func() {
+		if err := healthSrv.Close(); err != nil {
+			slog.Error("While closing word counter healthcheck server", "err", err)
+		}
+	}()
 
 	if err := counter.Run(); err != nil {
 		slog.Error("Word counter stopped with error", "err", err)

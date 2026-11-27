@@ -158,6 +158,7 @@ monitor() {
   local id=$1
   local total_lbs=$2
   local gw_count=$3
+  local q4_counter_count=$4
 
   local targets_list=""
   for lb_id in $(seq 0 $((total_lbs - 1))); do
@@ -171,6 +172,9 @@ monitor() {
   done
   for gw_id in $(seq 0 $((gw_count - 1))); do
     targets_list="${targets_list},gateway_${gw_id}=gateway_${gw_id}:9090"
+  done
+  for counter_id in $(seq 0 $((q4_counter_count - 1))); do
+    targets_list="${targets_list},q4_word_counter_${counter_id}=q4_word_counter_${counter_id}:9090"
   done
 
   cat <<YAML
@@ -186,6 +190,9 @@ YAML
   done
   for gw_id in $(seq 0 $((gw_count - 1))); do
     echo "    - gateway_${gw_id}"
+  done
+  for counter_id in $(seq 0 $((q4_counter_count - 1))); do
+    echo "    - q4_word_counter_${counter_id}"
   done
   cat <<YAML
     environment:
@@ -258,7 +265,7 @@ YAML
     gateway "$id"
   done
 
-  monitor 0 "$lb_count" "$gateway_count"
+  monitor 0 "$lb_count" "$gateway_count" "$q4_counter_count"
 
   for id in $(seq 0 $((q1_filter_count - 1))); do
     worker "q1_filter_${id}" q1filter "Q1_FILTER_ID=${id}" "Q1_FILTER_AMOUNT=${q1_filter_count}" 'Q1_PREFETCH=${Q1_PREFETCH:-4}'
@@ -286,7 +293,7 @@ YAML
   worker q5_avg_aggregator_0 q5avgaggregator "Q5_AVG_PARTIAL_AMOUNT=${q5_avg_partial_count}" "Q5_FILTER_AMOUNT=${q5_filter_count}"
 
   for id in $(seq 0 $((q4_counter_count - 1))); do
-    worker "q4_word_counter_${id}" q4wordcounter "Q4_WORD_COUNTER_ID=${id}" "TOKENIZER_AMOUNT=${tokenizer_count}" "Q4_WORD_COUNTER_PREFETCH=20"
+    worker "q4_word_counter_${id}" q4wordcounter "Q4_WORD_COUNTER_ID=${id}" "TOKENIZER_AMOUNT=${tokenizer_count}" "Q4_WORD_COUNTER_PREFETCH=20" "HEALTH_PORT=9090"
   done
 
   worker q4_top20_merger q4top20merger "Q4_WORD_COUNTER_AMOUNT=${q4_counter_count}"
