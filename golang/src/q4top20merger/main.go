@@ -42,18 +42,18 @@ func run() int {
 		return 1
 	}
 
-	merger, err := q4top20merger.NewTopMerger(workerConfig)
-	if err != nil {
-		slog.Error("While initializing top merger", "err", err)
-		return 1
-	}
-
 	healthSrv, err := healthcheck.StartFromEnv()
 	if err != nil {
 		slog.Error("While starting top merger healthcheck server", "err", err)
 		return 1
 	}
 	defer healthSrv.CloseAndLog()
+
+	merger, err := q4top20merger.NewTopMerger(workerConfig, healthSrv.MarkError)
+	if err != nil {
+		slog.Error("While initializing top merger", "err", err)
+		return 1
+	}
 
 	if err := merger.Run(); err != nil {
 		slog.Error("Top merger stopped with error", "err", err)

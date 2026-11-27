@@ -42,9 +42,10 @@ type AvgAggregator struct {
 	averageExchange  middleware.Middleware
 	totalsByClient   map[string]totals
 	eofs             *eofcounter.Counter
+	markError        func(error)
 }
 
-func NewAvgAggregator(config AvgAggregatorConfig) (*AvgAggregator, error) {
+func NewAvgAggregator(config AvgAggregatorConfig, markError func(error)) (*AvgAggregator, error) {
 	settings := middleware.ConnSettings{Hostname: config.MOMHost, Port: config.MOMPort}
 	avgPartialsQueue, err := middleware.CreateQueueMiddleware(avgPartialsQueueName, settings)
 	if err != nil {
@@ -62,6 +63,7 @@ func NewAvgAggregator(config AvgAggregatorConfig) (*AvgAggregator, error) {
 		averageExchange:  averageExchange,
 		totalsByClient:   make(map[string]totals),
 		eofs:             eofcounter.New(config.Q5AvgPartialAmount),
+		markError:        markError,
 	}, nil
 }
 
@@ -81,7 +83,8 @@ func (aggregator *AvgAggregator) Run() error {
 	slog.Info("Consuming avg partials from RabbitMQ...", "queue", avgPartialsQueueName)
 	return aggregator.avgPartialsQueue.StartConsuming(func(msg middleware.Message, ack func(), nack func()) {
 		if err := aggregator.handleMessage(msg); err != nil {
-			slog.Error("While handling avg partials message", "err", err)
+			aggregator.markError(err)
+			return
 		}
 		ack()
 	})
@@ -90,7 +93,8 @@ func (aggregator *AvgAggregator) Run() error {
 func (aggregator *AvgAggregator) handleMessage(msg middleware.Message) error {
 	avgPartialsMsg, err := inner.DeserializeAvgPartials(&msg)
 	if err != nil {
-		return err
+		slog.Error("Discarding invalid avg partials message", "err", err)
+		return nil
 	}
 
 	if avgPartialsMsg.IsEOF() {

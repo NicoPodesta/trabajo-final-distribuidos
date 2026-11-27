@@ -48,18 +48,18 @@ func run() int {
 		return 1
 	}
 
-	aggregator, err := q5avgaggregator.NewAvgAggregator(workerConfig)
-	if err != nil {
-		slog.Error("While initializing avg aggregator", "err", err)
-		return 1
-	}
-
 	healthSrv, err := healthcheck.StartFromEnv()
 	if err != nil {
 		slog.Error("While starting avg aggregator healthcheck server", "err", err)
 		return 1
 	}
 	defer healthSrv.CloseAndLog()
+
+	aggregator, err := q5avgaggregator.NewAvgAggregator(workerConfig, healthSrv.MarkError)
+	if err != nil {
+		slog.Error("While initializing avg aggregator", "err", err)
+		return 1
+	}
 
 	if err := aggregator.Run(); err != nil {
 		slog.Error("Avg aggregator stopped with error", "err", err)

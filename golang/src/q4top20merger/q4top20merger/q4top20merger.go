@@ -26,9 +26,10 @@ type TopMerger struct {
 	resultsPublisher    *resultpublisher.Publisher
 	partialTopsByClient map[string][]result.Q4Result
 	eofs                *eofcounter.Counter
+	markError           func(error)
 }
 
-func NewTopMerger(config TopMergerConfig) (*TopMerger, error) {
+func NewTopMerger(config TopMergerConfig, markError func(error)) (*TopMerger, error) {
 	settings := middleware.ConnSettings{Hostname: config.MOMHost, Port: config.MOMPort}
 	partialTop20Queue, err := middleware.CreateQueueMiddleware(partialTop20QueueName, settings)
 	if err != nil {
@@ -39,6 +40,7 @@ func NewTopMerger(config TopMergerConfig) (*TopMerger, error) {
 		resultsPublisher:    resultpublisher.New(settings),
 		partialTopsByClient: make(map[string][]result.Q4Result),
 		eofs:                eofcounter.New(config.Q4WordCounterAmount),
+		markError:           markError,
 	}, nil
 }
 
@@ -58,7 +60,8 @@ func (merger *TopMerger) Run() error {
 	slog.Info("Consuming partial tops from RabbitMQ...", "queue", partialTop20QueueName)
 	return merger.partialTop20Queue.StartConsuming(func(msg middleware.Message, ack func(), nack func()) {
 		if err := merger.handleMessage(msg); err != nil {
-			slog.Error("While handling partial top message", "err", err)
+			merger.markError(err)
+			return
 		}
 		ack()
 	})
@@ -67,7 +70,8 @@ func (merger *TopMerger) Run() error {
 func (merger *TopMerger) handleMessage(msg middleware.Message) error {
 	partialTopMsg, err := inner.DeserializeQ4Results(&msg)
 	if err != nil {
-		return err
+		slog.Error("Discarding invalid partial top message", "err", err)
+		return nil
 	}
 
 	if partialTopMsg.IsEOF() {
