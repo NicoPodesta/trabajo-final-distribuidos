@@ -31,9 +31,10 @@ type WordCounter struct {
 	countsByClient    map[string]map[string]uint32
 	eofs              *eofcounter.Counter
 	queueName         string
+	markError         func(error)
 }
 
-func NewWordCounter(config WordCounterConfig) (*WordCounter, error) {
+func NewWordCounter(config WordCounterConfig, markError func(error)) (*WordCounter, error) {
 	conns := middleware.NewConnections(middleware.ConnSettings{Hostname: config.MOMHost, Port: config.MOMPort})
 	queueName := fmt.Sprintf("%s%d", wordCountsQueuePrefix, config.ID)
 	wordCountsQueue, err := conns.QueueWithPrefetch(queueName, config.Prefetch)
@@ -55,6 +56,7 @@ func NewWordCounter(config WordCounterConfig) (*WordCounter, error) {
 		countsByClient:    make(map[string]map[string]uint32),
 		eofs:              eofcounter.New(config.TokenizerAmount),
 		queueName:         queueName,
+		markError:         markError,
 	}, nil
 }
 
@@ -65,7 +67,8 @@ func (counter *WordCounter) Run() error {
 	slog.Info("Consuming word counts from RabbitMQ...", "queue", counter.queueName)
 	return counter.wordCountsQueue.StartConsuming(func(msg middleware.Message, ack func(), nack func()) {
 		if err := counter.handleMessage(msg); err != nil {
-			slog.Error("While handling word counts message", "err", err)
+			counter.markError(err)
+			return
 		}
 		ack()
 	})
@@ -74,7 +77,8 @@ func (counter *WordCounter) Run() error {
 func (counter *WordCounter) handleMessage(msg middleware.Message) error {
 	wordCountsMsg, err := inner.DeserializeWordCounts(&msg)
 	if err != nil {
-		return err
+		slog.Error("Discarding invalid word counts message", "err", err)
+		return nil
 	}
 
 	if wordCountsMsg.IsEOF() {

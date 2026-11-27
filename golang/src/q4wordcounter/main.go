@@ -54,23 +54,18 @@ func run() int {
 		return 1
 	}
 
-	counter, err := q4wordcounter.NewWordCounter(workerConfig)
-	if err != nil {
-		slog.Error("While initializing word counter", "err", err)
-		return 1
-	}
-
-	healthPort := config.OptionalString("HEALTH_PORT", healthcheck.DefaultPort)
-	healthSrv, err := healthcheck.StartServer(":" + healthPort)
+	healthSrv, err := healthcheck.StartFromEnv()
 	if err != nil {
 		slog.Error("While starting word counter healthcheck server", "err", err)
 		return 1
 	}
-	defer func() {
-		if err := healthSrv.Close(); err != nil {
-			slog.Error("While closing word counter healthcheck server", "err", err)
-		}
-	}()
+	defer healthSrv.CloseAndLog()
+
+	counter, err := q4wordcounter.NewWordCounter(workerConfig, healthSrv.MarkError)
+	if err != nil {
+		slog.Error("While initializing word counter", "err", err)
+		return 1
+	}
 
 	if err := counter.Run(); err != nil {
 		slog.Error("Word counter stopped with error", "err", err)

@@ -6,6 +6,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 )
 
 const (
@@ -19,6 +20,7 @@ type Server struct {
 	done      chan struct{}
 	closeOnce sync.Once
 	closeErr  error
+	failed    atomic.Bool
 }
 
 func StartServer(addr string) (*Server, error) {
@@ -41,6 +43,11 @@ func (s *Server) Addr() string {
 	return s.conn.LocalAddr().String()
 }
 
+func (s *Server) MarkError(err error) {
+	slog.Error("Process marked as unhealthy", "err", err)
+	s.failed.Store(true)
+}
+
 func (s *Server) Close() error {
 	s.closeOnce.Do(func() {
 		s.closeErr = s.conn.Close()
@@ -60,6 +67,10 @@ func (s *Server) serve() {
 				return
 			}
 			slog.Debug("Healthcheck read error", "err", err)
+			continue
+		}
+
+		if s.failed.Load() {
 			continue
 		}
 
