@@ -17,9 +17,10 @@ import (
 const defaultSessionAckTimeout = 60 * time.Second
 
 type sessionDelivery struct {
-	header *inner.ResultHeader
-	msg    middleware.Message
-	ack    func()
+	header         *inner.ResultHeader
+	msg            middleware.Message
+	ack            func()
+	q1TotalBatches *uint64
 }
 
 type clientSession struct {
@@ -38,8 +39,10 @@ type clientSession struct {
 	receivedEOFs       map[inner.QueryID]int
 	completedCount     int
 	outboundEOFSent    bool
-	q1EOFs             map[int]bool
 	q2EOFs             map[int]bool
+	q1TotalBatches     uint64
+	q1TotalKnown       bool
+	q1QueryCompleted   bool
 	q1CompletedBatches map[uint64]struct{}
 	ackChan            chan struct{}
 
@@ -96,6 +99,10 @@ func (s *clientSession) enqueue(d sessionDelivery) bool {
 	return true
 }
 
+func (s *clientSession) enqueueQ1Total(totalBatches uint64) bool {
+	return s.enqueue(sessionDelivery{q1TotalBatches: &totalBatches})
+}
+
 func (s *clientSession) popPending() []sessionDelivery {
 	s.deliveryLock.Lock()
 	defer s.deliveryLock.Unlock()
@@ -142,8 +149,12 @@ func (s *clientSession) runSender(onClose func(clientID string)) {
 			default:
 			}
 
-			if err := s.processDelivery(d); err != nil {
-				slog.Error("While sending result to client", "clientID", s.clientID, "queryID", d.header.QueryID, "err", err)
+			if err := s.processSessionDelivery(d); err != nil {
+				if d.header == nil {
+					slog.Error("While registering Q1 total batches", "clientID", s.clientID, "err", err)
+				} else {
+					slog.Error("While sending result to client", "clientID", s.clientID, "queryID", d.header.QueryID, "err", err)
+				}
 				ackDeliveries(batch[i:])
 				if onClose != nil {
 					onClose(s.clientID)
@@ -158,6 +169,19 @@ func (s *clientSession) runSender(onClose func(clientID string)) {
 	}
 }
 
+func (s *clientSession) processSessionDelivery(d sessionDelivery) error {
+	if d.q1TotalBatches != nil {
+		if d.header != nil {
+			return errors.New("session delivery cannot contain both a result and Q1 total")
+		}
+		return s.registerQ1Total(*d.q1TotalBatches)
+	}
+	if d.header == nil {
+		return errors.New("session result delivery has no header")
+	}
+	return s.processDelivery(d)
+}
+
 func (s *clientSession) processDelivery(d sessionDelivery) error {
 	if d.header.QueryID == inner.Q1 {
 		switch d.header.Type {
@@ -166,12 +190,16 @@ func (s *clientSession) processDelivery(d sessionDelivery) error {
 				return errors.New("Q1 data result requires batch_id and no worker identifiers")
 			}
 		case inner.MsgEOF:
-			if d.header.BatchID != 0 || d.header.FetcherID != nil {
-				return errors.New("Q1 EOF must not contain batch_id or fetcher_id")
+			if d.header.BatchID != 0 || d.header.FilterID == nil || d.header.FetcherID != nil || *d.header.FilterID < 0 {
+				return errors.New("Q1 EOF must contain a non-negative filter_id and no batch_id or fetcher_id")
 			}
 		default:
 			return fmt.Errorf("unexpected Q1 result type: %d", d.header.Type)
 		}
+	}
+	if d.header.QueryID == inner.Q1 && d.header.IsEOF() {
+		slog.Debug("Ignoring legacy Q1 EOF", "clientID", s.clientID, "filterID", *d.header.FilterID)
+		return nil
 	}
 
 	if d.header.IsEOF() {
@@ -189,6 +217,9 @@ func (s *clientSession) processDelivery(d sessionDelivery) error {
 	if d.header.QueryID != inner.Q1 {
 		return deliverResultRecord(s, d.header, &d.msg)
 	}
+	if s.q1TotalKnown && d.header.BatchID > s.q1TotalBatches {
+		return fmt.Errorf("Q1 batch_id %d exceeds expected total %d", d.header.BatchID, s.q1TotalBatches)
+	}
 	if _, completed := s.q1CompletedBatches[d.header.BatchID]; completed {
 		slog.Debug("Discarding duplicate Q1 result batch", "clientID", s.clientID, "batchID", d.header.BatchID)
 		return nil
@@ -197,7 +228,35 @@ func (s *clientSession) processDelivery(d sessionDelivery) error {
 		return err
 	}
 	s.q1CompletedBatches[d.header.BatchID] = struct{}{}
-	return nil
+	return s.completeQ1IfReady()
+}
+
+func (s *clientSession) registerQ1Total(totalBatches uint64) error {
+	if s.q1TotalKnown {
+		if s.q1TotalBatches != totalBatches {
+			return fmt.Errorf("contradictory Q1 total: got %d after %d", totalBatches, s.q1TotalBatches)
+		}
+		return nil
+	}
+	for batchID := range s.q1CompletedBatches {
+		if batchID == 0 || batchID > totalBatches {
+			return fmt.Errorf("Q1 batch_id %d is outside expected range 1..%d", batchID, totalBatches)
+		}
+	}
+	s.q1TotalBatches = totalBatches
+	s.q1TotalKnown = true
+	slog.Info("Registered expected Q1 batches", "clientID", s.clientID, "total", totalBatches)
+	return s.completeQ1IfReady()
+}
+
+func (s *clientSession) completeQ1IfReady() error {
+	if s.q1QueryCompleted || !s.q1TotalKnown || uint64(len(s.q1CompletedBatches)) != s.q1TotalBatches {
+		return nil
+	}
+	s.q1QueryCompleted = true
+	s.completedCount++
+	slog.Info("All expected Q1 batches received for client", "clientID", s.clientID, "total", s.q1TotalBatches)
+	return s.finishIfAllQueriesComplete()
 }
 
 func (s *clientSession) eofsExpectedFor(queryID inner.QueryID) int {
@@ -219,16 +278,7 @@ func (s *clientSession) registerEOF(queryID inner.QueryID, filterID, fetcherID *
 	}
 
 	if queryID == inner.Q1 {
-		if filterID == nil || *filterID < 0 || *filterID >= s.eofsExpectedFor(inner.Q1) {
-			return false, fmt.Errorf("missing or invalid Q1 filter_id")
-		}
-		if s.q1EOFs[*filterID] {
-			return false, nil
-		}
-		if s.q1EOFs == nil {
-			s.q1EOFs = make(map[int]bool)
-		}
-		s.q1EOFs[*filterID] = true
+		return false, errors.New("Q1 completion does not use worker EOFs")
 	}
 	if queryID == inner.Q2 {
 		if fetcherID == nil || *fetcherID < 0 || *fetcherID >= s.eofsExpectedFor(inner.Q2) {
@@ -250,19 +300,29 @@ func (s *clientSession) registerEOF(queryID inner.QueryID, filterID, fetcherID *
 	if s.completedCount < s.expectedQueries {
 		return false, nil
 	}
+	if err := s.finishIfAllQueriesComplete(); err != nil {
+		return true, err
+	}
+	return true, nil
+}
+
+func (s *clientSession) finishIfAllQueriesComplete() error {
+	if s.outboundEOFSent || s.completedCount < s.expectedQueries {
+		return nil
+	}
 	s.outboundEOFSent = true
 
 	select {
 	case <-s.inboundEOFDone:
 	case <-s.doneChannel:
-		return true, errors.New("client session closed before inbound EndOfRecords was acked")
+		return errors.New("client session closed before inbound EndOfRecords was acked")
 	}
 
 	if err := s.sendEndOfRecords(); err != nil {
-		return true, err
+		return err
 	}
 	s.finish()
-	return true, nil
+	return nil
 }
 
 func (s *clientSession) writeLocked(fn func() error) error {

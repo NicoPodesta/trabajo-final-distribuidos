@@ -18,7 +18,7 @@ import (
 
 const (
 	articlesQueueName           = "article_dates"
-	resultPublishConfirmTimeout = 5 * time.Second
+	resultPublishConfirmTimeout = 10 * time.Second
 )
 
 type FilterConfig struct {
