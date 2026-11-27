@@ -133,7 +133,7 @@ func (h *ClientHandler) Handle(conn net.Conn, shutdownChannel <-chan struct{}) {
 	}
 }
 
-func (h *ClientHandler) handleArticleBatch(session *clientSession, reader *external.Reader, clientID string, q1BatchID uint64) (int, error) {
+func (h *ClientHandler) handleArticleBatch(session *clientSession, reader *external.Reader, clientID string, batchID uint64) (int, error) {
 	records, err := reader.ReadArticleBatch()
 	if err != nil {
 		return 0, err
@@ -168,13 +168,13 @@ func (h *ClientHandler) handleArticleBatch(session *clientSession, reader *exter
 		}
 	}
 
-	if err := h.sendQ1Articles(clientID, q1BatchID, q1Items); err != nil {
+	if err := h.sendQ1Articles(clientID, batchID, q1Items); err != nil {
 		return 0, err
 	}
 	if err := h.sendQ2Articles(clientID, q2Items); err != nil {
 		return 0, err
 	}
-	if err := h.sendAbstracts(clientID, abstractItems); err != nil {
+	if err := h.sendAbstracts(clientID, batchID, abstractItems); err != nil {
 		return 0, err
 	}
 
@@ -233,8 +233,8 @@ func (h *ClientHandler) sendQ2EOF(clientID string, totalBatches uint64) error {
 	return h.articleSectionsQueue.Send(*msg)
 }
 
-func (h *ClientHandler) sendAbstracts(clientID string, items []inner.AbstractItem) error {
-	msg, err := inner.SerializeAbstracts(clientID, items)
+func (h *ClientHandler) sendAbstracts(clientID string, batchID uint64, items []inner.AbstractItem) error {
+	msg, err := inner.SerializeAbstracts(clientID, batchID, items)
 	if err != nil {
 		return err
 	}
