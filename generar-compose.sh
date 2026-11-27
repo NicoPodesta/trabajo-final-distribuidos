@@ -176,6 +176,7 @@ monitor() {
   for counter_id in $(seq 0 $((q4_counter_count - 1))); do
     targets_list="${targets_list},q4_word_counter_${counter_id}=q4_word_counter_${counter_id}:9090"
   done
+  targets_list="${targets_list},q4_top20_merger=q4_top20_merger:9090"
 
   cat <<YAML
   monitor_${id}:
@@ -194,6 +195,7 @@ YAML
   for counter_id in $(seq 0 $((q4_counter_count - 1))); do
     echo "    - q4_word_counter_${counter_id}"
   done
+  echo "    - q4_top20_merger"
   cat <<YAML
     environment:
     - MONITOR_ID=${id}
@@ -296,7 +298,7 @@ YAML
     worker "q4_word_counter_${id}" q4wordcounter "Q4_WORD_COUNTER_ID=${id}" "TOKENIZER_AMOUNT=${tokenizer_count}" "Q4_WORD_COUNTER_PREFETCH=20" "HEALTH_PORT=9090"
   done
 
-  worker q4_top20_merger q4top20merger "Q4_WORD_COUNTER_AMOUNT=${q4_counter_count}"
+  worker q4_top20_merger q4top20merger "Q4_WORD_COUNTER_AMOUNT=${q4_counter_count}" "HEALTH_PORT=9090"
   rabbitmq
 } > "$output_file"
 

@@ -180,9 +180,10 @@ services:
     - q4_word_counter_0
     - q4_word_counter_1
     - q4_word_counter_2
+    - q4_top20_merger
     environment:
     - MONITOR_ID=0
-    - TARGETS=load_balancer_0=load_balancer_0:9090,load_balancer_1=load_balancer_1:9090,load_balancer_2=load_balancer_2:9090,gateway_0=gateway_0:9090,gateway_1=gateway_1:9090,gateway_2=gateway_2:9090,q4_word_counter_0=q4_word_counter_0:9090,q4_word_counter_1=q4_word_counter_1:9090,q4_word_counter_2=q4_word_counter_2:9090
+    - TARGETS=load_balancer_0=load_balancer_0:9090,load_balancer_1=load_balancer_1:9090,load_balancer_2=load_balancer_2:9090,gateway_0=gateway_0:9090,gateway_1=gateway_1:9090,gateway_2=gateway_2:9090,q4_word_counter_0=q4_word_counter_0:9090,q4_word_counter_1=q4_word_counter_1:9090,q4_word_counter_2=q4_word_counter_2:9090,q4_top20_merger=q4_top20_merger:9090
     - LOG_LEVEL=info
     volumes:
     - /var/run/docker.sock:/var/run/docker.sock
@@ -622,6 +623,7 @@ services:
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
     - Q4_WORD_COUNTER_AMOUNT=3
+    - HEALTH_PORT=9090
     - LOG_LEVEL=info
 
   rabbitmq:
