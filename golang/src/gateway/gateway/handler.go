@@ -184,9 +184,6 @@ func (h *ClientHandler) handleArticleBatch(session *clientSession, reader *exter
 func (h *ClientHandler) handleEndOfRecords(session *clientSession, clientID string, received int, abstractBatches, q1Batches, q2Batches uint64) error {
 	slog.Info("Received END_OF_RECORDS message from client", "clientID", clientID, "articles", received)
 
-	if err := h.sendQ1EOF(clientID, q1Batches); err != nil {
-		return err
-	}
 	if err := h.sendQ2EOF(clientID, q2Batches); err != nil {
 		return err
 	}
@@ -206,14 +203,6 @@ func (h *ClientHandler) handleEndOfRecords(session *clientSession, clientID stri
 
 func (h *ClientHandler) sendQ1Articles(clientID string, batchID uint64, items []inner.Q1ArticleItem) error {
 	msg, err := inner.SerializeQ1Articles(clientID, batchID, items)
-	if err != nil {
-		return err
-	}
-	return h.articleDatesQueue.Send(*msg)
-}
-
-func (h *ClientHandler) sendQ1EOF(clientID string, totalBatches uint64) error {
-	msg, err := inner.SerializeQ1ArticlesEOF(clientID, totalBatches)
 	if err != nil {
 		return err
 	}

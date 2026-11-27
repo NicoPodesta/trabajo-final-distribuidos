@@ -6,10 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-	"sync"
 	"time"
 
-	"trabajo-final-distribuidos/common/eofcoordinator"
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/common/middleware"
 	"trabajo-final-distribuidos/common/resultpublisher"
@@ -31,11 +29,8 @@ type FilterConfig struct {
 
 type Filter struct {
 	id               int
-	mu               sync.Mutex
-	coordinator      *eofcoordinator.EOFCoordinator
 	articlesQueue    middleware.Middleware
 	resultsPublisher *resultpublisher.Publisher
-	statsByClient    map[string]clientStats
 }
 
 func NewFilter(config FilterConfig) (*Filter, error) {
@@ -47,17 +42,10 @@ func NewFilter(config FilterConfig) (*Filter, error) {
 	if err != nil {
 		return nil, err
 	}
-	coordinator, err := eofcoordinator.New("q1_filter_control", config.FilterID, config.FilterAmount, settings)
-	if err != nil {
-		_ = articlesQueue.Close()
-		return nil, err
-	}
 	return &Filter{
 		id:               config.FilterID,
-		coordinator:      coordinator,
 		articlesQueue:    articlesQueue,
 		resultsPublisher: resultpublisher.NewConfirmed(settings, resultPublishConfirmTimeout),
-		statsByClient:    make(map[string]clientStats),
 	}, nil
 }
 
@@ -73,12 +61,6 @@ func (filter *Filter) Run() error {
 		}
 	}()
 
-	defer func() {
-		if err := filter.coordinator.Close(); err != nil {
-			slog.Error("While closing Q1 control", "err", err)
-		}
-	}()
-
 	ctx, cancel := context.WithCancel(context.Background())
 	shutdown.OnSignal(cancel)
 	finished, stopped := make(chan struct{}), make(chan struct{})
@@ -90,7 +72,6 @@ func (filter *Filter) Run() error {
 		for {
 			// Reintenta si la cancelación llegó antes de registrar un consumidor.
 			_ = filter.articlesQueue.StopConsuming()
-			_ = filter.coordinator.Stop()
 			select {
 			case <-finished:
 				return
@@ -100,19 +81,9 @@ func (filter *Filter) Run() error {
 	}()
 	defer func() { cancel(); close(finished); <-stopped }()
 
-	controlDone := make(chan error, 1)
-	go func() {
-		err := filter.coordinator.Start(filter.handleEndOfRecordsMessage)
-		if err == nil && ctx.Err() == nil {
-			err = fmt.Errorf("Q1 control consumer stopped unexpectedly")
-		}
-		controlDone <- err
-		cancel()
-	}()
-
-	err := filter.coordinator.WaitReady(ctx)
 	var processingErr error
-	if err == nil && ctx.Err() == nil {
+	var err error
+	if ctx.Err() == nil {
 		slog.Info("Consuming articles from RabbitMQ...", "queue", articlesQueueName, "filterID", filter.id)
 		err = filter.articlesQueue.StartConsuming(func(msg middleware.Message, ack func(), nack func()) {
 			if processingErr != nil || ctx.Err() != nil {
@@ -129,11 +100,10 @@ func (filter *Filter) Run() error {
 		})
 	}
 	cancel()
-	controlErr := <-controlDone
 	if errors.Is(err, context.Canceled) {
 		err = nil
 	}
-	return errors.Join(processingErr, err, controlErr)
+	return errors.Join(processingErr, err)
 }
 
 func (filter *Filter) handleGatewayMessage(msg middleware.Message) error {
@@ -145,9 +115,6 @@ func (filter *Filter) handleGatewayMessage(msg middleware.Message) error {
 		return fmt.Errorf("Q1 articles message has no client_id")
 	}
 
-	filter.mu.Lock()
-	defer filter.mu.Unlock()
-
 	switch articleMsg.Type {
 	case inner.MsgData:
 		if articleMsg.BatchID == 0 || articleMsg.TotalBatches != nil {
@@ -158,7 +125,8 @@ func (filter *Filter) handleGatewayMessage(msg middleware.Message) error {
 		if articleMsg.BatchID != 0 || articleMsg.TotalBatches == nil || len(articleMsg.Records) != 0 {
 			return fmt.Errorf("Q1 EOF requires total_batches and no batch_id or articles")
 		}
-		return filter.coordinator.BroadcastWithTotal(articleMsg.ClientID, *articleMsg.TotalBatches)
+		slog.Debug("Ignoring legacy Q1 input EOF", "clientID", articleMsg.ClientID, "totalBatches", *articleMsg.TotalBatches)
+		return nil
 	default:
 		return fmt.Errorf("unexpected Q1 message type: %d", articleMsg.Type)
 	}

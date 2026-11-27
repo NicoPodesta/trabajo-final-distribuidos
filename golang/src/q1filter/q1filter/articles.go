@@ -15,13 +15,7 @@ func (filter *Filter) handleArticlesMessage(articleMsg *inner.Q1ArticlesMessage)
 			results = append(results, *matched)
 		}
 	}
-	if err := filter.publishResults(articleMsg.ClientID, articleMsg.BatchID, results); err != nil {
-		return err
-	}
-	stats := filter.statsByClient[articleMsg.ClientID]
-	stats.recordBatch(articleMsg.ClientID, filter.id, len(articleMsg.Records), len(results))
-	filter.statsByClient[articleMsg.ClientID] = stats
-	return filter.coordinator.OnBatchProcessed(articleMsg.ClientID)
+	return filter.publishResults(articleMsg.ClientID, articleMsg.BatchID, results)
 }
 
 func filterArticle(articleRecord inner.Q1ArticleItem) *result.Q1Result {
