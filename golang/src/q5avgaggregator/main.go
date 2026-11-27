@@ -54,17 +54,12 @@ func run() int {
 		return 1
 	}
 
-	healthPort := config.OptionalString("HEALTH_PORT", healthcheck.DefaultPort)
-	healthSrv, err := healthcheck.StartServer(":" + healthPort)
+	healthSrv, err := healthcheck.StartFromEnv()
 	if err != nil {
 		slog.Error("While starting avg aggregator healthcheck server", "err", err)
 		return 1
 	}
-	defer func() {
-		if err := healthSrv.Close(); err != nil {
-			slog.Error("While closing avg aggregator healthcheck server", "err", err)
-		}
-	}()
+	defer healthSrv.CloseAndLog()
 
 	if err := aggregator.Run(); err != nil {
 		slog.Error("Avg aggregator stopped with error", "err", err)

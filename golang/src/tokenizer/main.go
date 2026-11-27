@@ -72,17 +72,12 @@ func run() int {
 		return 1
 	}
 
-	healthPort := config.OptionalString("HEALTH_PORT", healthcheck.DefaultPort)
-	healthSrv, err := healthcheck.StartServer(":" + healthPort)
+	healthSrv, err := healthcheck.StartFromEnv()
 	if err != nil {
 		slog.Error("While starting tokenizer healthcheck server", "err", err)
 		return 1
 	}
-	defer func() {
-		if err := healthSrv.Close(); err != nil {
-			slog.Error("While closing tokenizer healthcheck server", "err", err)
-		}
-	}()
+	defer healthSrv.CloseAndLog()
 
 	if err := worker.Run(); err != nil {
 		slog.Error("Tokenizer stopped with error", "err", err)

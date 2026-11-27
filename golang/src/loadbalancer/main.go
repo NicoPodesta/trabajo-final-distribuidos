@@ -72,13 +72,12 @@ func run() int {
 		return 1
 	}
 
-	healthPort := config.OptionalString("HEALTH_PORT", healthcheck.DefaultPort)
-	healthSrv, err := healthcheck.StartServer(":" + healthPort)
+	healthSrv, err := healthcheck.StartFromEnv()
 	if err != nil {
 		slog.Error("While starting load balancer healthcheck server", "err", err)
 		return 1
 	}
-	defer healthSrv.Close()
+	defer healthSrv.CloseAndLog()
 
 	if err := lb.Run(); err != nil {
 		slog.Error("Load balancer stopped with error", "err", err)

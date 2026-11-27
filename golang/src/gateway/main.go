@@ -131,13 +131,12 @@ func run() int {
 		return 1
 	}
 
-	healthPort := config.OptionalString("HEALTH_PORT", healthcheck.DefaultPort)
-	healthSrv, err := healthcheck.StartServer(":" + healthPort)
+	healthSrv, err := healthcheck.StartFromEnv()
 	if err != nil {
 		slog.Error("While starting gateway healthcheck server", "err", err)
 		return 1
 	}
-	defer healthSrv.Close()
+	defer healthSrv.CloseAndLog()
 
 	if err := server.Run(); err != nil {
 		slog.Error("Gateway stopped with error", "err", err)

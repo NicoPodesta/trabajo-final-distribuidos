@@ -48,17 +48,12 @@ func run() int {
 		return 1
 	}
 
-	healthPort := config.OptionalString("HEALTH_PORT", healthcheck.DefaultPort)
-	healthSrv, err := healthcheck.StartServer(":" + healthPort)
+	healthSrv, err := healthcheck.StartFromEnv()
 	if err != nil {
 		slog.Error("While starting top merger healthcheck server", "err", err)
 		return 1
 	}
-	defer func() {
-		if err := healthSrv.Close(); err != nil {
-			slog.Error("While closing top merger healthcheck server", "err", err)
-		}
-	}()
+	defer healthSrv.CloseAndLog()
 
 	if err := merger.Run(); err != nil {
 		slog.Error("Top merger stopped with error", "err", err)
