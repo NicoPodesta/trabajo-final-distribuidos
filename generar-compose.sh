@@ -335,7 +335,7 @@ YAML
   stateful_worker q5_avg_aggregator_0 q5avgaggregator "Q5_AVG_PARTIAL_AMOUNT=${q5_avg_partial_count}" "Q5_FILTER_AMOUNT=${q5_filter_count}" "HEALTH_PORT=9090"
 
   for id in $(seq 0 $((q4_counter_count - 1))); do
-    worker "q4_word_counter_${id}" q4wordcounter "Q4_WORD_COUNTER_ID=${id}" "Q4_WORD_COUNTER_PREFETCH=20" "HEALTH_PORT=9090"
+    stateful_worker "q4_word_counter_${id}" q4wordcounter "Q4_WORD_COUNTER_ID=${id}" "Q4_WORD_COUNTER_PREFETCH=20" "HEALTH_PORT=9090"
   done
 
   worker q4_top20_merger q4top20merger "Q4_WORD_COUNTER_AMOUNT=${q4_counter_count}" "HEALTH_PORT=9090"

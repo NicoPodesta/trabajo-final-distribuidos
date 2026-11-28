@@ -26,6 +26,11 @@ func loadConfig() (q4wordcounter.WordCounterConfig, error) {
 		return q4wordcounter.WordCounterConfig{}, err
 	}
 
+	dataDir, err := config.RequiredString("DATA_DIR")
+	if err != nil {
+		return q4wordcounter.WordCounterConfig{}, err
+	}
+
 	prefetch, err := config.OptionalInt("Q4_WORD_COUNTER_PREFETCH", 1)
 	if err != nil {
 		return q4wordcounter.WordCounterConfig{}, err
@@ -35,6 +40,7 @@ func loadConfig() (q4wordcounter.WordCounterConfig, error) {
 		MOMHost:  momHost,
 		MOMPort:  momPort,
 		ID:       id,
+		DataDir:  dataDir,
 		Prefetch: prefetch,
 	}, nil
 }

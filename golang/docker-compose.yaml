@@ -696,7 +696,10 @@ services:
     - Q4_WORD_COUNTER_ID=0
     - Q4_WORD_COUNTER_PREFETCH=20
     - HEALTH_PORT=9090
+    - DATA_DIR=/data
     - LOG_LEVEL=info
+    volumes:
+    - q4_word_counter_0_data:/data
 
   q4_word_counter_1:
     build:
@@ -712,7 +715,10 @@ services:
     - Q4_WORD_COUNTER_ID=1
     - Q4_WORD_COUNTER_PREFETCH=20
     - HEALTH_PORT=9090
+    - DATA_DIR=/data
     - LOG_LEVEL=info
+    volumes:
+    - q4_word_counter_1_data:/data
 
   q4_word_counter_2:
     build:
@@ -728,7 +734,10 @@ services:
     - Q4_WORD_COUNTER_ID=2
     - Q4_WORD_COUNTER_PREFETCH=20
     - HEALTH_PORT=9090
+    - DATA_DIR=/data
     - LOG_LEVEL=info
+    volumes:
+    - q4_word_counter_2_data:/data
 
   q4_top20_merger:
     build:
@@ -765,3 +774,6 @@ volumes:
   q5_avg_partial_1_data:
   q5_avg_partial_2_data:
   q5_avg_aggregator_0_data:
+  q4_word_counter_0_data:
+  q4_word_counter_1_data:
+  q4_word_counter_2_data:

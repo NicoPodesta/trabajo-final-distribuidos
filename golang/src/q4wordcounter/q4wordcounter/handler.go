@@ -2,7 +2,6 @@ package q4wordcounter
 
 import (
 	"fmt"
-	"log/slog"
 
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/common/middleware"
@@ -25,24 +24,6 @@ func (received update) Key() uint64 {
 
 func (received update) index() uint64 {
 	return received.batchID - 1
-}
-
-func (counter *WordCounter) handleMessage(msg middleware.Message) error {
-	received, err := counter.decode(msg)
-	if err != nil {
-		slog.Error("Discarding invalid message", "err", err)
-		return nil
-	}
-	if counter.isDuplicate(received) {
-		slog.Debug("Skipping duplicated word counts message", "clientID", received.clientID, "batchID", received.batchID)
-		return nil
-	}
-
-	counts, closed := counter.apply(received)
-	if !closed {
-		return nil
-	}
-	return counter.publishPartialTop(received.clientID, counts)
 }
 
 func (counter *WordCounter) decode(msg middleware.Message) (update, error) {
