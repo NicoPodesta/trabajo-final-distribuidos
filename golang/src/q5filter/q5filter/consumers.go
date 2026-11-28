@@ -1,7 +1,7 @@
 package q5filter
 
 import (
-	"fmt"
+	"log/slog"
 
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/common/middleware"
@@ -10,30 +10,45 @@ import (
 func (filter *Filter) handleRecentArticles(msg middleware.Message) error {
 	recentArticlesMsg, err := inner.DeserializeRecentArticles(&msg)
 	if err != nil {
-		return err
+		slog.Error("Discarding invalid recent articles message", "err", err)
+		return nil
 	}
+	clientID := recentArticlesMsg.ClientID
 
 	if recentArticlesMsg.IsEOF() {
 		if recentArticlesMsg.TotalBatches == nil {
-			return fmt.Errorf("recent articles EOF of client %s has no total_batches", recentArticlesMsg.ClientID)
+			slog.Error("Discarding recent articles EOF without total_batches", "clientID", clientID)
+			return nil
 		}
-		return filter.coordinator.BroadcastWithTotal(recentArticlesMsg.ClientID, *recentArticlesMsg.TotalBatches)
+		if err := filter.coordinator.BroadcastWithTotal(clientID, *recentArticlesMsg.TotalBatches); err != nil {
+			slog.Error("While broadcasting end of input", "err", err)
+		}
+		return nil
 	}
 
-	if err := filter.processArticles(recentArticlesMsg.ClientID, recentArticlesMsg.Records); err != nil {
+	if recentArticlesMsg.BatchID == 0 {
+		slog.Error("Discarding recent articles without batch_id", "clientID", clientID)
+		return nil
+	}
+	if err := filter.processArticles(clientID, recentArticlesMsg.BatchID, recentArticlesMsg.Records, msg.Body); err != nil {
 		return err
 	}
-	return filter.coordinator.OnBatchProcessed(recentArticlesMsg.ClientID)
+	if err := filter.coordinator.OnBatchProcessed(clientID); err != nil {
+		slog.Error("While counting processed batch", "err", err)
+	}
+	return nil
 }
 
 func (filter *Filter) handleAverage(msg middleware.Message) error {
 	averageMsg, err := inner.DeserializeAverage(&msg)
 	if err != nil {
-		return err
+		slog.Error("Discarding invalid average message", "err", err)
+		return nil
 	}
 	if len(averageMsg.Records) != 1 {
-		return fmt.Errorf("average message of client %s has %d records, expected 1", averageMsg.ClientID, len(averageMsg.Records))
+		slog.Error("Discarding average message without exactly one record", "clientID", averageMsg.ClientID, "records", len(averageMsg.Records))
+		return nil
 	}
 
-	return filter.processAverage(averageMsg.ClientID, averageMsg.Records[0])
+	return filter.processAverage(averageMsg.ClientID, averageMsg.Records[0], msg.Body)
 }

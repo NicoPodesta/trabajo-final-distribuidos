@@ -5,17 +5,24 @@ import "trabajo-final-distribuidos/common/messageprotocol/inner"
 type clientState struct {
 	average    uint64
 	hasAverage bool
+	drained    bool
 	recentsEOF bool
+	retained   map[uint64]struct{}
 	total      int
 	selected   int
 }
 
-func (state *clientState) addArticles(articles []inner.RecentArticleItem) (selected []inner.RecentArticleItem, retained []inner.RecentArticleItem) {
-	state.total += len(articles)
-	if !state.hasAverage {
-		return nil, articles
-	}
-	return state.selectAboveAverage(articles), nil
+func newClientState() *clientState {
+	return &clientState{retained: make(map[uint64]struct{})}
+}
+
+func (state *clientState) hasRetained(batchID uint64) bool {
+	_, retained := state.retained[batchID]
+	return retained
+}
+
+func (state *clientState) retain(batchID uint64) {
+	state.retained[batchID] = struct{}{}
 }
 
 func (state *clientState) setAverage(average uint64) {
@@ -23,12 +30,17 @@ func (state *clientState) setAverage(average uint64) {
 	state.hasAverage = true
 }
 
+func (state *clientState) markDrained() {
+	state.drained = true
+	state.retained = make(map[uint64]struct{})
+}
+
 func (state *clientState) markRecentsEOF() {
 	state.recentsEOF = true
 }
 
 func (state *clientState) isComplete() bool {
-	return state.hasAverage && state.recentsEOF
+	return state.hasAverage && state.drained && state.recentsEOF
 }
 
 func (state *clientState) selectAboveAverage(articles []inner.RecentArticleItem) []inner.RecentArticleItem {

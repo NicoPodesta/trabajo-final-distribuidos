@@ -622,10 +622,12 @@ services:
     - MOM_PORT=5672
     - Q5_FILTER_ID=0
     - Q5_FILTER_AMOUNT=3
-    - Q5_PENDING_DIR=/tmp/q5filter
     - Q5_FILTER_PREFETCH=20
     - HEALTH_PORT=9090
+    - DATA_DIR=/data
     - LOG_LEVEL=info
+    volumes:
+    - q5_filter_0_data:/data
 
   q5_filter_1:
     build:
@@ -640,10 +642,12 @@ services:
     - MOM_PORT=5672
     - Q5_FILTER_ID=1
     - Q5_FILTER_AMOUNT=3
-    - Q5_PENDING_DIR=/tmp/q5filter
     - Q5_FILTER_PREFETCH=20
     - HEALTH_PORT=9090
+    - DATA_DIR=/data
     - LOG_LEVEL=info
+    volumes:
+    - q5_filter_1_data:/data
 
   q5_filter_2:
     build:
@@ -658,10 +662,12 @@ services:
     - MOM_PORT=5672
     - Q5_FILTER_ID=2
     - Q5_FILTER_AMOUNT=3
-    - Q5_PENDING_DIR=/tmp/q5filter
     - Q5_FILTER_PREFETCH=20
     - HEALTH_PORT=9090
+    - DATA_DIR=/data
     - LOG_LEVEL=info
+    volumes:
+    - q5_filter_2_data:/data
 
   q5_avg_aggregator_0:
     build:
@@ -776,6 +782,9 @@ volumes:
   q5_avg_partial_0_data:
   q5_avg_partial_1_data:
   q5_avg_partial_2_data:
+  q5_filter_0_data:
+  q5_filter_1_data:
+  q5_filter_2_data:
   q5_avg_aggregator_0_data:
   q4_word_counter_0_data:
   q4_word_counter_1_data:

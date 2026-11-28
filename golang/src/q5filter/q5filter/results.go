@@ -34,5 +34,8 @@ func (filter *Filter) finishIfComplete(clientID string, state *clientState) erro
 	if err != nil {
 		return err
 	}
-	return filter.resultsPublisher.Publish(clientID, *eofMsg)
+	if err := filter.resultsPublisher.Publish(clientID, *eofMsg); err != nil {
+		return err
+	}
+	return filter.store.Remove(clientID)
 }

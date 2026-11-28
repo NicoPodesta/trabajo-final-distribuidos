@@ -3,9 +3,7 @@ package q5filter
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
-	"path/filepath"
 	"sync"
 
 	"trabajo-final-distribuidos/common/eofcoordinator"
@@ -13,12 +11,16 @@ import (
 	"trabajo-final-distribuidos/common/middleware"
 	"trabajo-final-distribuidos/common/resultpublisher"
 	"trabajo-final-distribuidos/common/shutdown"
-	"trabajo-final-distribuidos/q5filter/pending"
+	"trabajo-final-distribuidos/common/wal"
 )
 
 const (
 	recentArticlesQueueName = "recent_articles"
 	controlExchangeName     = "q5_filter_control"
+
+	kindArticles byte = 1
+	kindAverage  byte = 2
+	kindDrained  byte = 3
 )
 
 type FilterConfig struct {
@@ -26,7 +28,7 @@ type FilterConfig struct {
 	MOMPort      int
 	FilterID     int
 	FilterAmount int
-	PendingDir   string
+	DataDir      string
 	Prefetch     int
 }
 
@@ -35,17 +37,12 @@ type Filter struct {
 	averageExchange     middleware.Middleware
 	coordinator         *eofcoordinator.EOFCoordinator
 	resultsPublisher    *resultpublisher.Publisher
+	store               *wal.Store
 	mu                  sync.Mutex
 	clients             map[string]*clientState
-	pending             pendingStore
 }
 
 func NewFilter(config FilterConfig) (*Filter, error) {
-	store, err := pending.NewDisk(filepath.Join(config.PendingDir, fmt.Sprintf("filter_%d", config.FilterID)))
-	if err != nil {
-		return nil, err
-	}
-
 	settings := middleware.ConnSettings{Hostname: config.MOMHost, Port: config.MOMPort}
 	recentArticlesQueue, err := middleware.CreateQueueWithPrefetchAndRetry(recentArticlesQueueName, settings, config.Prefetch)
 	if err != nil {
@@ -66,13 +63,21 @@ func NewFilter(config FilterConfig) (*Filter, error) {
 		return nil, err
 	}
 
+	store, err := wal.Open(config.DataDir)
+	if err != nil {
+		_ = recentArticlesQueue.Close()
+		_ = averageExchange.Close()
+		_ = coordinator.Close()
+		return nil, err
+	}
+
 	return &Filter{
 		recentArticlesQueue: recentArticlesQueue,
 		averageExchange:     averageExchange,
 		coordinator:         coordinator,
 		resultsPublisher:    resultpublisher.New(settings),
+		store:               store,
 		clients:             make(map[string]*clientState),
-		pending:             store,
 	}, nil
 }
 
@@ -97,6 +102,16 @@ func (filter *Filter) Run() error {
 			slog.Error("While closing EOF coordinator", "err", err)
 		}
 	}()
+
+	defer func() {
+		if err := filter.store.Close(); err != nil {
+			slog.Error("While closing WAL", "err", err)
+		}
+	}()
+
+	if err := filter.recover(); err != nil {
+		return err
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -156,7 +171,7 @@ func (filter *Filter) Run() error {
 func (filter *Filter) stateOf(clientID string) *clientState {
 	state := filter.clients[clientID]
 	if state == nil {
-		state = &clientState{}
+		state = newClientState()
 		filter.clients[clientID] = state
 	}
 	return state
