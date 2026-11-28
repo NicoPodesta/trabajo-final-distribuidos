@@ -40,9 +40,10 @@ type Filter struct {
 	store               *wal.Store
 	mu                  sync.Mutex
 	clients             map[string]*clientState
+	markError           func(error)
 }
 
-func NewFilter(config FilterConfig) (*Filter, error) {
+func NewFilter(config FilterConfig, markError func(error)) (*Filter, error) {
 	settings := middleware.ConnSettings{Hostname: config.MOMHost, Port: config.MOMPort}
 	recentArticlesQueue, err := middleware.CreateQueueWithPrefetchAndRetry(recentArticlesQueueName, settings, config.Prefetch)
 	if err != nil {
@@ -75,9 +76,10 @@ func NewFilter(config FilterConfig) (*Filter, error) {
 		recentArticlesQueue: recentArticlesQueue,
 		averageExchange:     averageExchange,
 		coordinator:         coordinator,
-		resultsPublisher:    resultpublisher.New(settings),
+		resultsPublisher:    resultpublisher.NewConfirmed(settings, middleware.DefaultConfirmTimeout),
 		store:               store,
 		clients:             make(map[string]*clientState),
+		markError:           markError,
 	}, nil
 }
 
@@ -132,7 +134,8 @@ func (filter *Filter) Run() error {
 	go func() {
 		err := filter.averageExchange.StartConsuming(func(msg middleware.Message, ack func(), nack func()) {
 			if err := filter.handleAverage(msg); err != nil {
-				slog.Error("While handling average message", "err", err)
+				filter.markError(err)
+				return
 			}
 			ack()
 		})
@@ -152,7 +155,8 @@ func (filter *Filter) Run() error {
 	slog.Info("Consuming recent articles from RabbitMQ...", "queue", recentArticlesQueueName)
 	err := filter.recentArticlesQueue.StartConsuming(func(msg middleware.Message, ack func(), nack func()) {
 		if err := filter.handleRecentArticles(msg); err != nil {
-			slog.Error("While handling recent articles message", "err", err)
+			filter.markError(err)
+			return
 		}
 		ack()
 	})

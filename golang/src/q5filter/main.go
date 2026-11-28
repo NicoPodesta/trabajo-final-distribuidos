@@ -60,18 +60,18 @@ func run() int {
 		return 1
 	}
 
-	worker, err := q5filter.NewFilter(workerConfig)
-	if err != nil {
-		slog.Error("While initializing filter", "err", err)
-		return 1
-	}
-
 	healthSrv, err := healthcheck.StartFromEnv()
 	if err != nil {
 		slog.Error("While starting filter healthcheck server", "err", err)
 		return 1
 	}
 	defer healthSrv.CloseAndLog()
+
+	worker, err := q5filter.NewFilter(workerConfig, healthSrv.MarkError)
+	if err != nil {
+		slog.Error("While initializing filter", "err", err)
+		return 1
+	}
 
 	if err := worker.Run(); err != nil {
 		slog.Error("Filter stopped with error", "err", err)
