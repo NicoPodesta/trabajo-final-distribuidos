@@ -36,6 +36,11 @@ func loadConfig() (tokenizer.TokenizerConfig, error) {
 		return tokenizer.TokenizerConfig{}, err
 	}
 
+	avgPartialAmount, err := config.RequiredInt("Q5_AVG_PARTIAL_AMOUNT")
+	if err != nil {
+		return tokenizer.TokenizerConfig{}, err
+	}
+
 	vocabularyJoinAmount, err := config.OptionalInt("Q3_JOIN_AMOUNT", 1)
 	if err != nil {
 		return tokenizer.TokenizerConfig{}, err
@@ -52,6 +57,7 @@ func loadConfig() (tokenizer.TokenizerConfig, error) {
 		TokenizerID:          id,
 		TokenizerAmount:      amount,
 		WordCounterAmount:    wordCounterAmount,
+		AvgPartialAmount:     avgPartialAmount,
 		VocabularyJoinAmount: vocabularyJoinAmount,
 		Prefetch:             prefetch,
 	}, nil

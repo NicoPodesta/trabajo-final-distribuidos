@@ -14,9 +14,9 @@ import (
 )
 
 const (
-	historicalCountsQueueName = "historical_counts"
-	avgPartialsQueueName      = "avg_partials"
-	controlExchangeName       = "q5_avg_partial_control"
+	historicalCountsQueuePrefix = "historical_counts_"
+	avgPartialsQueueName        = "avg_partials"
+	controlExchangeName         = "q5_avg_partial_control"
 )
 
 type AvgPartialConfig struct {
@@ -43,6 +43,7 @@ type AvgPartial struct {
 	conns                 *middleware.Connections
 	historicalCountsQueue middleware.Middleware
 	avgPartialsQueue      middleware.Middleware
+	queueName             string
 	coordinator           *eofcoordinator.EOFCoordinator
 	mu                    sync.Mutex
 	totalsByClient        map[string]totals
@@ -56,7 +57,8 @@ func NewAvgPartial(config AvgPartialConfig) (partial *AvgPartial, err error) {
 		}
 	}()
 
-	historicalCountsQueue, err := conns.QueueWithPrefetch(historicalCountsQueueName, config.Prefetch)
+	queueName := fmt.Sprintf("%s%d", historicalCountsQueuePrefix, config.AvgPartialID)
+	historicalCountsQueue, err := conns.QueueWithPrefetch(queueName, config.Prefetch)
 	if err != nil {
 		return nil, err
 	}
@@ -75,6 +77,7 @@ func NewAvgPartial(config AvgPartialConfig) (partial *AvgPartial, err error) {
 		conns:                 conns,
 		historicalCountsQueue: historicalCountsQueue,
 		avgPartialsQueue:      avgPartialsQueue,
+		queueName:             queueName,
 		coordinator:           coordinator,
 		totalsByClient:        make(map[string]totals),
 	}, nil
@@ -105,7 +108,7 @@ func (partial *AvgPartial) Run() error {
 		return err
 	}
 
-	slog.Info("Consuming historical counts from RabbitMQ...", "queue", historicalCountsQueueName)
+	slog.Info("Consuming historical counts from RabbitMQ...", "queue", partial.queueName)
 	return partial.historicalCountsQueue.StartConsuming(func(msg middleware.Message, ack func(), nack func()) {
 		if err := partial.handleMessage(msg); err != nil {
 			slog.Error("While handling historical counts message", "err", err)

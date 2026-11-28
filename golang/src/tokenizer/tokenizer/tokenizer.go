@@ -14,13 +14,13 @@ import (
 )
 
 const (
-	abstractsQueueName        = "abstracts"
-	wordCountsQueuePrefix     = "word_counts_"
-	vocabularyQueuePrefix     = "vocabulary_"
-	historicalCountsQueueName = "historical_counts"
-	recentArticlesQueueName   = "recent_articles"
-	controlExchangeName       = "tokenizer_control"
-	progressLogInterval       = 1000
+	abstractsQueueName          = "abstracts"
+	wordCountsQueuePrefix       = "word_counts_"
+	vocabularyQueuePrefix       = "vocabulary_"
+	historicalCountsQueuePrefix = "historical_counts_"
+	recentArticlesQueueName     = "recent_articles"
+	controlExchangeName         = "tokenizer_control"
+	progressLogInterval         = 1000
 )
 
 type TokenizerConfig struct {
@@ -29,20 +29,21 @@ type TokenizerConfig struct {
 	TokenizerID          int
 	TokenizerAmount      int
 	WordCounterAmount    int
+	AvgPartialAmount     int
 	VocabularyJoinAmount int
 	Prefetch             int
 }
 
 type Tokenizer struct {
-	conns                 *middleware.Connections
-	abstractsQueue        middleware.Middleware
-	wordCountsQueues      []middleware.Middleware
-	vocabularyQueues      []middleware.Middleware
-	historicalCountsQueue middleware.Middleware
-	recentArticlesQueue   middleware.Middleware
-	coordinator           *eofcoordinator.EOFCoordinator
-	mu                    sync.Mutex
-	received              int
+	conns                  *middleware.Connections
+	abstractsQueue         middleware.Middleware
+	wordCountsQueues       []middleware.Middleware
+	vocabularyQueues       []middleware.Middleware
+	historicalCountsQueues []middleware.Middleware
+	recentArticlesQueue    middleware.Middleware
+	coordinator            *eofcoordinator.EOFCoordinator
+	mu                     sync.Mutex
+	received               int
 }
 
 func NewTokenizer(config TokenizerConfig) (tokenizer *Tokenizer, err error) {
@@ -68,7 +69,7 @@ func NewTokenizer(config TokenizerConfig) (tokenizer *Tokenizer, err error) {
 		return nil, err
 	}
 
-	historicalCountsQueue, err := conns.Queue(historicalCountsQueueName)
+	historicalCountsQueues, err := conns.Queues(historicalCountsQueuePrefix, config.AvgPartialAmount)
 	if err != nil {
 		return nil, err
 	}
@@ -84,13 +85,13 @@ func NewTokenizer(config TokenizerConfig) (tokenizer *Tokenizer, err error) {
 	}
 
 	return &Tokenizer{
-		conns:                 conns,
-		abstractsQueue:        abstractsQueue,
-		wordCountsQueues:      wordCountsQueues,
-		vocabularyQueues:      vocabularyQueues,
-		historicalCountsQueue: historicalCountsQueue,
-		recentArticlesQueue:   recentArticlesQueue,
-		coordinator:           coordinator,
+		conns:                  conns,
+		abstractsQueue:         abstractsQueue,
+		wordCountsQueues:       wordCountsQueues,
+		vocabularyQueues:       vocabularyQueues,
+		historicalCountsQueues: historicalCountsQueues,
+		recentArticlesQueue:    recentArticlesQueue,
+		coordinator:            coordinator,
 	}, nil
 }
 

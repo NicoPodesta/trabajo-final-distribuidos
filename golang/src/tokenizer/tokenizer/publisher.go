@@ -7,6 +7,12 @@ import (
 	"trabajo-final-distribuidos/common/middleware"
 )
 
+const historicalEOFShard = 0
+
+func batchShard(batchID uint64, amount int) int {
+	return int(batchID % uint64(amount))
+}
+
 func wordShard(word string, amount int) int {
 	hasher := fnv.New32a()
 	_, _ = hasher.Write([]byte(word))
@@ -21,7 +27,8 @@ func (tokenizer *Tokenizer) publish(clientID string, batchID uint64, result batc
 		return err
 	}
 	msg, err := inner.SerializeHistoricalCounts(clientID, batchID, result.historicalCounts)
-	if err := send(tokenizer.historicalCountsQueue, msg, err); err != nil {
+	historicalQueue := tokenizer.historicalCountsQueues[batchShard(batchID, len(tokenizer.historicalCountsQueues))]
+	if err := send(historicalQueue, msg, err); err != nil {
 		return err
 	}
 	msg, err = inner.SerializeRecentArticles(clientID, batchID, result.recentArticles)
@@ -80,7 +87,7 @@ func (tokenizer *Tokenizer) publishEOF(clientID string, totalBatches uint64, coo
 	}
 
 	msg, err := inner.SerializeHistoricalCountsEOF(clientID, totalBatches)
-	if err := send(tokenizer.historicalCountsQueue, msg, err); err != nil {
+	if err := send(tokenizer.historicalCountsQueues[historicalEOFShard], msg, err); err != nil {
 		return err
 	}
 
