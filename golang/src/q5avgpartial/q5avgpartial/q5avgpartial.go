@@ -7,15 +7,12 @@ import (
 	"trabajo-final-distribuidos/common/batchshard"
 	"trabajo-final-distribuidos/common/middleware"
 	"trabajo-final-distribuidos/common/shutdown"
-	"trabajo-final-distribuidos/common/wal"
+	"trabajo-final-distribuidos/common/walstage"
 )
 
 const (
 	historicalCountsQueuePrefix = "historical_counts_"
 	avgPartialsQueueName        = "avg_partials"
-
-	kindInput   byte = 1
-	kindEmitted byte = 2
 )
 
 type AvgPartialConfig struct {
@@ -34,7 +31,7 @@ type AvgPartial struct {
 	queueName             string
 	shard                 int
 	sequence              batchshard.Sequence
-	store                 *wal.Store
+	stage                 *walstage.Stage[update, totals]
 	clients               map[string]*clientState
 	markError             func(error)
 }
@@ -58,40 +55,44 @@ func NewAvgPartial(config AvgPartialConfig, markError func(error)) (partial *Avg
 		return nil, err
 	}
 
-	store, err := wal.Open(config.DataDir)
-	if err != nil {
-		return nil, err
-	}
-
-	return &AvgPartial{
+	partial = &AvgPartial{
 		conns:                 conns,
 		historicalCountsQueue: historicalCountsQueue,
 		avgPartialsQueue:      avgPartialsQueue,
 		queueName:             queueName,
 		shard:                 config.AvgPartialID,
 		sequence:              batchshard.NewSequence(config.AvgPartialID, config.AvgPartialAmount),
-		store:                 store,
 		clients:               make(map[string]*clientState),
 		markError:             markError,
-	}, nil
+	}
+	partial.stage, err = walstage.Open(config.DataDir, "q5 avg partial", walstage.Handlers[update, totals]{
+		Decode:      partial.decode,
+		IsDuplicate: partial.isDuplicate,
+		Apply:       partial.apply,
+		Publish:     partial.publishPartial,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return partial, nil
 }
 
 func (partial *AvgPartial) Run() error {
 	defer partial.conns.Close()
 	defer func() {
-		if err := partial.store.Close(); err != nil {
+		if err := partial.stage.Close(); err != nil {
 			slog.Error("While closing WAL", "err", err)
 		}
 	}()
 
-	if err := partial.recover(); err != nil {
+	if err := partial.stage.Recover(); err != nil {
 		return err
 	}
 
 	shutdown.OnSignal(func() { _ = partial.historicalCountsQueue.StopConsuming() })
 	slog.Info("Consuming historical counts from RabbitMQ...", "queue", partial.queueName)
 	return partial.historicalCountsQueue.StartConsuming(func(msg middleware.Message, ack func(), nack func()) {
-		if err := partial.handleMessage(msg); err != nil {
+		if err := partial.stage.Handle(msg); err != nil {
 			partial.markError(err)
 			return
 		}

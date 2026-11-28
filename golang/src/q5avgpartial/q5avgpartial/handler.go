@@ -2,7 +2,6 @@ package q5avgpartial
 
 import (
 	"fmt"
-	"log/slog"
 
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/common/middleware"
@@ -16,30 +15,12 @@ type update struct {
 	total      *uint64
 }
 
-func (partial *AvgPartial) handleMessage(msg middleware.Message) error {
-	received, err := partial.decode(msg)
-	if err != nil {
-		slog.Error("Discarding invalid historical counts message", "err", err)
-		return nil
-	}
-	if partial.isDuplicate(received) {
-		slog.Debug("Skipping duplicated historical counts message", "clientID", received.clientID, "batchID", received.batchID)
-		return nil
-	}
+func (received update) Client() string {
+	return received.clientID
+}
 
-	log, err := partial.store.Log(received.clientID, nil)
-	if err != nil {
-		return err
-	}
-	if err := log.Append(kindInput, received.batchID, []byte(msg.Body)); err != nil {
-		return err
-	}
-
-	clientTotals, closed := partial.apply(received)
-	if !closed {
-		return nil
-	}
-	return partial.emit(received.clientID, clientTotals)
+func (received update) Key() uint64 {
+	return received.batchID
 }
 
 func (partial *AvgPartial) decode(msg middleware.Message) (update, error) {

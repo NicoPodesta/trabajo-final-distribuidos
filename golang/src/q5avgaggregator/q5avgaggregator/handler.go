@@ -2,7 +2,6 @@ package q5avgaggregator
 
 import (
 	"fmt"
-	"log/slog"
 
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/common/middleware"
@@ -14,30 +13,12 @@ type update struct {
 	partial  totals
 }
 
-func (aggregator *AvgAggregator) handleMessage(msg middleware.Message) error {
-	received, err := aggregator.decode(msg)
-	if err != nil {
-		slog.Error("Discarding invalid avg partials message", "err", err)
-		return nil
-	}
-	if aggregator.isDuplicate(received) {
-		slog.Debug("Skipping duplicated avg partial", "clientID", received.clientID, "shard", received.shard)
-		return nil
-	}
+func (received update) Client() string {
+	return received.clientID
+}
 
-	log, err := aggregator.store.Log(received.clientID, nil)
-	if err != nil {
-		return err
-	}
-	if err := log.Append(kindInput, received.shard, []byte(msg.Body)); err != nil {
-		return err
-	}
-
-	clientTotals, closed := aggregator.apply(received)
-	if !closed {
-		return nil
-	}
-	return aggregator.emit(received.clientID, clientTotals)
+func (received update) Key() uint64 {
+	return received.shard
 }
 
 func (aggregator *AvgAggregator) decode(msg middleware.Message) (update, error) {

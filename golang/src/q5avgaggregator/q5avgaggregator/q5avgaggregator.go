@@ -6,14 +6,11 @@ import (
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/common/middleware"
 	"trabajo-final-distribuidos/common/shutdown"
-	"trabajo-final-distribuidos/common/wal"
+	"trabajo-final-distribuidos/common/walstage"
 )
 
 const (
 	avgPartialsQueueName = "avg_partials"
-
-	kindInput   byte = 1
-	kindEmitted byte = 2
 )
 
 type AvgAggregatorConfig struct {
@@ -28,7 +25,7 @@ type AvgAggregator struct {
 	avgPartialsQueue middleware.Middleware
 	averageExchange  middleware.Middleware
 	amount           uint64
-	store            *wal.Store
+	stage            *walstage.Stage[update, totals]
 	clients          map[string]*clientState
 	markError        func(error)
 }
@@ -46,21 +43,25 @@ func NewAvgAggregator(config AvgAggregatorConfig, markError func(error)) (*AvgAg
 		return nil, err
 	}
 
-	store, err := wal.Open(config.DataDir)
+	aggregator := &AvgAggregator{
+		avgPartialsQueue: avgPartialsQueue,
+		averageExchange:  averageExchange,
+		amount:           uint64(config.Q5AvgPartialAmount),
+		clients:          make(map[string]*clientState),
+		markError:        markError,
+	}
+	aggregator.stage, err = walstage.Open(config.DataDir, "q5 avg aggregator", walstage.Handlers[update, totals]{
+		Decode:      aggregator.decode,
+		IsDuplicate: aggregator.isDuplicate,
+		Apply:       aggregator.apply,
+		Publish:     aggregator.publishAverage,
+	})
 	if err != nil {
 		_ = avgPartialsQueue.Close()
 		_ = averageExchange.Close()
 		return nil, err
 	}
-
-	return &AvgAggregator{
-		avgPartialsQueue: avgPartialsQueue,
-		averageExchange:  averageExchange,
-		amount:           uint64(config.Q5AvgPartialAmount),
-		store:            store,
-		clients:          make(map[string]*clientState),
-		markError:        markError,
-	}, nil
+	return aggregator, nil
 }
 
 func (aggregator *AvgAggregator) Run() error {
@@ -75,19 +76,19 @@ func (aggregator *AvgAggregator) Run() error {
 		}
 	}()
 	defer func() {
-		if err := aggregator.store.Close(); err != nil {
+		if err := aggregator.stage.Close(); err != nil {
 			slog.Error("While closing WAL", "err", err)
 		}
 	}()
 
-	if err := aggregator.recover(); err != nil {
+	if err := aggregator.stage.Recover(); err != nil {
 		return err
 	}
 
 	shutdown.OnSignal(func() { _ = aggregator.avgPartialsQueue.StopConsuming() })
 	slog.Info("Consuming avg partials from RabbitMQ...", "queue", avgPartialsQueueName)
 	return aggregator.avgPartialsQueue.StartConsuming(func(msg middleware.Message, ack func(), nack func()) {
-		if err := aggregator.handleMessage(msg); err != nil {
+		if err := aggregator.stage.Handle(msg); err != nil {
 			aggregator.markError(err)
 			return
 		}
