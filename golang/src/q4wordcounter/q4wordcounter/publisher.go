@@ -14,21 +14,11 @@ func (counter *WordCounter) publishPartialTop(clientID string, counts map[string
 		slog.Debug("Local top", "clientID", clientID, "rank", rank+1, "word", item.Word, "count", item.Count)
 	}
 
-	if len(top) > 0 {
-		msg, err := inner.SerializeQ4Results(clientID, top)
-		if err != nil {
-			return err
-		}
-		if err := counter.partialTop20Queue.Send(*msg); err != nil {
-			return err
-		}
-	}
-
-	eofMsg, err := inner.SerializeQ4ResultsEOF(clientID)
+	msg, err := inner.SerializePartialTop(clientID, inner.PartialTopItem{Shard: counter.shard, Top: top})
 	if err != nil {
 		return err
 	}
-	return counter.partialTop20Queue.Send(*eofMsg)
+	return counter.partialTop20Queue.Send(*msg)
 }
 
 func buildTop(counts map[string]uint32) []result.Q4Result {

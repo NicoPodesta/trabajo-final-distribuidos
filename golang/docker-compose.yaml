@@ -752,7 +752,10 @@ services:
     - MOM_PORT=5672
     - Q4_WORD_COUNTER_AMOUNT=3
     - HEALTH_PORT=9090
+    - DATA_DIR=/data
     - LOG_LEVEL=info
+    volumes:
+    - q4_top20_merger_data:/data
 
   rabbitmq:
     build:
@@ -777,3 +780,4 @@ volumes:
   q4_word_counter_0_data:
   q4_word_counter_1_data:
   q4_word_counter_2_data:
+  q4_top20_merger_data:

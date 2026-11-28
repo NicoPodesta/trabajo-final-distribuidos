@@ -26,10 +26,16 @@ func loadConfig() (q4top20merger.TopMergerConfig, error) {
 		return q4top20merger.TopMergerConfig{}, err
 	}
 
+	dataDir, err := config.RequiredString("DATA_DIR")
+	if err != nil {
+		return q4top20merger.TopMergerConfig{}, err
+	}
+
 	return q4top20merger.TopMergerConfig{
 		MOMHost:             momHost,
 		MOMPort:             momPort,
 		Q4WordCounterAmount: wordCounterAmount,
+		DataDir:             dataDir,
 	}, nil
 }
 

@@ -27,6 +27,7 @@ type WordCounter struct {
 	wordCountsQueue   middleware.Middleware
 	partialTop20Queue middleware.Middleware
 	queueName         string
+	shard             uint64
 	stage             *walstage.Stage[update, map[string]uint32]
 	clients           map[string]*clientState
 	markError         func(error)
@@ -52,6 +53,7 @@ func NewWordCounter(config WordCounterConfig, markError func(error)) (*WordCount
 		wordCountsQueue:   wordCountsQueue,
 		partialTop20Queue: partialTop20Queue,
 		queueName:         queueName,
+		shard:             uint64(config.ID),
 		clients:           make(map[string]*clientState),
 		markError:         markError,
 	}
