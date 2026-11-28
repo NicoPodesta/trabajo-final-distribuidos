@@ -50,6 +50,24 @@ func scan(file *os.File, clientID string, replay func(Record) error) (int64, err
 	}
 	size := info.Size()
 
+	offset, err := readRecords(file, size, clientID, replay)
+	if err != nil {
+		return 0, err
+	}
+
+	if offset < size {
+		slog.Warn("Discarding incomplete WAL tail", "clientID", clientID, "bytes", size-offset)
+		if err := file.Truncate(offset); err != nil {
+			return 0, fmt.Errorf("truncating WAL of client %q: %w", clientID, err)
+		}
+		if err := file.Sync(); err != nil {
+			return 0, fmt.Errorf("syncing WAL of client %q: %w", clientID, err)
+		}
+	}
+	return offset, nil
+}
+
+func readRecords(file *os.File, size int64, clientID string, replay func(Record) error) (int64, error) {
 	reader := bufio.NewReaderSize(io.NewSectionReader(file, 0, size), readBufferSize)
 	var header [headerSize]byte
 	var offset int64
@@ -79,17 +97,17 @@ func scan(file *os.File, clientID string, replay func(Record) error) (int64, err
 		}
 		offset += headerSize + bodySize
 	}
-
-	if offset < size {
-		slog.Warn("Discarding incomplete WAL tail", "clientID", clientID, "bytes", size-offset)
-		if err := file.Truncate(offset); err != nil {
-			return 0, fmt.Errorf("truncating WAL of client %q: %w", clientID, err)
-		}
-		if err := file.Sync(); err != nil {
-			return 0, fmt.Errorf("syncing WAL of client %q: %w", clientID, err)
-		}
-	}
 	return offset, nil
+}
+
+func (log *Log) Records(replay func(Record) error) error {
+	log.mu.Lock()
+	defer log.mu.Unlock()
+	if log.closed {
+		return ErrClosed
+	}
+	_, err := readRecords(log.file, log.offset, log.clientID, replay)
+	return err
 }
 
 func (log *Log) Append(kind byte, n uint64, body []byte) error {
