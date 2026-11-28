@@ -6,9 +6,10 @@ type Q1Result struct {
 }
 
 type Q2Result struct {
-	Name  string `json:"name"`
-	Url   string `json:"url"`
-	Image []byte `json:"image"`
+	RequestID string `json:"request_id,omitempty"`
+	Name      string `json:"name"`
+	Url       string `json:"url"`
+	Image     []byte `json:"image"`
 }
 
 type Q3Result struct {

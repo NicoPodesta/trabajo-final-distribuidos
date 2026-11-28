@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"strings"
 
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
@@ -20,6 +19,11 @@ type downloadJob struct {
 type requestReceipt struct {
 	ack  func()
 	nack func()
+}
+
+type requestKey struct {
+	clientID  string
+	requestID string
 }
 
 type eventKind uint8
@@ -41,19 +45,34 @@ type pipelineEvent struct {
 }
 
 func (f *Fetcher) receiveRequests(ctx context.Context, cancel context.CancelCauseFunc, jobs chan<- downloadJob, events chan<- pipelineEvent) error {
-	var nextImage uint64
+	seenRequests := make(map[requestKey]inner.ImageDownloadRequest)
 	var processingErr error
 	consumeErr := f.downloadsQueue.StartConsuming(func(msg middleware.Message, ack func(), nack func()) {
 		if ctx.Err() != nil {
 			nack()
 			return
 		}
-		event, err := f.readRequest(msg, &nextImage)
+		event, err := f.readRequest(msg)
 		if err != nil {
 			processingErr = err
 			cancel(err)
 			nack()
 			return
+		}
+		startDownload := false
+		if event.kind == requestReceived {
+			key := requestKey{clientID: event.job.clientID, requestID: event.job.imageID}
+			previous, seen := seenRequests[key]
+			if seen && previous != event.job.request {
+				processingErr = fmt.Errorf("conflicting Q2 image download request: client %q request %q", key.clientID, key.requestID)
+				cancel(processingErr)
+				nack()
+				return
+			}
+			if !seen {
+				seenRequests[key] = event.job.request
+				startDownload = true
+			}
 		}
 		event.receipt = requestReceipt{ack: ack, nack: nack}
 		select {
@@ -63,7 +82,7 @@ func (f *Fetcher) receiveRequests(ctx context.Context, cancel context.CancelCaus
 		case events <- event:
 			// Desde este envío, el publicador es dueño del ACK/NACK
 		}
-		if event.kind == requestReceived {
+		if startDownload {
 			// El registro se encola antes de que pueda terminar la descarga
 			select {
 			case <-ctx.Done():
@@ -77,7 +96,7 @@ func (f *Fetcher) receiveRequests(ctx context.Context, cancel context.CancelCaus
 	return errors.Join(processingErr, consumeErr)
 }
 
-func (f *Fetcher) readRequest(msg middleware.Message, nextImage *uint64) (pipelineEvent, error) {
+func (f *Fetcher) readRequest(msg middleware.Message) (pipelineEvent, error) {
 	request, err := inner.DeserializeImageDownload(&msg)
 	if err != nil {
 		return pipelineEvent{}, err
@@ -88,15 +107,11 @@ func (f *Fetcher) readRequest(msg middleware.Message, nextImage *uint64) (pipeli
 	event := pipelineEvent{job: downloadJob{clientID: request.ClientID}}
 	switch request.Type {
 	case inner.MsgData:
-		if request.Request == nil || strings.TrimSpace(request.Request.ImageRef) == "" || request.FilterID != nil {
-			return pipelineEvent{}, fmt.Errorf("image download requires a request with image_ref")
+		if request.Request == nil || strings.TrimSpace(request.Request.RequestID) == "" || strings.TrimSpace(request.Request.ImageRef) == "" || request.FilterID != nil {
+			return pipelineEvent{}, fmt.Errorf("image download requires a request with request_id and image_ref")
 		}
-		if *nextImage == math.MaxUint64 {
-			return pipelineEvent{}, fmt.Errorf("image ID counter exhausted")
-		}
-		*nextImage += 1
 		event.kind = requestReceived
-		event.job.imageID = fmt.Sprintf("%d_%d", f.id, *nextImage)
+		event.job.imageID = request.Request.RequestID
 		event.job.request = *request.Request
 	case inner.MsgEOF:
 		if request.Request != nil {

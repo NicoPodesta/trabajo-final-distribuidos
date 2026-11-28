@@ -11,8 +11,13 @@ import (
 )
 
 // Solo la goroutine de publicación modifica este estado y usa el Publisher
+type pendingImage struct {
+	receipts []requestReceipt
+}
+
 type clientPending struct {
-	images    map[string]requestReceipt
+	images    map[string]*pendingImage
+	completed map[string]bool
 	eofs      []requestReceipt
 	producers map[int]bool
 	eofSeen   bool
@@ -37,17 +42,29 @@ func (f *Fetcher) publishImages(ctx context.Context, cancel context.CancelCauseF
 
 		state := clients[event.job.clientID]
 		if state == nil {
-			state = &clientPending{images: make(map[string]requestReceipt), producers: make(map[int]bool)}
+			state = &clientPending{
+				images:    make(map[string]*pendingImage),
+				completed: make(map[string]bool),
+				producers: make(map[int]bool),
+			}
 			clients[event.job.clientID] = state
 		}
 		var err error
 		switch event.kind {
 		case requestReceived:
+			if state.completed[event.job.imageID] {
+				event.receipt.ack()
+				continue
+			}
+			if pending := state.images[event.job.imageID]; pending != nil {
+				pending.receipts = append(pending.receipts, event.receipt)
+				continue
+			}
 			if state.eofSeen {
 				event.receipt.nack()
 				err = fmt.Errorf("image download after EOF for client %q", event.job.clientID)
 			} else {
-				state.images[event.job.imageID] = event.receipt
+				state.images[event.job.imageID] = &pendingImage{receipts: []requestReceipt{event.receipt}}
 			}
 		case eofReceived:
 			if state.finished || state.producers[event.filterID] {
@@ -85,8 +102,10 @@ func (f *Fetcher) publishImages(ctx context.Context, cancel context.CancelCauseF
 			processingErr = errors.Join(processingErr, err)
 			cancel(err)
 		}
-		for _, receipt := range state.images {
-			receipt.nack()
+		for _, pending := range state.images {
+			for _, receipt := range pending.receipts {
+				receipt.nack()
+			}
 		}
 		for _, receipt := range state.eofs {
 			receipt.nack()
@@ -96,7 +115,7 @@ func (f *Fetcher) publishImages(ctx context.Context, cancel context.CancelCauseF
 }
 
 func (f *Fetcher) resolveImage(ctx context.Context, event pipelineEvent, state *clientPending) error {
-	receipt, exists := state.images[event.job.imageID]
+	pending, exists := state.images[event.job.imageID]
 	if !exists {
 		err := fmt.Errorf("Q2 download result without pending request: client %q image %q", event.job.clientID, event.job.imageID)
 		if event.image != nil {
@@ -111,8 +130,9 @@ func (f *Fetcher) resolveImage(ctx context.Context, event pipelineEvent, state *
 		slog.Warn("Failed to download image from source, publishing result without image", "clientID", event.job.clientID,
 			"imageID", event.job.imageID, "url", event.job.request.ImageRef, "err", event.err)
 		msg, err := inner.SerializeQ2Results(event.job.clientID, []result.Q2Result{{
-			Name: event.job.request.Name,
-			Url:  event.job.request.Url,
+			RequestID: event.job.imageID,
+			Name:      event.job.request.Name,
+			Url:       event.job.request.Url,
 		}})
 		if err != nil {
 			return err
@@ -131,8 +151,11 @@ func (f *Fetcher) resolveImage(ctx context.Context, event pipelineEvent, state *
 		slog.Debug("Published complete image", "clientID", event.job.clientID, "imageID", event.job.imageID)
 	}
 	// Si la publicación terminó, una cancelación posterior permite este ACK
-	receipt.ack()
+	for _, receipt := range pending.receipts {
+		receipt.ack()
+	}
 	delete(state.images, event.job.imageID)
+	state.completed[event.job.imageID] = true
 	return nil
 }
 

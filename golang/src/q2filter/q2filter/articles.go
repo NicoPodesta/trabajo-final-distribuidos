@@ -2,6 +2,7 @@ package q2filter
 
 import (
 	"log/slog"
+	"strconv"
 	"strings"
 	"time"
 
@@ -9,7 +10,8 @@ import (
 )
 
 func (filter *Filter) handleArticlesMessage(articleMsg *inner.Q2ArticlesMessage) error {
-	for _, article := range articleMsg.Records {
+	for index, article := range articleMsg.Records {
+		requestID := strconv.FormatUint(articleMsg.BatchID, 10) + ":" + strconv.Itoa(index)
 		if !matchesArticle(article) {
 			continue
 		}
@@ -17,7 +19,7 @@ func (filter *Filter) handleArticlesMessage(articleMsg *inner.Q2ArticlesMessage)
 			slog.Debug("Skipping Q2 article without image", "clientID", articleMsg.ClientID, "url", article.Url)
 			continue
 		}
-		if err := filter.publishImageDownload(articleMsg.ClientID, article); err != nil {
+		if err := filter.publishImageDownload(articleMsg.ClientID, requestID, article); err != nil {
 			return err
 		}
 	}
