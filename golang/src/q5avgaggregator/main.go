@@ -31,11 +31,17 @@ func loadConfig() (q5avgaggregator.AvgAggregatorConfig, error) {
 		return q5avgaggregator.AvgAggregatorConfig{}, err
 	}
 
+	dataDir, err := config.RequiredString("DATA_DIR")
+	if err != nil {
+		return q5avgaggregator.AvgAggregatorConfig{}, err
+	}
+
 	return q5avgaggregator.AvgAggregatorConfig{
 		MOMHost:            momHost,
 		MOMPort:            momPort,
 		Q5AvgPartialAmount: avgPartialAmount,
 		Q5FilterAmount:     filterAmount,
+		DataDir:            dataDir,
 	}, nil
 }
 

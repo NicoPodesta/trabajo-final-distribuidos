@@ -23,24 +23,7 @@ func (partial *AvgPartial) emit(clientID string, clientTotals totals) error {
 
 func (partial *AvgPartial) publishPartial(clientID string, clientTotals totals) error {
 	slog.Info("All historical counts received", "clientID", clientID, "sum", clientTotals.sum, "count", clientTotals.count)
-	if clientTotals.count > 0 {
-		if err := partial.publishTotals(clientID, clientTotals); err != nil {
-			return err
-		}
-	}
-	return partial.publishEOF(clientID)
-}
-
-func (partial *AvgPartial) publishTotals(clientID string, clientTotals totals) error {
-	msg, err := inner.SerializeAvgPartials(clientID, []inner.AvgPartialItem{{Sum: clientTotals.sum, Count: clientTotals.count}})
-	if err != nil {
-		return err
-	}
-	return partial.avgPartialsQueue.Send(*msg)
-}
-
-func (partial *AvgPartial) publishEOF(clientID string) error {
-	msg, err := inner.SerializeAvgPartialsEOF(clientID)
+	msg, err := inner.SerializeAvgPartials(clientID, []inner.AvgPartialItem{{Shard: uint64(partial.shard), Sum: clientTotals.sum, Count: clientTotals.count}})
 	if err != nil {
 		return err
 	}

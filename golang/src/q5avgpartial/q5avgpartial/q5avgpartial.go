@@ -32,6 +32,7 @@ type AvgPartial struct {
 	historicalCountsQueue middleware.Middleware
 	avgPartialsQueue      middleware.Middleware
 	queueName             string
+	shard                 int
 	sequence              batchshard.Sequence
 	store                 *wal.Store
 	clients               map[string]*clientState
@@ -67,6 +68,7 @@ func NewAvgPartial(config AvgPartialConfig, markError func(error)) (partial *Avg
 		historicalCountsQueue: historicalCountsQueue,
 		avgPartialsQueue:      avgPartialsQueue,
 		queueName:             queueName,
+		shard:                 config.AvgPartialID,
 		sequence:              batchshard.NewSequence(config.AvgPartialID, config.AvgPartialAmount),
 		store:                 store,
 		clients:               make(map[string]*clientState),

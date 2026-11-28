@@ -3,45 +3,33 @@ package q5avgaggregator
 import (
 	"log/slog"
 
-	"trabajo-final-distribuidos/common/eofcounter"
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/common/middleware"
 	"trabajo-final-distribuidos/common/shutdown"
+	"trabajo-final-distribuidos/common/wal"
 )
 
-const avgPartialsQueueName = "avg_partials"
+const (
+	avgPartialsQueueName = "avg_partials"
+
+	kindInput   byte = 1
+	kindEmitted byte = 2
+)
 
 type AvgAggregatorConfig struct {
 	MOMHost            string
 	MOMPort            int
 	Q5AvgPartialAmount int
 	Q5FilterAmount     int
-}
-
-type totals struct {
-	sum   uint64
-	count uint64
-}
-
-func (clientTotals *totals) add(partials []inner.AvgPartialItem) {
-	for _, partial := range partials {
-		clientTotals.sum += partial.Sum
-		clientTotals.count += partial.Count
-	}
-}
-
-func (clientTotals *totals) average() uint64 {
-	if clientTotals.count == 0 {
-		return 0
-	}
-	return clientTotals.sum / clientTotals.count
+	DataDir            string
 }
 
 type AvgAggregator struct {
 	avgPartialsQueue middleware.Middleware
 	averageExchange  middleware.Middleware
-	totalsByClient   map[string]totals
-	eofs             *eofcounter.Counter
+	amount           uint64
+	store            *wal.Store
+	clients          map[string]*clientState
 	markError        func(error)
 }
 
@@ -58,11 +46,19 @@ func NewAvgAggregator(config AvgAggregatorConfig, markError func(error)) (*AvgAg
 		return nil, err
 	}
 
+	store, err := wal.Open(config.DataDir)
+	if err != nil {
+		_ = avgPartialsQueue.Close()
+		_ = averageExchange.Close()
+		return nil, err
+	}
+
 	return &AvgAggregator{
 		avgPartialsQueue: avgPartialsQueue,
 		averageExchange:  averageExchange,
-		totalsByClient:   make(map[string]totals),
-		eofs:             eofcounter.New(config.Q5AvgPartialAmount),
+		amount:           uint64(config.Q5AvgPartialAmount),
+		store:            store,
+		clients:          make(map[string]*clientState),
 		markError:        markError,
 	}, nil
 }
@@ -78,6 +74,15 @@ func (aggregator *AvgAggregator) Run() error {
 			slog.Error("While closing average exchange", "err", err)
 		}
 	}()
+	defer func() {
+		if err := aggregator.store.Close(); err != nil {
+			slog.Error("While closing WAL", "err", err)
+		}
+	}()
+
+	if err := aggregator.recover(); err != nil {
+		return err
+	}
 
 	shutdown.OnSignal(func() { _ = aggregator.avgPartialsQueue.StopConsuming() })
 	slog.Info("Consuming avg partials from RabbitMQ...", "queue", avgPartialsQueueName)
@@ -88,55 +93,4 @@ func (aggregator *AvgAggregator) Run() error {
 		}
 		ack()
 	})
-}
-
-func (aggregator *AvgAggregator) handleMessage(msg middleware.Message) error {
-	avgPartialsMsg, err := inner.DeserializeAvgPartials(&msg)
-	if err != nil {
-		slog.Error("Discarding invalid avg partials message", "err", err)
-		return nil
-	}
-
-	if avgPartialsMsg.IsEOF() {
-		return aggregator.handleEndOfPartials(avgPartialsMsg.ClientID)
-	}
-
-	aggregator.addPartials(avgPartialsMsg.ClientID, avgPartialsMsg.Records)
-	return nil
-}
-
-func (aggregator *AvgAggregator) addPartials(clientID string, partials []inner.AvgPartialItem) {
-	clientTotals := aggregator.totalsByClient[clientID]
-	clientTotals.add(partials)
-	aggregator.totalsByClient[clientID] = clientTotals
-}
-
-func (aggregator *AvgAggregator) takeTotals(clientID string) totals {
-	clientTotals := aggregator.totalsByClient[clientID]
-	delete(aggregator.totalsByClient, clientID)
-	return clientTotals
-}
-
-func (aggregator *AvgAggregator) handleEndOfPartials(clientID string) error {
-	if !aggregator.eofs.Add(clientID) {
-		return nil
-	}
-
-	clientTotals := aggregator.takeTotals(clientID)
-	average := clientTotals.average()
-	if clientTotals.count == 0 {
-		slog.Warn("Client has no historical articles, using average 0", "clientID", clientID)
-	} else {
-		slog.Info("Calculated average", "clientID", clientID, "sum", clientTotals.sum, "count", clientTotals.count, "average", float64(clientTotals.sum)/float64(clientTotals.count), "integerAverage", average)
-	}
-
-	return aggregator.publishAverage(clientID, average)
-}
-
-func (aggregator *AvgAggregator) publishAverage(clientID string, average uint64) error {
-	msg, err := inner.SerializeAverage(clientID, average)
-	if err != nil {
-		return err
-	}
-	return aggregator.averageExchange.Send(*msg)
 }

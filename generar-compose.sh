@@ -332,7 +332,7 @@ YAML
   for id in $(seq 0 $((q5_filter_count - 1))); do
     worker "q5_filter_${id}" q5filter "Q5_FILTER_ID=${id}" "Q5_FILTER_AMOUNT=${q5_filter_count}" "Q5_PENDING_DIR=/tmp/q5filter" "Q5_FILTER_PREFETCH=20" "HEALTH_PORT=9090"
   done
-  worker q5_avg_aggregator_0 q5avgaggregator "Q5_AVG_PARTIAL_AMOUNT=${q5_avg_partial_count}" "Q5_FILTER_AMOUNT=${q5_filter_count}" "HEALTH_PORT=9090"
+  stateful_worker q5_avg_aggregator_0 q5avgaggregator "Q5_AVG_PARTIAL_AMOUNT=${q5_avg_partial_count}" "Q5_FILTER_AMOUNT=${q5_filter_count}" "HEALTH_PORT=9090"
 
   for id in $(seq 0 $((q4_counter_count - 1))); do
     worker "q4_word_counter_${id}" q4wordcounter "Q4_WORD_COUNTER_ID=${id}" "TOKENIZER_AMOUNT=${tokenizer_count}" "Q4_WORD_COUNTER_PREFETCH=20" "HEALTH_PORT=9090"
