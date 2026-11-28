@@ -621,7 +621,6 @@ services:
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
     - Q5_FILTER_ID=0
-    - Q5_FILTER_AMOUNT=3
     - Q5_FILTER_PREFETCH=20
     - HEALTH_PORT=9090
     - DATA_DIR=/data
@@ -641,7 +640,6 @@ services:
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
     - Q5_FILTER_ID=1
-    - Q5_FILTER_AMOUNT=3
     - Q5_FILTER_PREFETCH=20
     - HEALTH_PORT=9090
     - DATA_DIR=/data
@@ -661,7 +659,6 @@ services:
     - MOM_HOST=rabbitmq
     - MOM_PORT=5672
     - Q5_FILTER_ID=2
-    - Q5_FILTER_AMOUNT=3
     - Q5_FILTER_PREFETCH=20
     - HEALTH_PORT=9090
     - DATA_DIR=/data

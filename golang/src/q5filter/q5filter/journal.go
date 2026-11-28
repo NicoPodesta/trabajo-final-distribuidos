@@ -26,7 +26,7 @@ func appendDrained(log *wal.Log) error {
 	return log.Append(kindDrained, 0, nil)
 }
 
-func forEachRetained(log *wal.Log, visit func(articles []inner.RecentArticleItem) error) error {
+func forEachRetained(log *wal.Log, visit func(batchID uint64, articles []inner.RecentArticleItem) error) error {
 	return log.Records(func(record wal.Record) error {
 		if record.Kind != kindArticles {
 			return nil
@@ -35,7 +35,7 @@ func forEachRetained(log *wal.Log, visit func(articles []inner.RecentArticleItem
 		if err != nil {
 			return fmt.Errorf("decoding retained batch %d: %w", record.N, err)
 		}
-		return visit(articlesMsg.Records)
+		return visit(record.N, articlesMsg.Records)
 	})
 }
 

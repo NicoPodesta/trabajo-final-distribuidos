@@ -330,7 +330,7 @@ YAML
     stateful_worker "q5_avg_partial_${id}" q5avgpartial "Q5_AVG_PARTIAL_ID=${id}" "Q5_AVG_PARTIAL_AMOUNT=${q5_avg_partial_count}" "Q5_AVG_PARTIAL_PREFETCH=20" "HEALTH_PORT=9090"
   done
   for id in $(seq 0 $((q5_filter_count - 1))); do
-    stateful_worker "q5_filter_${id}" q5filter "Q5_FILTER_ID=${id}" "Q5_FILTER_AMOUNT=${q5_filter_count}" "Q5_FILTER_PREFETCH=20" "HEALTH_PORT=9090"
+    stateful_worker "q5_filter_${id}" q5filter "Q5_FILTER_ID=${id}" "Q5_FILTER_PREFETCH=20" "HEALTH_PORT=9090"
   done
   stateful_worker q5_avg_aggregator_0 q5avgaggregator "Q5_AVG_PARTIAL_AMOUNT=${q5_avg_partial_count}" "Q5_FILTER_AMOUNT=${q5_filter_count}" "HEALTH_PORT=9090"
 

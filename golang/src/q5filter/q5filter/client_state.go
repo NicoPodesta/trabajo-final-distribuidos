@@ -6,7 +6,6 @@ type clientState struct {
 	average         uint64
 	hasAverage      bool
 	drained         bool
-	recentsEOF      bool
 	retainedBatches int
 	total           int
 	selected        int
@@ -24,14 +23,6 @@ func (state *clientState) setAverage(average uint64) {
 func (state *clientState) markDrained() {
 	state.drained = true
 	state.retainedBatches = 0
-}
-
-func (state *clientState) markRecentsEOF() {
-	state.recentsEOF = true
-}
-
-func (state *clientState) isComplete() bool {
-	return state.hasAverage && state.drained && state.recentsEOF
 }
 
 func (state *clientState) selectAboveAverage(articles []inner.RecentArticleItem) []inner.RecentArticleItem {

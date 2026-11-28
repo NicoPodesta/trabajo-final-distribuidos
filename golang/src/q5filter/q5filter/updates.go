@@ -14,7 +14,7 @@ func (filter *Filter) processArticles(clientID string, batchID uint64, articles 
 
 	state.total += len(articles)
 	if state.hasAverage {
-		return filter.publishSelected(clientID, state.selectAboveAverage(articles))
+		return filter.publishBatch(clientID, batchID, state.selectAboveAverage(articles))
 	}
 
 	log, err := filter.store.Log(clientID, nil)
@@ -51,8 +51,8 @@ func (filter *Filter) processAverage(clientID string, average uint64, body strin
 }
 
 func (filter *Filter) drain(clientID string, state *clientState, log *wal.Log) error {
-	err := forEachRetained(log, func(articles []inner.RecentArticleItem) error {
-		return filter.publishSelected(clientID, state.selectAboveAverage(articles))
+	err := forEachRetained(log, func(batchID uint64, articles []inner.RecentArticleItem) error {
+		return filter.publishBatch(clientID, batchID, state.selectAboveAverage(articles))
 	})
 	if err != nil {
 		return err
@@ -61,13 +61,6 @@ func (filter *Filter) drain(clientID string, state *clientState, log *wal.Log) e
 		return err
 	}
 	state.markDrained()
-	return filter.finishIfComplete(clientID, state)
-}
-
-func (filter *Filter) processCountedEOF(clientID string) error {
-	filter.mu.Lock()
-	defer filter.mu.Unlock()
-	state := filter.stateOf(clientID)
-	state.markRecentsEOF()
-	return filter.finishIfComplete(clientID, state)
+	slog.Info("Published retained batches", "clientID", clientID, "average", state.average, "total", state.total, "selected", state.selected)
+	return nil
 }

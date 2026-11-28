@@ -1,12 +1,9 @@
 package q5filter
 
 import (
-	"context"
-	"errors"
 	"log/slog"
 	"sync"
 
-	"trabajo-final-distribuidos/common/eofcoordinator"
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/common/middleware"
 	"trabajo-final-distribuidos/common/resultpublisher"
@@ -16,22 +13,19 @@ import (
 
 const (
 	recentArticlesQueueName = "recent_articles"
-	controlExchangeName     = "q5_filter_control"
 )
 
 type FilterConfig struct {
-	MOMHost      string
-	MOMPort      int
-	FilterID     int
-	FilterAmount int
-	DataDir      string
-	Prefetch     int
+	MOMHost  string
+	MOMPort  int
+	FilterID int
+	DataDir  string
+	Prefetch int
 }
 
 type Filter struct {
 	recentArticlesQueue middleware.Middleware
 	averageExchange     middleware.Middleware
-	coordinator         *eofcoordinator.EOFCoordinator
 	resultsPublisher    *resultpublisher.Publisher
 	store               *wal.Store
 	mu                  sync.Mutex
@@ -53,25 +47,16 @@ func NewFilter(config FilterConfig, markError func(error)) (*Filter, error) {
 		return nil, err
 	}
 
-	coordinator, err := eofcoordinator.New(controlExchangeName, config.FilterID, config.FilterAmount, settings)
-	if err != nil {
-		_ = recentArticlesQueue.Close()
-		_ = averageExchange.Close()
-		return nil, err
-	}
-
 	store, err := wal.Open(config.DataDir)
 	if err != nil {
 		_ = recentArticlesQueue.Close()
 		_ = averageExchange.Close()
-		_ = coordinator.Close()
 		return nil, err
 	}
 
 	return &Filter{
 		recentArticlesQueue: recentArticlesQueue,
 		averageExchange:     averageExchange,
-		coordinator:         coordinator,
 		resultsPublisher:    resultpublisher.NewConfirmed(settings, middleware.DefaultConfirmTimeout),
 		store:               store,
 		clients:             make(map[string]*clientState),
@@ -96,12 +81,6 @@ func (filter *Filter) Run() error {
 		}
 	}()
 	defer func() {
-		if err := filter.coordinator.Close(); err != nil {
-			slog.Error("While closing EOF coordinator", "err", err)
-		}
-	}()
-
-	defer func() {
 		if err := filter.store.Close(); err != nil {
 			slog.Error("While closing WAL", "err", err)
 		}
@@ -111,20 +90,10 @@ func (filter *Filter) Run() error {
 		return err
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	shutdown.OnSignal(func() {
-		cancel()
 		_ = filter.recentArticlesQueue.StopConsuming()
 		_ = filter.averageExchange.StopConsuming()
-		_ = filter.coordinator.Stop()
 	})
-
-	go func() {
-		if err := filter.coordinator.Start(filter.processCountedEOF); err != nil {
-			slog.Error("Control consumer stopped with error", "err", err)
-		}
-	}()
 
 	averageErr := make(chan error, 1)
 	go func() {
@@ -140,13 +109,6 @@ func (filter *Filter) Run() error {
 			_ = filter.recentArticlesQueue.StopConsuming()
 		}
 	}()
-
-	if err := filter.coordinator.WaitReady(ctx); err != nil {
-		if errors.Is(err, context.Canceled) {
-			return nil
-		}
-		return err
-	}
 
 	slog.Info("Consuming recent articles from RabbitMQ...", "queue", recentArticlesQueueName)
 	err := filter.recentArticlesQueue.StartConsuming(func(msg middleware.Message, ack func(), nack func()) {

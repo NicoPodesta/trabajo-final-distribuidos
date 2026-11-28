@@ -26,11 +26,6 @@ func loadConfig() (q5filter.FilterConfig, error) {
 		return q5filter.FilterConfig{}, err
 	}
 
-	filterAmount, err := config.RequiredInt("Q5_FILTER_AMOUNT")
-	if err != nil {
-		return q5filter.FilterConfig{}, err
-	}
-
 	dataDir, err := config.RequiredString("DATA_DIR")
 	if err != nil {
 		return q5filter.FilterConfig{}, err
@@ -42,12 +37,11 @@ func loadConfig() (q5filter.FilterConfig, error) {
 	}
 
 	return q5filter.FilterConfig{
-		MOMHost:      momHost,
-		MOMPort:      momPort,
-		FilterID:     filterID,
-		FilterAmount: filterAmount,
-		DataDir:      dataDir,
-		Prefetch:     prefetch,
+		MOMHost:  momHost,
+		MOMPort:  momPort,
+		FilterID: filterID,
+		DataDir:  dataDir,
+		Prefetch: prefetch,
 	}, nil
 }
 
