@@ -45,7 +45,7 @@ type BullyConfig struct {
 type Bully struct {
 	config    BullyConfig
 	protocol  *bullyProtocol
-	peersByID map[int]string
+	peers map[int]string
 	state     bullyState
 	leaderID  int
 	timer     *time.Timer
@@ -73,17 +73,17 @@ func NewBully(config BullyConfig) (*Bully, error) {
 		return nil, err
 	}
 
-	peersByID := make(map[int]string, len(config.Peers))
+	peers := make(map[int]string, len(config.Peers))
 	for _, peer := range config.Peers {
 		if peer.ID != config.ID {
-			peersByID[peer.ID] = peer.Addr
+			peers[peer.ID] = peer.Addr
 		}
 	}
 
 	return &Bully{
 		config:    config,
 		protocol:  protocol,
-		peersByID: peersByID,
+		peers: peers,
 		state:     stateFollower,
 		leaderID:  -1,
 	}, nil
@@ -105,7 +105,7 @@ func (b *Bully) Run(ctx context.Context) error {
 		b.protocol.close()
 	}()
 
-	slog.Info("Bully TCP server listening", "monitorID", b.config.ID, "addr", b.protocol.listener.Addr().String(), "peers", len(b.peersByID))
+	slog.Info("Bully TCP server listening", "monitorID", b.config.ID, "addr", b.protocol.listener.Addr().String(), "peers", len(b.peers))
 	b.startElection(runCtx)
 
 	for {
@@ -209,7 +209,7 @@ func (b *Bully) startElection(ctx context.Context) {
 	b.stepDownIfLeader()
 
 	higherCount := 0
-	for peerID := range b.peersByID {
+	for peerID := range b.peers {
 		if peerID > b.config.ID {
 			b.sendToPeer(ctx, peerID, msgElection)
 			higherCount++
@@ -264,13 +264,13 @@ func (b *Bully) stepDownIfLeader() {
 }
 
 func (b *Bully) sendToPeer(ctx context.Context, peerID int, msgType bullyMessageType) {
-	if addr, ok := b.peersByID[peerID]; ok {
+	if addr, ok := b.peers[peerID]; ok {
 		b.protocol.sendAsync(ctx, addr, bullyMessage{Type: msgType, FromID: b.config.ID})
 	}
 }
 
 func (b *Bully) broadcast(ctx context.Context, msgType bullyMessageType) {
-	for peerID := range b.peersByID {
+	for peerID := range b.peers {
 		b.sendToPeer(ctx, peerID, msgType)
 	}
 }
