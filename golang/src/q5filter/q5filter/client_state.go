@@ -3,26 +3,17 @@ package q5filter
 import "trabajo-final-distribuidos/common/messageprotocol/inner"
 
 type clientState struct {
-	average    uint64
-	hasAverage bool
-	drained    bool
-	recentsEOF bool
-	retained   map[uint64]struct{}
-	total      int
-	selected   int
+	average         uint64
+	hasAverage      bool
+	drained         bool
+	recentsEOF      bool
+	retainedBatches int
+	total           int
+	selected        int
 }
 
-func newClientState() *clientState {
-	return &clientState{retained: make(map[uint64]struct{})}
-}
-
-func (state *clientState) hasRetained(batchID uint64) bool {
-	_, retained := state.retained[batchID]
-	return retained
-}
-
-func (state *clientState) retain(batchID uint64) {
-	state.retained[batchID] = struct{}{}
+func (state *clientState) retain() {
+	state.retainedBatches++
 }
 
 func (state *clientState) setAverage(average uint64) {
@@ -32,7 +23,7 @@ func (state *clientState) setAverage(average uint64) {
 
 func (state *clientState) markDrained() {
 	state.drained = true
-	state.retained = make(map[uint64]struct{})
+	state.retainedBatches = 0
 }
 
 func (state *clientState) markRecentsEOF() {

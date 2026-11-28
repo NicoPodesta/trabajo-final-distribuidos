@@ -17,10 +17,6 @@ import (
 const (
 	recentArticlesQueueName = "recent_articles"
 	controlExchangeName     = "q5_filter_control"
-
-	kindArticles byte = 1
-	kindAverage  byte = 2
-	kindDrained  byte = 3
 )
 
 type FilterConfig struct {
@@ -175,7 +171,7 @@ func (filter *Filter) Run() error {
 func (filter *Filter) stateOf(clientID string) *clientState {
 	state := filter.clients[clientID]
 	if state == nil {
-		state = newClientState()
+		state = &clientState{}
 		filter.clients[clientID] = state
 	}
 	return state

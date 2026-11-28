@@ -1,11 +1,9 @@
 package q5filter
 
 import (
-	"fmt"
 	"log/slog"
 
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
-	"trabajo-final-distribuidos/common/middleware"
 	"trabajo-final-distribuidos/common/wal"
 )
 
@@ -14,24 +12,19 @@ func (filter *Filter) processArticles(clientID string, batchID uint64, articles 
 	defer filter.mu.Unlock()
 	state := filter.stateOf(clientID)
 
+	state.total += len(articles)
 	if state.hasAverage {
-		state.total += len(articles)
 		return filter.publishSelected(clientID, state.selectAboveAverage(articles))
-	}
-	if state.hasRetained(batchID) {
-		slog.Debug("Skipping duplicated retained batch", "clientID", clientID, "batchID", batchID)
-		return nil
 	}
 
 	log, err := filter.store.Log(clientID, nil)
 	if err != nil {
 		return err
 	}
-	if err := log.Append(kindArticles, batchID, []byte(body)); err != nil {
+	if err := appendArticles(log, batchID, body); err != nil {
 		return err
 	}
-	state.retain(batchID)
-	state.total += len(articles)
+	state.retain()
 	return nil
 }
 
@@ -49,29 +42,22 @@ func (filter *Filter) processAverage(clientID string, average uint64, body strin
 	if err != nil {
 		return err
 	}
-	if err := log.Append(kindAverage, 0, []byte(body)); err != nil {
+	if err := appendAverage(log, body); err != nil {
 		return err
 	}
 	state.setAverage(average)
-	slog.Info("Received average", "clientID", clientID, "average", average, "retainedBatches", len(state.retained))
+	slog.Info("Received average", "clientID", clientID, "average", average, "retainedBatches", state.retainedBatches)
 	return filter.drain(clientID, state, log)
 }
 
 func (filter *Filter) drain(clientID string, state *clientState, log *wal.Log) error {
-	err := log.Records(func(record wal.Record) error {
-		if record.Kind != kindArticles {
-			return nil
-		}
-		articlesMsg, err := inner.DeserializeRecentArticles(&middleware.Message{Body: string(record.Body)})
-		if err != nil {
-			return fmt.Errorf("decoding retained batch %d: %w", record.N, err)
-		}
-		return filter.publishSelected(clientID, state.selectAboveAverage(articlesMsg.Records))
+	err := forEachRetained(log, func(articles []inner.RecentArticleItem) error {
+		return filter.publishSelected(clientID, state.selectAboveAverage(articles))
 	})
 	if err != nil {
 		return err
 	}
-	if err := log.Append(kindDrained, 0, nil); err != nil {
+	if err := appendDrained(log); err != nil {
 		return err
 	}
 	state.markDrained()

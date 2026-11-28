@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log/slog"
 
-	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/common/middleware"
 	"trabajo-final-distribuidos/common/wal"
 )
@@ -29,13 +28,13 @@ func (filter *Filter) recoverClient(clientID string) error {
 		records++
 		switch record.Kind {
 		case kindArticles:
-			state.retain(record.N)
+			state.retain()
 		case kindAverage:
-			averageMsg, err := inner.DeserializeAverage(&middleware.Message{Body: string(record.Body)})
-			if err != nil || len(averageMsg.Records) != 1 {
-				return fmt.Errorf("decoding average in record %d: %v", records, err)
+			_, average, err := decodeAverage(middleware.Message{Body: string(record.Body)})
+			if err != nil {
+				return fmt.Errorf("decoding record %d: %w", records, err)
 			}
-			state.setAverage(averageMsg.Records[0])
+			state.setAverage(average)
 		case kindDrained:
 			state.markDrained()
 		default:
@@ -46,7 +45,7 @@ func (filter *Filter) recoverClient(clientID string) error {
 	if err != nil {
 		return err
 	}
-	slog.Info("Recovered recent articles from WAL", "clientID", clientID, "records", records, "retainedBatches", len(state.retained), "hasAverage", state.hasAverage, "drained", state.drained)
+	slog.Info("Recovered recent articles from WAL", "clientID", clientID, "records", records, "retainedBatches", state.retainedBatches, "hasAverage", state.hasAverage, "drained", state.drained)
 
 	if state.hasAverage && !state.drained {
 		return filter.drain(clientID, state, log)

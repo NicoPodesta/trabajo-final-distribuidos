@@ -40,15 +40,11 @@ func (filter *Filter) handleRecentArticles(msg middleware.Message) error {
 }
 
 func (filter *Filter) handleAverage(msg middleware.Message) error {
-	averageMsg, err := inner.DeserializeAverage(&msg)
+	clientID, average, err := decodeAverage(msg)
 	if err != nil {
 		slog.Error("Discarding invalid average message", "err", err)
 		return nil
 	}
-	if len(averageMsg.Records) != 1 {
-		slog.Error("Discarding average message without exactly one record", "clientID", averageMsg.ClientID, "records", len(averageMsg.Records))
-		return nil
-	}
 
-	return filter.processAverage(averageMsg.ClientID, averageMsg.Records[0], msg.Body)
+	return filter.processAverage(clientID, average, msg.Body)
 }
