@@ -3,13 +3,10 @@ package tokenizer
 import (
 	"hash/fnv"
 
+	"trabajo-final-distribuidos/common/batchshard"
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/common/middleware"
 )
-
-func batchShard(batchID uint64, amount int) int {
-	return int(batchID % uint64(amount))
-}
 
 func wordShard(word string, amount int) int {
 	hasher := fnv.New32a()
@@ -25,7 +22,7 @@ func (tokenizer *Tokenizer) publish(clientID string, batchID uint64, result batc
 		return err
 	}
 	msg, err := inner.SerializeHistoricalCounts(clientID, batchID, result.historicalCounts)
-	historicalQueue := tokenizer.historicalCountsQueues[batchShard(batchID, len(tokenizer.historicalCountsQueues))]
+	historicalQueue := tokenizer.historicalCountsQueues[batchshard.Of(batchID, len(tokenizer.historicalCountsQueues))]
 	if err := send(historicalQueue, msg, err); err != nil {
 		return err
 	}

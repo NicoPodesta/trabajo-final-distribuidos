@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"log/slog"
 
+	"trabajo-final-distribuidos/common/batchshard"
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/common/middleware"
 	"trabajo-final-distribuidos/common/shutdown"
-	"trabajo-final-distribuidos/common/watermark"
 )
 
 const (
@@ -23,23 +23,11 @@ type AvgPartialConfig struct {
 	Prefetch         int
 }
 
-type totals struct {
-	sum   uint64
-	count uint64
-}
-
-func (clientTotals *totals) add(wordCounts []uint32) {
-	for _, wordCount := range wordCounts {
-		clientTotals.sum += uint64(wordCount)
-		clientTotals.count++
-	}
-}
-
-type clientState struct {
-	totals   totals
-	seen     *watermark.Watermark
-	total    uint64
-	hasTotal bool
+type update struct {
+	clientID   string
+	index      uint64
+	wordCounts []uint32
+	total      *uint64
 }
 
 type AvgPartial struct {
@@ -47,8 +35,7 @@ type AvgPartial struct {
 	historicalCountsQueue middleware.Middleware
 	avgPartialsQueue      middleware.Middleware
 	queueName             string
-	id                    uint64
-	amount                uint64
+	sequence              batchshard.Sequence
 	clients               map[string]*clientState
 	markError             func(error)
 }
@@ -77,8 +64,7 @@ func NewAvgPartial(config AvgPartialConfig, markError func(error)) (partial *Avg
 		historicalCountsQueue: historicalCountsQueue,
 		avgPartialsQueue:      avgPartialsQueue,
 		queueName:             queueName,
-		id:                    uint64(config.AvgPartialID),
-		amount:                uint64(config.AvgPartialAmount),
+		sequence:              batchshard.NewSequence(config.AvgPartialID, config.AvgPartialAmount),
 		clients:               make(map[string]*clientState),
 		markError:             markError,
 	}, nil
@@ -99,81 +85,65 @@ func (partial *AvgPartial) Run() error {
 }
 
 func (partial *AvgPartial) handleMessage(msg middleware.Message) error {
+	received, valid := partial.decode(msg)
+	if !valid {
+		return nil
+	}
+
+	clientTotals, closed := partial.apply(received)
+	if !closed {
+		return nil
+	}
+	return partial.publishPartial(received.clientID, clientTotals)
+}
+
+func (partial *AvgPartial) decode(msg middleware.Message) (update, bool) {
 	historicalCountsMsg, err := inner.DeserializeHistoricalCounts(&msg)
 	if err != nil {
 		slog.Error("Discarding invalid historical counts message", "err", err)
-		return nil
+		return update{}, false
 	}
 	clientID := historicalCountsMsg.ClientID
 
 	if historicalCountsMsg.IsEOF() {
 		if historicalCountsMsg.TotalBatches == nil {
 			slog.Error("Discarding historical counts EOF without total_batches", "clientID", clientID)
-			return nil
+			return update{}, false
 		}
-		state := partial.stateOf(clientID)
-		state.total, state.hasTotal = *historicalCountsMsg.TotalBatches, true
-		return partial.closeIfComplete(clientID, state)
+		return update{clientID: clientID, total: historicalCountsMsg.TotalBatches}, true
 	}
 
-	index, belongs := partial.sequenceIndex(historicalCountsMsg.BatchID)
+	index, belongs := partial.sequence.Index(historicalCountsMsg.BatchID)
 	if !belongs {
-		slog.Error("Discarding historical counts of a batch that does not belong to this shard", "clientID", clientID, "batchID", historicalCountsMsg.BatchID, "shard", partial.id)
-		return nil
+		slog.Error("Discarding historical counts of a batch that does not belong to this shard", "clientID", clientID, "batchID", historicalCountsMsg.BatchID, "queue", partial.queueName)
+		return update{}, false
 	}
-
-	state := partial.stateOf(clientID)
-	if !state.seen.Add(index) {
-		slog.Debug("Skipping duplicated historical counts batch", "clientID", clientID, "batchID", historicalCountsMsg.BatchID)
-		return nil
-	}
-	state.totals.add(historicalCountsMsg.Records)
-	return partial.closeIfComplete(clientID, state)
+	return update{clientID: clientID, index: index, wordCounts: historicalCountsMsg.Records}, true
 }
 
-func (partial *AvgPartial) stateOf(clientID string) *clientState {
-	state := partial.clients[clientID]
+func (partial *AvgPartial) apply(received update) (totals, bool) {
+	state := partial.clients[received.clientID]
 	if state == nil {
-		state = &clientState{seen: watermark.New()}
-		partial.clients[clientID] = state
-	}
-	return state
-}
-
-func (partial *AvgPartial) firstBatch() uint64 {
-	if partial.id == 0 {
-		return partial.amount
-	}
-	return partial.id
-}
-
-func (partial *AvgPartial) sequenceIndex(batchID uint64) (uint64, bool) {
-	first := partial.firstBatch()
-	if batchID < first || (batchID-first)%partial.amount != 0 {
-		return 0, false
-	}
-	return (batchID - first) / partial.amount, true
-}
-
-func (partial *AvgPartial) expectedBatches(total uint64) uint64 {
-	first := partial.firstBatch()
-	if total < first {
-		return 0
-	}
-	return (total-first)/partial.amount + 1
-}
-
-func (partial *AvgPartial) closeIfComplete(clientID string, state *clientState) error {
-	if !state.hasTotal || state.seen.Contiguous() < partial.expectedBatches(state.total) {
-		return nil
+		state = newClientState()
+		partial.clients[received.clientID] = state
 	}
 
-	delete(partial.clients, clientID)
-	slog.Info("All historical counts received", "clientID", clientID, "sum", state.totals.sum, "count", state.totals.count)
-	return partial.publishPartial(clientID, state.totals)
+	if received.total != nil {
+		state.setTotal(*received.total)
+	} else if !state.addBatch(received.index, received.wordCounts) {
+		slog.Debug("Skipping duplicated historical counts batch", "clientID", received.clientID, "index", received.index)
+		return totals{}, false
+	}
+
+	if !state.complete(partial.sequence) {
+		return totals{}, false
+	}
+	delete(partial.clients, received.clientID)
+	return state.totals, true
 }
 
 func (partial *AvgPartial) publishPartial(clientID string, clientTotals totals) error {
+	slog.Info("All historical counts received", "clientID", clientID, "sum", clientTotals.sum, "count", clientTotals.count)
 	if clientTotals.count > 0 {
 		if err := partial.publishTotals(clientID, clientTotals); err != nil {
 			return err
