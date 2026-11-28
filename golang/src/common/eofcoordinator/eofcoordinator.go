@@ -13,6 +13,8 @@ import (
 	"trabajo-final-distribuidos/common/middleware"
 )
 
+var ErrInvalidClose = errors.New("invalid close")
+
 type msgType int
 
 const (
@@ -171,7 +173,7 @@ func countMessage(kind msgType, clientID string, info closeInfo, count uint64) c
 // Se llama con el mutex tomado; cero se distingue de un cierre ausente.
 func (c *EOFCoordinator) registerClose(clientID string, info closeInfo) (bool, error) {
 	if strings.TrimSpace(clientID) == "" {
-		return false, fmt.Errorf("missing client_id")
+		return false, fmt.Errorf("%w: missing client_id", ErrInvalidClose)
 	}
 	previous, closed := c.closed[clientID]
 	if !closed {
@@ -179,10 +181,10 @@ func (c *EOFCoordinator) registerClose(clientID string, info closeInfo) (bool, e
 	}
 	_, closing := c.closing[clientID]
 	if (closed || closing) && previous != info {
-		return closed, fmt.Errorf("contradictory close for client %q", clientID)
+		return closed, fmt.Errorf("%w: contradictory close for client %q", ErrInvalidClose, clientID)
 	}
 	if c.processed[clientID] > info.total {
-		return false, fmt.Errorf("processed count exceeds total for client %q", clientID)
+		return false, fmt.Errorf("%w: processed count exceeds total for client %q", ErrInvalidClose, clientID)
 	}
 	if !closed {
 		c.closing[clientID] = info

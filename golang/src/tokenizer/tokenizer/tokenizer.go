@@ -128,6 +128,7 @@ func (tokenizer *Tokenizer) Run() error {
 			return nil
 		}); err != nil {
 			slog.Error("Control consumer stopped with error", "err", err)
+			tokenizer.markError(err)
 		}
 	}()
 
@@ -157,9 +158,19 @@ func (tokenizer *Tokenizer) handleGatewayMessage(msg middleware.Message) error {
 
 	if abstractMsg.IsEOF() {
 		slog.Info("Received end of input", "clientID", abstractMsg.ClientID, "totalBatches", abstractMsg.TotalBatches)
-		if err := tokenizer.coordinator.BroadcastWithTotal(abstractMsg.ClientID, abstractMsg.TotalBatches); err != nil {
-			slog.Error("While broadcasting end of input", "err", err)
+		err := tokenizer.coordinator.BroadcastWithTotal(abstractMsg.ClientID, abstractMsg.TotalBatches)
+		if errors.Is(err, eofcoordinator.ErrInvalidClose) {
+			slog.Error("Discarding invalid end of input", "clientID", abstractMsg.ClientID, "err", err)
+			return nil
 		}
+		if err != nil {
+			return fmt.Errorf("broadcasting end of input of client %s: %w", abstractMsg.ClientID, err)
+		}
+		return nil
+	}
+
+	if abstractMsg.BatchID == 0 {
+		slog.Error("Discarding abstracts without batch_id", "clientID", abstractMsg.ClientID)
 		return nil
 	}
 
