@@ -7,8 +7,6 @@ import (
 	"trabajo-final-distribuidos/common/middleware"
 )
 
-const historicalEOFShard = 0
-
 func batchShard(batchID uint64, amount int) int {
 	return int(batchID % uint64(amount))
 }
@@ -86,12 +84,14 @@ func (tokenizer *Tokenizer) publishEOF(clientID string, totalBatches uint64, coo
 		return nil
 	}
 
-	msg, err := inner.SerializeHistoricalCountsEOF(clientID, totalBatches)
-	if err := send(tokenizer.historicalCountsQueues[historicalEOFShard], msg, err); err != nil {
-		return err
+	for _, queue := range tokenizer.historicalCountsQueues {
+		msg, err := inner.SerializeHistoricalCountsEOF(clientID, totalBatches)
+		if err := send(queue, msg, err); err != nil {
+			return err
+		}
 	}
 
-	msg, err = inner.SerializeRecentArticlesEOF(clientID, totalBatches)
+	msg, err := inner.SerializeRecentArticlesEOF(clientID, totalBatches)
 	return send(tokenizer.recentArticlesQueue, msg, err)
 }
 

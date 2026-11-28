@@ -54,18 +54,18 @@ func run() int {
 		return 1
 	}
 
-	partial, err := q5avgpartial.NewAvgPartial(workerConfig)
-	if err != nil {
-		slog.Error("While initializing avg partial", "err", err)
-		return 1
-	}
-
 	healthSrv, err := healthcheck.StartFromEnv()
 	if err != nil {
 		slog.Error("While starting avg partial healthcheck server", "err", err)
 		return 1
 	}
 	defer healthSrv.CloseAndLog()
+
+	partial, err := q5avgpartial.NewAvgPartial(workerConfig, healthSrv.MarkError)
+	if err != nil {
+		slog.Error("While initializing avg partial", "err", err)
+		return 1
+	}
 
 	if err := partial.Run(); err != nil {
 		slog.Error("Avg partial stopped with error", "err", err)

@@ -1,22 +1,18 @@
 package q5avgpartial
 
 import (
-	"context"
-	"errors"
 	"fmt"
 	"log/slog"
-	"sync"
 
-	"trabajo-final-distribuidos/common/eofcoordinator"
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
 	"trabajo-final-distribuidos/common/middleware"
 	"trabajo-final-distribuidos/common/shutdown"
+	"trabajo-final-distribuidos/common/watermark"
 )
 
 const (
 	historicalCountsQueuePrefix = "historical_counts_"
 	avgPartialsQueueName        = "avg_partials"
-	controlExchangeName         = "q5_avg_partial_control"
 )
 
 type AvgPartialConfig struct {
@@ -39,17 +35,25 @@ func (clientTotals *totals) add(wordCounts []uint32) {
 	}
 }
 
+type clientState struct {
+	totals   totals
+	seen     *watermark.Watermark
+	total    uint64
+	hasTotal bool
+}
+
 type AvgPartial struct {
 	conns                 *middleware.Connections
 	historicalCountsQueue middleware.Middleware
 	avgPartialsQueue      middleware.Middleware
 	queueName             string
-	coordinator           *eofcoordinator.EOFCoordinator
-	mu                    sync.Mutex
-	totalsByClient        map[string]totals
+	id                    uint64
+	amount                uint64
+	clients               map[string]*clientState
+	markError             func(error)
 }
 
-func NewAvgPartial(config AvgPartialConfig) (partial *AvgPartial, err error) {
+func NewAvgPartial(config AvgPartialConfig, markError func(error)) (partial *AvgPartial, err error) {
 	conns := middleware.NewConnections(middleware.ConnSettings{Hostname: config.MOMHost, Port: config.MOMPort})
 	defer func() {
 		if err != nil {
@@ -68,100 +72,105 @@ func NewAvgPartial(config AvgPartialConfig) (partial *AvgPartial, err error) {
 		return nil, err
 	}
 
-	coordinator, err := eofcoordinator.New(controlExchangeName, config.AvgPartialID, config.AvgPartialAmount, conns.Settings)
-	if err != nil {
-		return nil, err
-	}
-
 	return &AvgPartial{
 		conns:                 conns,
 		historicalCountsQueue: historicalCountsQueue,
 		avgPartialsQueue:      avgPartialsQueue,
 		queueName:             queueName,
-		coordinator:           coordinator,
-		totalsByClient:        make(map[string]totals),
+		id:                    uint64(config.AvgPartialID),
+		amount:                uint64(config.AvgPartialAmount),
+		clients:               make(map[string]*clientState),
+		markError:             markError,
 	}, nil
 }
 
 func (partial *AvgPartial) Run() error {
 	defer partial.conns.Close()
-	defer func() {
-		if err := partial.coordinator.Close(); err != nil {
-			slog.Error("While closing EOF coordinator", "err", err)
-		}
-	}()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	shutdown.OnSignal(func() {
-		cancel()
-		_ = partial.historicalCountsQueue.StopConsuming()
-		_ = partial.coordinator.Stop()
-	})
-
-	go partial.consumeControl()
-
-	if err := partial.coordinator.WaitReady(ctx); err != nil {
-		if errors.Is(err, context.Canceled) {
-			return nil
-		}
-		return err
-	}
-
+	shutdown.OnSignal(func() { _ = partial.historicalCountsQueue.StopConsuming() })
 	slog.Info("Consuming historical counts from RabbitMQ...", "queue", partial.queueName)
 	return partial.historicalCountsQueue.StartConsuming(func(msg middleware.Message, ack func(), nack func()) {
 		if err := partial.handleMessage(msg); err != nil {
-			slog.Error("While handling historical counts message", "err", err)
+			partial.markError(err)
+			return
 		}
 		ack()
 	})
 }
 
-func (partial *AvgPartial) consumeControl() {
-	if err := partial.coordinator.Start(partial.handleCountedEOF); err != nil {
-		slog.Error("Control consumer stopped with error", "err", err)
-	}
-}
-
-func (partial *AvgPartial) handleCountedEOF(clientID string) error {
-	partial.mu.Lock()
-	defer partial.mu.Unlock()
-
-	clientTotals := partial.takeTotals(clientID)
-	slog.Info("All historical counts received", "clientID", clientID, "sum", clientTotals.sum, "count", clientTotals.count)
-
-	return partial.publishPartial(clientID, clientTotals)
-}
-
 func (partial *AvgPartial) handleMessage(msg middleware.Message) error {
 	historicalCountsMsg, err := inner.DeserializeHistoricalCounts(&msg)
 	if err != nil {
-		return err
+		slog.Error("Discarding invalid historical counts message", "err", err)
+		return nil
 	}
+	clientID := historicalCountsMsg.ClientID
 
 	if historicalCountsMsg.IsEOF() {
 		if historicalCountsMsg.TotalBatches == nil {
-			return fmt.Errorf("historical counts EOF of client %s has no total_batches", historicalCountsMsg.ClientID)
+			slog.Error("Discarding historical counts EOF without total_batches", "clientID", clientID)
+			return nil
 		}
-		return partial.coordinator.BroadcastWithTotal(historicalCountsMsg.ClientID, *historicalCountsMsg.TotalBatches)
+		state := partial.stateOf(clientID)
+		state.total, state.hasTotal = *historicalCountsMsg.TotalBatches, true
+		return partial.closeIfComplete(clientID, state)
 	}
 
-	partial.handleCounts(historicalCountsMsg.ClientID, historicalCountsMsg.Records)
-	return partial.coordinator.OnBatchProcessed(historicalCountsMsg.ClientID)
+	index, belongs := partial.sequenceIndex(historicalCountsMsg.BatchID)
+	if !belongs {
+		slog.Error("Discarding historical counts of a batch that does not belong to this shard", "clientID", clientID, "batchID", historicalCountsMsg.BatchID, "shard", partial.id)
+		return nil
+	}
+
+	state := partial.stateOf(clientID)
+	if !state.seen.Add(index) {
+		slog.Debug("Skipping duplicated historical counts batch", "clientID", clientID, "batchID", historicalCountsMsg.BatchID)
+		return nil
+	}
+	state.totals.add(historicalCountsMsg.Records)
+	return partial.closeIfComplete(clientID, state)
 }
 
-func (partial *AvgPartial) handleCounts(clientID string, wordCounts []uint32) {
-	partial.mu.Lock()
-	defer partial.mu.Unlock()
-	clientTotals := partial.totalsByClient[clientID]
-	clientTotals.add(wordCounts)
-	partial.totalsByClient[clientID] = clientTotals
+func (partial *AvgPartial) stateOf(clientID string) *clientState {
+	state := partial.clients[clientID]
+	if state == nil {
+		state = &clientState{seen: watermark.New()}
+		partial.clients[clientID] = state
+	}
+	return state
 }
 
-func (partial *AvgPartial) takeTotals(clientID string) totals {
-	clientTotals := partial.totalsByClient[clientID]
-	delete(partial.totalsByClient, clientID)
-	return clientTotals
+func (partial *AvgPartial) firstBatch() uint64 {
+	if partial.id == 0 {
+		return partial.amount
+	}
+	return partial.id
+}
+
+func (partial *AvgPartial) sequenceIndex(batchID uint64) (uint64, bool) {
+	first := partial.firstBatch()
+	if batchID < first || (batchID-first)%partial.amount != 0 {
+		return 0, false
+	}
+	return (batchID - first) / partial.amount, true
+}
+
+func (partial *AvgPartial) expectedBatches(total uint64) uint64 {
+	first := partial.firstBatch()
+	if total < first {
+		return 0
+	}
+	return (total-first)/partial.amount + 1
+}
+
+func (partial *AvgPartial) closeIfComplete(clientID string, state *clientState) error {
+	if !state.hasTotal || state.seen.Contiguous() < partial.expectedBatches(state.total) {
+		return nil
+	}
+
+	delete(partial.clients, clientID)
+	slog.Info("All historical counts received", "clientID", clientID, "sum", state.totals.sum, "count", state.totals.count)
+	return partial.publishPartial(clientID, state.totals)
 }
 
 func (partial *AvgPartial) publishPartial(clientID string, clientTotals totals) error {
