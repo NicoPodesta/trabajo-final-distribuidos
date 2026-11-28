@@ -28,6 +28,7 @@ for val in "$client_count" "$gateway_count" "$tokenizer_count" "$q4_counter_coun
 done
 
 root_dir="$(cd "$(dirname "$0")" && pwd)"
+data_volumes=()
 
 lb_service_name() {
   local id=$1
@@ -255,7 +256,17 @@ YAML
     echo "    - ${variable}"
   done
   echo "    - LOG_LEVEL=info"
+  if [[ -n "${data_volume:-}" ]]; then
+    echo "    volumes:"
+    echo "    - ${data_volume}:/data"
+  fi
   echo
+}
+
+stateful_worker() {
+  local data_volume="$1_data"
+  data_volumes+=("$data_volume")
+  worker "$@" "DATA_DIR=/data"
 }
 
 rabbitmq() {
@@ -316,7 +327,7 @@ YAML
     worker "q3_vocabulary_join_${id}" q3vocabularyjoin "Q3_JOIN_ID=${id}" "TOKENIZER_AMOUNT=${tokenizer_count}" "Q3_JOIN_PREFETCH=20"
   done
   for id in $(seq 0 $((q5_avg_partial_count - 1))); do
-    worker "q5_avg_partial_${id}" q5avgpartial "Q5_AVG_PARTIAL_ID=${id}" "Q5_AVG_PARTIAL_AMOUNT=${q5_avg_partial_count}" "Q5_AVG_PARTIAL_PREFETCH=20" "HEALTH_PORT=9090"
+    stateful_worker "q5_avg_partial_${id}" q5avgpartial "Q5_AVG_PARTIAL_ID=${id}" "Q5_AVG_PARTIAL_AMOUNT=${q5_avg_partial_count}" "Q5_AVG_PARTIAL_PREFETCH=20" "HEALTH_PORT=9090"
   done
   for id in $(seq 0 $((q5_filter_count - 1))); do
     worker "q5_filter_${id}" q5filter "Q5_FILTER_ID=${id}" "Q5_FILTER_AMOUNT=${q5_filter_count}" "Q5_PENDING_DIR=/tmp/q5filter" "Q5_FILTER_PREFETCH=20" "HEALTH_PORT=9090"
@@ -329,6 +340,12 @@ YAML
 
   worker q4_top20_merger q4top20merger "Q4_WORD_COUNTER_AMOUNT=${q4_counter_count}" "HEALTH_PORT=9090"
   rabbitmq
+  if [[ ${#data_volumes[@]} -gt 0 ]]; then
+    echo "volumes:"
+    for data_volume in "${data_volumes[@]}"; do
+      echo "  ${data_volume}:"
+    done
+  fi
 } > "$output_file"
 
 echo "Docker Compose generado en $output_file con $client_count cliente(s), $lb_count load-balancer(s), $gateway_count gateway(s), $monitor_count monitor(es), $tokenizer_count tokenizer(s), $q4_counter_count q4-counter(s), $q5_avg_partial_count q5-avgpartial(s), $q5_filter_count q5-filter(s), $q1_filter_count q1-filter(s), $q2_filter_count q2-filter(s), $q2_fetcher_count q2-fetcher(s) y $q3_join_count q3-join(s)."

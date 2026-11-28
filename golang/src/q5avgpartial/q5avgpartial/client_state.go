@@ -27,6 +27,14 @@ func newClientState() *clientState {
 	return &clientState{seen: watermark.New()}
 }
 
+func (state *clientState) hasBatch(index uint64) bool {
+	return state.seen.Seen(index)
+}
+
+func (state *clientState) hasTotal() bool {
+	return state.total != nil
+}
+
 func (state *clientState) addBatch(index uint64, wordCounts []uint32) bool {
 	if !state.seen.Add(index) {
 		return false
@@ -40,5 +48,5 @@ func (state *clientState) setTotal(total uint64) {
 }
 
 func (state *clientState) complete(sequence batchshard.Sequence) bool {
-	return state.total != nil && state.seen.Contiguous() >= sequence.Count(*state.total)
+	return state.hasTotal() && state.seen.Contiguous() >= sequence.Count(*state.total)
 }

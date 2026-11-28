@@ -9,11 +9,16 @@ func New() *Watermark {
 	return &Watermark{ahead: make(map[uint64]struct{})}
 }
 
-func (watermark *Watermark) Add(index uint64) bool {
+func (watermark *Watermark) Seen(index uint64) bool {
 	if index < watermark.next {
-		return false
+		return true
 	}
-	if _, seen := watermark.ahead[index]; seen {
+	_, seen := watermark.ahead[index]
+	return seen
+}
+
+func (watermark *Watermark) Add(index uint64) bool {
+	if watermark.Seen(index) {
 		return false
 	}
 	if index > watermark.next {

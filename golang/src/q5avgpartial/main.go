@@ -31,6 +31,11 @@ func loadConfig() (q5avgpartial.AvgPartialConfig, error) {
 		return q5avgpartial.AvgPartialConfig{}, err
 	}
 
+	dataDir, err := config.RequiredString("DATA_DIR")
+	if err != nil {
+		return q5avgpartial.AvgPartialConfig{}, err
+	}
+
 	prefetch, err := config.OptionalInt("Q5_AVG_PARTIAL_PREFETCH", 1)
 	if err != nil {
 		return q5avgpartial.AvgPartialConfig{}, err
@@ -41,6 +46,7 @@ func loadConfig() (q5avgpartial.AvgPartialConfig, error) {
 		MOMPort:          momPort,
 		AvgPartialID:     avgPartialID,
 		AvgPartialAmount: avgPartialAmount,
+		DataDir:          dataDir,
 		Prefetch:         prefetch,
 	}, nil
 }

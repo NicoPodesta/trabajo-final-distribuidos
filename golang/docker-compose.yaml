@@ -564,7 +564,10 @@ services:
     - Q5_AVG_PARTIAL_AMOUNT=3
     - Q5_AVG_PARTIAL_PREFETCH=20
     - HEALTH_PORT=9090
+    - DATA_DIR=/data
     - LOG_LEVEL=info
+    volumes:
+    - q5_avg_partial_0_data:/data
 
   q5_avg_partial_1:
     build:
@@ -581,7 +584,10 @@ services:
     - Q5_AVG_PARTIAL_AMOUNT=3
     - Q5_AVG_PARTIAL_PREFETCH=20
     - HEALTH_PORT=9090
+    - DATA_DIR=/data
     - LOG_LEVEL=info
+    volumes:
+    - q5_avg_partial_1_data:/data
 
   q5_avg_partial_2:
     build:
@@ -598,7 +604,10 @@ services:
     - Q5_AVG_PARTIAL_AMOUNT=3
     - Q5_AVG_PARTIAL_PREFETCH=20
     - HEALTH_PORT=9090
+    - DATA_DIR=/data
     - LOG_LEVEL=info
+    volumes:
+    - q5_avg_partial_2_data:/data
 
   q5_filter_0:
     build:
@@ -751,3 +760,7 @@ services:
       timeout: 3s
     ports:
     - 15672:15672
+volumes:
+  q5_avg_partial_0_data:
+  q5_avg_partial_1_data:
+  q5_avg_partial_2_data:
