@@ -1,6 +1,11 @@
 package middleware
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
+
+const DefaultConfirmTimeout = 10 * time.Second
 
 type Connections struct {
 	Settings ConnSettings
@@ -22,6 +27,27 @@ func (conns *Connections) QueueWithPrefetch(name string, prefetch int) (Middlewa
 	}
 	conns.opened = append(conns.opened, created)
 	return created, nil
+}
+
+func (conns *Connections) ConfirmedQueue(name string) (Middleware, error) {
+	created, err := CreateConfirmedQueueWithRetry(name, conns.Settings, DefaultConfirmTimeout)
+	if err != nil {
+		return nil, err
+	}
+	conns.opened = append(conns.opened, created)
+	return created, nil
+}
+
+func (conns *Connections) ConfirmedQueues(prefix string, amount int) ([]Middleware, error) {
+	queues := make([]Middleware, 0, amount)
+	for shard := 0; shard < amount; shard++ {
+		queue, err := conns.ConfirmedQueue(fmt.Sprintf("%s%d", prefix, shard))
+		if err != nil {
+			return nil, err
+		}
+		queues = append(queues, queue)
+	}
+	return queues, nil
 }
 
 func (conns *Connections) Queues(prefix string, amount int) ([]Middleware, error) {

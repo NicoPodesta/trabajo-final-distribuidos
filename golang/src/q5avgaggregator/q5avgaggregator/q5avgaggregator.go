@@ -37,7 +37,7 @@ func NewAvgAggregator(config AvgAggregatorConfig, markError func(error)) (*AvgAg
 		return nil, err
 	}
 
-	averageExchange, err := middleware.CreateExchangeMiddleware(inner.Q5AverageExchange, inner.Q5FilterRoutingKeys(config.Q5FilterAmount), settings)
+	averageExchange, err := middleware.CreateConfirmedExchangeMiddleware(inner.Q5AverageExchange, inner.Q5FilterRoutingKeys(config.Q5FilterAmount), settings, middleware.DefaultConfirmTimeout)
 	if err != nil {
 		_ = avgPartialsQueue.Close()
 		return nil, err

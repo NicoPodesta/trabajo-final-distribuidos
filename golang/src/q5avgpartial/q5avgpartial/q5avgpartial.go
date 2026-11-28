@@ -50,7 +50,7 @@ func NewAvgPartial(config AvgPartialConfig, markError func(error)) (partial *Avg
 		return nil, err
 	}
 
-	avgPartialsQueue, err := conns.Queue(avgPartialsQueueName)
+	avgPartialsQueue, err := conns.ConfirmedQueue(avgPartialsQueueName)
 	if err != nil {
 		return nil, err
 	}

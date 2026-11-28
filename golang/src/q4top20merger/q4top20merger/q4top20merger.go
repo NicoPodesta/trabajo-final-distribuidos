@@ -39,7 +39,7 @@ func NewTopMerger(config TopMergerConfig, markError func(error)) (*TopMerger, er
 
 	merger := &TopMerger{
 		partialTop20Queue: partialTop20Queue,
-		resultsPublisher:  resultpublisher.New(settings),
+		resultsPublisher:  resultpublisher.NewConfirmed(settings, middleware.DefaultConfirmTimeout),
 		amount:            uint64(config.Q4WordCounterAmount),
 		clients:           make(map[string]*clientState),
 		markError:         markError,

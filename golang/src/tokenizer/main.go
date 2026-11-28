@@ -72,18 +72,18 @@ func run() int {
 		return 1
 	}
 
-	worker, err := tokenizer.NewTokenizer(workerConfig)
-	if err != nil {
-		slog.Error("While initializing tokenizer", "err", err)
-		return 1
-	}
-
 	healthSrv, err := healthcheck.StartFromEnv()
 	if err != nil {
 		slog.Error("While starting tokenizer healthcheck server", "err", err)
 		return 1
 	}
 	defer healthSrv.CloseAndLog()
+
+	worker, err := tokenizer.NewTokenizer(workerConfig, healthSrv.MarkError)
+	if err != nil {
+		slog.Error("While initializing tokenizer", "err", err)
+		return 1
+	}
 
 	if err := worker.Run(); err != nil {
 		slog.Error("Tokenizer stopped with error", "err", err)

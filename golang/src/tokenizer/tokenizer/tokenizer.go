@@ -44,9 +44,10 @@ type Tokenizer struct {
 	coordinator            *eofcoordinator.EOFCoordinator
 	mu                     sync.Mutex
 	received               int
+	markError              func(error)
 }
 
-func NewTokenizer(config TokenizerConfig) (tokenizer *Tokenizer, err error) {
+func NewTokenizer(config TokenizerConfig, markError func(error)) (tokenizer *Tokenizer, err error) {
 	conns := middleware.NewConnections(middleware.ConnSettings{Hostname: config.MOMHost, Port: config.MOMPort})
 	defer func() {
 		if err != nil {
@@ -59,22 +60,22 @@ func NewTokenizer(config TokenizerConfig) (tokenizer *Tokenizer, err error) {
 		return nil, err
 	}
 
-	wordCountsQueues, err := conns.Queues(wordCountsQueuePrefix, config.WordCounterAmount)
+	wordCountsQueues, err := conns.ConfirmedQueues(wordCountsQueuePrefix, config.WordCounterAmount)
 	if err != nil {
 		return nil, err
 	}
 
-	vocabularyQueues, err := conns.Queues(vocabularyQueuePrefix, config.VocabularyJoinAmount)
+	vocabularyQueues, err := conns.ConfirmedQueues(vocabularyQueuePrefix, config.VocabularyJoinAmount)
 	if err != nil {
 		return nil, err
 	}
 
-	historicalCountsQueues, err := conns.Queues(historicalCountsQueuePrefix, config.AvgPartialAmount)
+	historicalCountsQueues, err := conns.ConfirmedQueues(historicalCountsQueuePrefix, config.AvgPartialAmount)
 	if err != nil {
 		return nil, err
 	}
 
-	recentArticlesQueue, err := conns.Queue(recentArticlesQueueName)
+	recentArticlesQueue, err := conns.ConfirmedQueue(recentArticlesQueueName)
 	if err != nil {
 		return nil, err
 	}
@@ -92,6 +93,7 @@ func NewTokenizer(config TokenizerConfig) (tokenizer *Tokenizer, err error) {
 		historicalCountsQueues: historicalCountsQueues,
 		recentArticlesQueue:    recentArticlesQueue,
 		coordinator:            coordinator,
+		markError:              markError,
 	}, nil
 }
 
@@ -119,7 +121,11 @@ func (tokenizer *Tokenizer) Run() error {
 			if !ok {
 				return fmt.Errorf("closing total of client %q is unknown", clientID)
 			}
-			return tokenizer.publishEOF(clientID, totalBatches, tokenizer.coordinator.IsCoordinator(clientID))
+			if err := tokenizer.publishEOF(clientID, totalBatches, tokenizer.coordinator.IsCoordinator(clientID)); err != nil {
+				tokenizer.markError(err)
+				return err
+			}
+			return nil
 		}); err != nil {
 			slog.Error("Control consumer stopped with error", "err", err)
 		}
@@ -135,7 +141,8 @@ func (tokenizer *Tokenizer) Run() error {
 	slog.Info("Consuming abstracts from RabbitMQ...", "queue", abstractsQueueName)
 	return tokenizer.abstractsQueue.StartConsuming(func(msg middleware.Message, ack func(), nack func()) {
 		if err := tokenizer.handleGatewayMessage(msg); err != nil {
-			slog.Error("While handling gateway message", "err", err)
+			tokenizer.markError(err)
+			return
 		}
 		ack()
 	})
@@ -144,12 +151,16 @@ func (tokenizer *Tokenizer) Run() error {
 func (tokenizer *Tokenizer) handleGatewayMessage(msg middleware.Message) error {
 	abstractMsg, err := inner.DeserializeAbstracts(&msg)
 	if err != nil {
-		return err
+		slog.Error("Discarding invalid abstracts message", "err", err)
+		return nil
 	}
 
 	if abstractMsg.IsEOF() {
 		slog.Info("Received end of input", "clientID", abstractMsg.ClientID, "totalBatches", abstractMsg.TotalBatches)
-		return tokenizer.coordinator.BroadcastWithTotal(abstractMsg.ClientID, abstractMsg.TotalBatches)
+		if err := tokenizer.coordinator.BroadcastWithTotal(abstractMsg.ClientID, abstractMsg.TotalBatches); err != nil {
+			slog.Error("While broadcasting end of input", "err", err)
+		}
+		return nil
 	}
 
 	tokenizer.mu.Lock()
@@ -161,7 +172,10 @@ func (tokenizer *Tokenizer) handleGatewayMessage(msg middleware.Message) error {
 		return err
 	}
 
-	return tokenizer.coordinator.OnBatchProcessed(abstractMsg.ClientID)
+	if err := tokenizer.coordinator.OnBatchProcessed(abstractMsg.ClientID); err != nil {
+		slog.Error("While counting processed batch", "err", err)
+	}
+	return nil
 }
 
 func (tokenizer *Tokenizer) logProgress(clientID string, processed int) {

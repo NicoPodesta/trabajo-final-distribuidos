@@ -42,7 +42,7 @@ func NewWordCounter(config WordCounterConfig, markError func(error)) (*WordCount
 		return nil, err
 	}
 
-	partialTop20Queue, err := conns.Queue(partialTop20QueueName)
+	partialTop20Queue, err := conns.ConfirmedQueue(partialTop20QueueName)
 	if err != nil {
 		conns.Close()
 		return nil, err

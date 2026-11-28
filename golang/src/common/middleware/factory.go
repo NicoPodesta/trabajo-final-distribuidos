@@ -13,14 +13,12 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
-
 type queueMiddleware struct {
 	name           string
 	broker         *rabbitBroker
 	prefetch       int
 	confirmTimeout time.Duration
 }
-
 
 const (
 	brokerUser       = "guest"
@@ -30,7 +28,6 @@ const (
 )
 
 var consumerSeq atomic.Uint64
-
 
 func CreateQueueMiddleware(queueName string, connectionSettings ConnSettings) (Middleware, error) {
 	return CreateQueueMiddlewareWithPrefetch(queueName, connectionSettings, queuePrefetch)
@@ -86,6 +83,22 @@ func CreateExchangeMiddleware(exchange string, keys []string, connectionSettings
 	return &exchangeMiddleware{name: exchange, keys: copied, broker: broker}, nil
 }
 
+func CreateConfirmedExchangeMiddleware(exchange string, keys []string, connectionSettings ConnSettings, confirmTimeout time.Duration) (Middleware, error) {
+	if err := validateConfirmTimeout(confirmTimeout); err != nil {
+		return nil, err
+	}
+	broker, err := connectBroker(connectionSettings)
+	if err != nil {
+		return nil, err
+	}
+	if err := broker.enablePublisherConfirms(); err != nil {
+		_ = broker.close()
+		return nil, err
+	}
+	copied := append([]string(nil), keys...)
+	return &exchangeMiddleware{name: exchange, keys: copied, broker: broker, confirmTimeout: confirmTimeout}, nil
+}
+
 func connectBroker(settings ConnSettings) (*rabbitBroker, error) {
 	broker := &rabbitBroker{settings: settings}
 	if err := broker.connect(); err != nil {
@@ -93,7 +106,6 @@ func connectBroker(settings ConnSettings) (*rabbitBroker, error) {
 	}
 	return broker, nil
 }
-
 
 func (q *queueMiddleware) StartConsuming(callback func(msg Message, ack func(), nack func())) error {
 	if err := q.broker.declareQueue(q.name); err != nil {
@@ -124,9 +136,10 @@ func (q *queueMiddleware) Close() error {
 // exchangeMiddleware methods
 
 type exchangeMiddleware struct {
-	name   string
-	keys   []string
-	broker *rabbitBroker
+	name           string
+	keys           []string
+	broker         *rabbitBroker
+	confirmTimeout time.Duration
 }
 
 func (e *exchangeMiddleware) StartConsuming(callback func(msg Message, ack func(), nack func())) error {
@@ -148,6 +161,12 @@ func (e *exchangeMiddleware) Send(msg Message) error {
 	}
 	body := []byte(msg.Body)
 	for _, key := range e.keys {
+		if e.confirmTimeout > 0 {
+			if err := e.broker.publishConfirmed(e.name, key, body, e.confirmTimeout); err != nil {
+				return err
+			}
+			continue
+		}
 		if err := e.broker.publish(e.name, key, body); err != nil {
 			return err
 		}
