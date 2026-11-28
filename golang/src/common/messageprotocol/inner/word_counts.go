@@ -15,8 +15,8 @@ func SerializeWordCounts(clientID string, batchID uint64, records []WordCountIte
 	return serializeBatchRecords(clientID, batchID, records)
 }
 
-func SerializeWordCountsEOF(clientID string) (*middleware.Message, error) {
-	return serializeRecordsEOF[WordCountItem](clientID)
+func SerializeWordCountsEOF(clientID string, totalBatches uint64) (*middleware.Message, error) {
+	return serializeRecordsEOFWithTotal[WordCountItem](clientID, totalBatches)
 }
 
 func DeserializeWordCounts(message *middleware.Message) (*WordCountsMessage, error) {

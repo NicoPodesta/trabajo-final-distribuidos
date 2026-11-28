@@ -70,15 +70,15 @@ func (tokenizer *Tokenizer) publishEOF(clientID string, totalBatches uint64, coo
 		}
 	}
 
+	if !coordinated {
+		return nil
+	}
+
 	for _, queue := range tokenizer.wordCountsQueues {
-		msg, err := inner.SerializeWordCountsEOF(clientID)
+		msg, err := inner.SerializeWordCountsEOF(clientID, totalBatches)
 		if err := send(queue, msg, err); err != nil {
 			return err
 		}
-	}
-
-	if !coordinated {
-		return nil
 	}
 
 	for _, queue := range tokenizer.historicalCountsQueues {
