@@ -83,6 +83,24 @@ func CreateExchangeMiddleware(exchange string, keys []string, connectionSettings
 	return &exchangeMiddleware{name: exchange, keys: copied, broker: broker}, nil
 }
 
+func CreateExchangeConsumerWithQueue(exchange string, keys []string, queueName string, connectionSettings ConnSettings) (Middleware, error) {
+	broker, err := connectBroker(connectionSettings)
+	if err != nil {
+		return nil, err
+	}
+	copied := append([]string(nil), keys...)
+	return &exchangeMiddleware{name: exchange, keys: copied, queueName: queueName, broker: broker}, nil
+}
+
+func DeclareExchangeQueue(exchange string, queueName string, keys []string, connectionSettings ConnSettings) error {
+	broker, err := connectBroker(connectionSettings)
+	if err != nil {
+		return err
+	}
+	_, declareErr := broker.declareExchangeConsumer(exchange, queueName, keys)
+	return errors.Join(declareErr, broker.close())
+}
+
 func CreateConfirmedExchangeMiddleware(exchange string, keys []string, connectionSettings ConnSettings, confirmTimeout time.Duration) (Middleware, error) {
 	if err := validateConfirmTimeout(confirmTimeout); err != nil {
 		return nil, err
@@ -138,12 +156,13 @@ func (q *queueMiddleware) Close() error {
 type exchangeMiddleware struct {
 	name           string
 	keys           []string
+	queueName      string
 	broker         *rabbitBroker
 	confirmTimeout time.Duration
 }
 
 func (e *exchangeMiddleware) StartConsuming(callback func(msg Message, ack func(), nack func())) error {
-	queueName, err := e.broker.declareExchangeConsumer(e.name, e.keys)
+	queueName, err := e.broker.declareExchangeConsumer(e.name, e.queueName, e.keys)
 	if err != nil {
 		return err
 	}
@@ -232,13 +251,13 @@ func (b *rabbitBroker) declareDirectExchangeLocked(name string) error {
 	return classifyBrokerError(b.conn, err)
 }
 
-func (b *rabbitBroker) declareExchangeConsumer(exchange string, keys []string) (string, error) {
+func (b *rabbitBroker) declareExchangeConsumer(exchange string, queueName string, keys []string) (string, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if err := b.declareDirectExchangeLocked(exchange); err != nil {
 		return "", err
 	}
-	queue, err := b.channel.QueueDeclare("", false, false, true, false, nil)
+	queue, err := b.channel.QueueDeclare(queueName, false, false, queueName == "", false, nil)
 	if err != nil {
 		return "", classifyBrokerError(b.conn, err)
 	}

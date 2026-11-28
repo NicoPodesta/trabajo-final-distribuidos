@@ -12,6 +12,10 @@ func Q5FilterRoutingKey(filterID int) string {
 	return fmt.Sprintf("q5_filter_%d", filterID)
 }
 
+func Q5AverageQueueName(filterID int) string {
+	return fmt.Sprintf("q5_average_%d", filterID)
+}
+
 func Q5FilterRoutingKeys(filterAmount int) []string {
 	keys := make([]string, filterAmount)
 	for filterID := range keys {

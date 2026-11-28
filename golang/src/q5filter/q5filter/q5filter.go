@@ -53,7 +53,7 @@ func NewFilter(config FilterConfig) (*Filter, error) {
 	}
 
 	filterKeys := []string{inner.Q5FilterRoutingKey(config.FilterID)}
-	averageExchange, err := middleware.CreateExchangeMiddleware(inner.Q5AverageExchange, filterKeys, settings)
+	averageExchange, err := middleware.CreateExchangeConsumerWithQueue(inner.Q5AverageExchange, filterKeys, inner.Q5AverageQueueName(config.FilterID), settings)
 	if err != nil {
 		_ = recentArticlesQueue.Close()
 		return nil, err
