@@ -193,6 +193,9 @@ func (h *ClientHandler) handleEndOfRecords(session *clientSession, clientID stri
 	if !session.enqueueQ1Total(q1Batches) {
 		return fmt.Errorf("client session closed before registering Q1 total")
 	}
+	if !session.enqueueQ5Total(abstractBatches) {
+		return fmt.Errorf("client session closed before registering Q5 total")
+	}
 
 	if err := session.sendAck(); err != nil {
 		return err

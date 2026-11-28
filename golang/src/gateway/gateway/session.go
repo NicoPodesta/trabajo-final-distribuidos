@@ -21,6 +21,7 @@ type sessionDelivery struct {
 	msg            middleware.Message
 	ack            func()
 	q1TotalBatches *uint64
+	q5TotalBatches *uint64
 }
 
 type clientSession struct {
@@ -44,6 +45,7 @@ type clientSession struct {
 	q1TotalKnown       bool
 	q1QueryCompleted   bool
 	q1CompletedBatches map[uint64]struct{}
+	q5Batches          *batchTracker
 	ackChan            chan struct{}
 
 	deliveryLock sync.Mutex
@@ -78,6 +80,7 @@ func newClientSession(
 		expectedEOFs:       expectedEOFs,
 		receivedEOFs:       make(map[inner.QueryID]int),
 		q1CompletedBatches: make(map[uint64]struct{}),
+		q5Batches:          newBatchTracker("Q5"),
 		ackChan:            make(chan struct{}, 1),
 		notifyCh:           make(chan struct{}, 1),
 	}
@@ -101,6 +104,10 @@ func (s *clientSession) enqueue(d sessionDelivery) bool {
 
 func (s *clientSession) enqueueQ1Total(totalBatches uint64) bool {
 	return s.enqueue(sessionDelivery{q1TotalBatches: &totalBatches})
+}
+
+func (s *clientSession) enqueueQ5Total(totalBatches uint64) bool {
+	return s.enqueue(sessionDelivery{q5TotalBatches: &totalBatches})
 }
 
 func (s *clientSession) popPending() []sessionDelivery {
@@ -176,6 +183,12 @@ func (s *clientSession) processSessionDelivery(d sessionDelivery) error {
 		}
 		return s.registerQ1Total(*d.q1TotalBatches)
 	}
+	if d.q5TotalBatches != nil {
+		if d.header != nil {
+			return errors.New("session delivery cannot contain both a result and Q5 total")
+		}
+		return s.registerQ5Total(*d.q5TotalBatches)
+	}
 	if d.header == nil {
 		return errors.New("session result delivery has no header")
 	}
@@ -196,6 +209,9 @@ func (s *clientSession) processDelivery(d sessionDelivery) error {
 		default:
 			return fmt.Errorf("unexpected Q1 result type: %d", d.header.Type)
 		}
+	}
+	if d.header.QueryID == inner.Q5 {
+		return s.processQ5Delivery(d)
 	}
 	if d.header.QueryID == inner.Q1 && d.header.IsEOF() {
 		slog.Debug("Ignoring legacy Q1 EOF", "clientID", s.clientID, "filterID", *d.header.FilterID)
@@ -229,6 +245,42 @@ func (s *clientSession) processDelivery(d sessionDelivery) error {
 	}
 	s.q1CompletedBatches[d.header.BatchID] = struct{}{}
 	return s.completeQ1IfReady()
+}
+
+func (s *clientSession) processQ5Delivery(d sessionDelivery) error {
+	if d.header.IsEOF() {
+		slog.Debug("Ignoring Q5 EOF, Q5 closes by batch", "clientID", s.clientID)
+		return nil
+	}
+	if err := s.q5Batches.validate(d.header.BatchID); err != nil {
+		return err
+	}
+	if s.q5Batches.has(d.header.BatchID) {
+		slog.Debug("Discarding duplicate Q5 result batch", "clientID", s.clientID, "batchID", d.header.BatchID)
+		return nil
+	}
+	if err := deliverResultRecord(s, d.header, &d.msg); err != nil {
+		return err
+	}
+	s.q5Batches.add(d.header.BatchID)
+	return s.completeQ5IfReady()
+}
+
+func (s *clientSession) registerQ5Total(totalBatches uint64) error {
+	if err := s.q5Batches.setTotal(totalBatches); err != nil {
+		return err
+	}
+	slog.Info("Registered expected Q5 batches", "clientID", s.clientID, "total", totalBatches)
+	return s.completeQ5IfReady()
+}
+
+func (s *clientSession) completeQ5IfReady() error {
+	if !s.q5Batches.finishIfReady() {
+		return nil
+	}
+	s.completedCount++
+	slog.Info("All expected Q5 batches received for client", "clientID", s.clientID, "total", s.q5Batches.total)
+	return s.finishIfAllQueriesComplete()
 }
 
 func (s *clientSession) registerQ1Total(totalBatches uint64) error {
