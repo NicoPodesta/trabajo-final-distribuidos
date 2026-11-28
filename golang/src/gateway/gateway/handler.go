@@ -171,7 +171,7 @@ func (h *ClientHandler) handleArticleBatch(session *clientSession, reader *exter
 	if err := h.sendQ1Articles(clientID, batchID, q1Items); err != nil {
 		return 0, err
 	}
-	if err := h.sendQ2Articles(clientID, q2Items); err != nil {
+	if err := h.sendQ2Articles(clientID, batchID, q2Items); err != nil {
 		return 0, err
 	}
 	if err := h.sendAbstracts(clientID, batchID, abstractItems); err != nil {
@@ -209,8 +209,8 @@ func (h *ClientHandler) sendQ1Articles(clientID string, batchID uint64, items []
 	return h.articleDatesQueue.Send(*msg)
 }
 
-func (h *ClientHandler) sendQ2Articles(clientID string, items []inner.Q2ArticleItem) error {
-	msg, err := inner.SerializeQ2Articles(clientID, items)
+func (h *ClientHandler) sendQ2Articles(clientID string, batchID uint64, items []inner.Q2ArticleItem) error {
+	msg, err := inner.SerializeQ2Articles(clientID, batchID, items)
 	if err != nil {
 		return err
 	}

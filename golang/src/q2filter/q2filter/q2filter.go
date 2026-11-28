@@ -153,16 +153,16 @@ func (filter *Filter) handleMessage(msg middleware.Message) error {
 
 	switch articleMsg.Type {
 	case inner.MsgData:
-		if articleMsg.TotalBatches != nil {
-			return fmt.Errorf("Q2 data must not contain total_batches")
+		if articleMsg.BatchID == 0 || articleMsg.TotalBatches != nil {
+			return fmt.Errorf("Q2 data requires batch_id and must not contain total_batches")
 		}
 		if err := filter.handleArticlesMessage(articleMsg); err != nil {
 			return err
 		}
 		return filter.coordinator.OnBatchProcessed(articleMsg.ClientID)
 	case inner.MsgEOF:
-		if articleMsg.TotalBatches == nil || len(articleMsg.Records) != 0 {
-			return fmt.Errorf("Q2 EOF requires total_batches and no articles")
+		if articleMsg.BatchID != 0 || articleMsg.TotalBatches == nil || len(articleMsg.Records) != 0 {
+			return fmt.Errorf("Q2 EOF requires total_batches, no batch_id and no articles")
 		}
 		return filter.coordinator.BroadcastWithTotal(articleMsg.ClientID, *articleMsg.TotalBatches)
 	default:

@@ -7,9 +7,10 @@ import (
 )
 
 type ImageDownloadRequest struct {
-	Name     string `json:"name"`
-	Url      string `json:"url"`
-	ImageRef string `json:"image_ref"`
+	RequestID string `json:"request_id"`
+	Name      string `json:"name"`
+	Url       string `json:"url"`
+	ImageRef  string `json:"image_ref"`
 }
 
 // Cada mensaje de datos contiene un pedido. El EOF no contiene un pedido

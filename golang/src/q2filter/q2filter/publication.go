@@ -7,11 +7,12 @@ import (
 	"trabajo-final-distribuidos/common/messageprotocol/inner"
 )
 
-func (filter *Filter) publishImageDownload(clientID string, article inner.Q2ArticleItem) error {
+func (filter *Filter) publishImageDownload(clientID, requestID string, article inner.Q2ArticleItem) error {
 	msg, err := inner.SerializeImageDownload(clientID, inner.ImageDownloadRequest{
-		Name:     article.Name,
-		Url:      article.Url,
-		ImageRef: article.Image,
+		RequestID: requestID,
+		Name:      article.Name,
+		Url:       article.Url,
+		ImageRef:  article.Image,
 	})
 	if err != nil {
 		return err
@@ -21,7 +22,7 @@ func (filter *Filter) publishImageDownload(clientID string, article inner.Q2Arti
 		return fmt.Errorf("publishing image download for client %q, article %q: %w", clientID, article.Url, err)
 	}
 	filter.nextFetcher = (fetcherID + 1) % len(filter.downloadsQueues)
-	slog.Debug("Published image download request", "clientID", clientID, "url", article.Url, "fetcherID", fetcherID)
+	slog.Debug("Published image download request", "clientID", clientID, "requestID", requestID, "url", article.Url, "fetcherID", fetcherID)
 	return nil
 }
 
